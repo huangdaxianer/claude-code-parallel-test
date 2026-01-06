@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod:*)",
+      "Bash(./batch_claude.sh:*)",
+      "Bash(claude help:*)",
+      "Bash(cat:*)",
+      "Bash(npm install -g pm2)",
+      "Bash(pm2 start:*)",
+      "Bash(pm2 save:*)",
+      "Bash(pm2 startup:*)",
+      "Bash(pm2 status:*)",
+      "Bash(pkill:*)",
+      "Bash(pm2 restart:*)",
+      "Bash(pm2 logs:*)"
+    ]
+  }
+}

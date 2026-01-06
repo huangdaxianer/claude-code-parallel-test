@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Batch Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <div class="logo">
+                <span class="pulse"></span>
+                <h1>Claude Code 并行测试工具</h1>
+            </div>
+        </header>
+
+        <main>
+            <section class="task-form-card glass">
+                <h2>新建任务</h2>
+                <div class="form-group">
+                    <div class="textarea-container">
+                        <textarea id="task-prompt" placeholder="在此输入任务描述..." rows="4"></textarea>
+                        <div class="action-buttons">
+                            <button type="button" id="browse-folder-btn" class="icon-btn" title="上传本地项目文件夹">
+                                <span class="icon">📁</span>
+                                <span class="folder-name"></span>
+                            </button>
+
+                            <button type="button" id="random-prompt-btn" class="icon-btn" title="随机填充示例 Prompt">
+                                <span class="icon">🎲</span>
+                            </button>
+                        </div>
+                        <input type="file" id="folder-input" webkitdirectory directory style="display:none">
+                    </div>
+
+
+
+                    <div class="model-selection">
+                        <div class="checkbox-group">
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="model" value="doubao-seed-1-6-thinking-code-preview"
+                                    checked>
+                                <span class="checkmark"></span>
+                                preview
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="model" value="doubao-seed-1-6-thinking-code-preview-delta"
+                                    checked>
+                                <span class="checkmark"></span>
+                                delta
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="model" value="doubao-seed-1-6-thinking-code-preview-omega"
+                                    checked>
+                                <span class="checkmark"></span>
+                                GLM4.7
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="model" value="doubao-seed-1-8-preview-code-preview-alpha"
+                                    checked>
+                                <span class="checkmark"></span>
+                                1.8 code
+                            </label>
+                        </div>
+                    </div>
+
+                    <button id="add-task-btn" class="btn-primary">启动任务</button>
+                </div>
+            </section>
+
+            <section class="task-list-section">
+                <div class="section-header">
+                    <h2>历史任务</h2>
+                    <span id="task-count" class="badge">0 Tasks</span>
+                </div>
+                <div id="task-list" class="task-grid">
+                    <!-- Tasks will be injected here -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
