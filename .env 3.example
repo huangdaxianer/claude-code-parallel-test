@@ -1,0 +1,9 @@
+# AI Title Generation Service Configuration
+# Replace with your actual API endpoint if different
+TITLE_GEN_API=https://ark.cn-beijing.volces.com/api/v3/chat/completions
+
+# Replace with your actual model name
+TITLE_GEN_MODEL=doubao-seed-1-6-flash-250828
+
+# Replace with your actual API key
+TITLE_GEN_KEY=your_api_key_here
