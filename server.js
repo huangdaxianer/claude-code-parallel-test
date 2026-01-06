@@ -196,6 +196,13 @@ app.post('/api/tasks', (req, res) => {
             fs.renameSync(sourcePath, targetPath);
             finalBaseDir = path.relative(__dirname, targetPath); // 使用相对于根目录的路径
             task.baseDir = finalBaseDir; // 更新任务对象中的路径
+            // 立即同步更新 history.json 中的路径，以免重启丢失迁移状态
+            const updatedHistory = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
+            const idx = updatedHistory.findIndex(t => t.taskId === task.taskId);
+            if (idx !== -1) {
+                updatedHistory[idx].baseDir = finalBaseDir;
+                fs.writeFileSync(HISTORY_FILE, JSON.stringify(updatedHistory, null, 2));
+            }
         } catch (err) {
             console.error('Error moving uploaded source:', err);
         }
@@ -204,11 +211,10 @@ app.post('/api/tasks', (req, res) => {
     // 3. 创建该任务专属的 prompt 文件
     const specificPromptFile = path.join(TASKS_DIR, `prompt_${task.taskId}.txt`);
     const modelsStr = Array.isArray(task.models) ? task.models.join(',') : '';
-    const promptContent = `${finalBaseDir || ''};${task.title};${task.prompt};${task.taskId};${modelsStr}\n`;
-    fs.writeFileSync(specificPromptFile, promptContent);
+    const taskPromptContent = `${finalBaseDir || ''};${task.title};${task.prompt};${task.taskId};${modelsStr}\n`;
+    fs.writeFileSync(specificPromptFile, taskPromptContent);
 
-
-    // 3. 异步启动脚本执行，不阻塞响应
+    // 4. 异步启动脚本执行，不阻塞响应
     const child = spawn('bash', [SCRIPT_FILE, specificPromptFile]);
     child.stdout.on('data', (data) => console.log(`[Task ${task.taskId}] ${data}`));
     child.on('close', () => {
@@ -216,7 +222,7 @@ app.post('/api/tasks', (req, res) => {
         try { fs.unlinkSync(specificPromptFile); } catch (e) { }
     });
 
-    // 4. 异步生成 AI 标题，并在生成后更新历史记录
+    // 5. 异步生成 AI 标题，并在生成后更新历史记录
     generateTitle(task.prompt).then(aiTitle => {
         try {
             let currentHistory = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
@@ -231,9 +237,10 @@ app.post('/api/tasks', (req, res) => {
         }
     });
 
-    // 5. 立即返回成功，前端此时已能看到任务出现在列表中
+    // 6. 立即返回成功，前端此时已能看到任务出现在列表中
     res.json({ success: true, taskId: task.taskId });
 });
+
 
 // ... (other endpoints)
 
