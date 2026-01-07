@@ -82,6 +82,7 @@ while IFS=';' read -r base_dir title prompt task_id models_str <&3 || [[ -n "$ba
             # 这样可以减少 visudo 的配置项 (只需 claude 二进制本身)
             # 同时使用 -H 确保 Home 目录正确映射到 claude-user
             if ! nohup sudo -n -H -u claude-user "$CLAUDE_BIN" -p "$prompt" \
+                --model "$model_name" \
                 --allowedTools 'Read(./**),Edit(./**),Bash(*)' \
                 --dangerously-skip-permissions \
                 --output-format stream-json --verbose \
