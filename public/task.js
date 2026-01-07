@@ -11,6 +11,7 @@ let currentRuns = [];
 let activeFolder = null;
 let lastTaskResult = null;
 let isCompareMode = false;
+let isStatsMode = false;
 
 // 获取 Task ID
 const urlParams = new URLSearchParams(window.location.search);
@@ -76,6 +77,8 @@ async function fetchTaskDetails() {
         renderSidebar();
         if (isCompareMode) {
             renderComparisonView();
+        } else if (isStatsMode) {
+            renderStatsView();
         } else {
             renderMainContent();
         }
@@ -88,10 +91,17 @@ async function fetchTaskDetails() {
 function renderSidebar() {
     modelListEl.innerHTML = '';
 
+    // Add Statistics Button
+    const statsBtn = document.createElement('div');
+    statsBtn.className = `stats-btn ${isStatsMode ? 'active' : ''}`;
+    statsBtn.innerHTML = `<span>📈</span> 数据统计`;
+    statsBtn.onclick = toggleStatsMode;
+    modelListEl.appendChild(statsBtn);
+
     // Add Comparison Mode Button
     const compareBtn = document.createElement('div');
     compareBtn.className = `compare-btn ${isCompareMode ? 'active' : ''}`;
-    compareBtn.innerHTML = `<span>📊</span> Compare`;
+    compareBtn.innerHTML = `<span>📊</span> 产物对比`;
     compareBtn.onclick = toggleCompareMode;
     modelListEl.appendChild(compareBtn);
 
@@ -102,10 +112,12 @@ function renderSidebar() {
         tab.className = `model-tab ${isSelected ? 'active' : ''}`;
         tab.onclick = () => {
             isCompareMode = false;
+            isStatsMode = false;
             activeFolder = run.folderName;
             renderSidebar();
             renderMainContent();
             document.getElementById('comparison-view').classList.remove('active');
+            document.getElementById('stats-view').classList.remove('active');
             document.getElementById('main-content').classList.remove('hidden');
         };
 
@@ -122,13 +134,16 @@ function renderSidebar() {
 
 function toggleCompareMode() {
     isCompareMode = !isCompareMode;
+    if (isCompareMode) isStatsMode = false;
     renderSidebar();
 
     const comparisonView = document.getElementById('comparison-view');
+    const statsView = document.getElementById('stats-view');
     const mainContent = document.getElementById('main-content');
 
     if (isCompareMode) {
         comparisonView.classList.add('active');
+        statsView.classList.remove('active');
         mainContent.classList.add('hidden');
         renderComparisonView();
     } else {
@@ -136,6 +151,129 @@ function toggleCompareMode() {
         mainContent.classList.remove('hidden');
         renderMainContent();
     }
+}
+
+function toggleStatsMode() {
+    isStatsMode = !isStatsMode;
+    if (isStatsMode) isCompareMode = false;
+    renderSidebar();
+
+    const comparisonView = document.getElementById('comparison-view');
+    const statsView = document.getElementById('stats-view');
+    const mainContent = document.getElementById('main-content');
+
+    if (isStatsMode) {
+        statsView.classList.add('active');
+        comparisonView.classList.remove('active');
+        mainContent.classList.add('hidden');
+        renderStatsView();
+    } else {
+        statsView.classList.remove('active');
+        mainContent.classList.remove('hidden');
+        renderMainContent();
+    }
+}
+
+function renderStatsView() {
+    const statsView = document.getElementById('stats-view');
+    statsView.innerHTML = '';
+
+    const container = document.createElement('div');
+    container.className = 'stats-container';
+
+    const table = document.createElement('table');
+    table.className = 'stats-table';
+
+    const thead = document.createElement('thead');
+    thead.innerHTML = `
+        <tr>
+            <th>模型名称</th>
+            <th>状态</th>
+            <th>耗时 (s)</th>
+            <th>轮次</th>
+            <th>Input</th>
+            <th>Output</th>
+            <th>Cache Read</th>
+            <th>TodoWrite</th>
+            <th>Read</th>
+            <th>Write</th>
+            <th>Bash</th>
+        </tr>
+    `;
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+
+    currentRuns.forEach(run => {
+        // Parse result and tool counts from outputLog
+        let resultObj = null;
+        let toolCounts = { TodoWrite: 0, Read: 0, Write: 0, Bash: 0 };
+
+        if (run.outputLog) {
+            const lines = run.outputLog.split('\n');
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('{')) {
+                    try {
+                        const obj = JSON.parse(trimmed);
+                        if (obj.type === 'result') {
+                            resultObj = obj;
+                        }
+                        // Count tool uses
+                        if (obj.type === 'assistant' && obj.message && Array.isArray(obj.message.content)) {
+                            obj.message.content.forEach(c => {
+                                if (c.type === 'tool_use' && toolCounts.hasOwnProperty(c.name)) {
+                                    toolCounts[c.name]++;
+                                }
+                            });
+                        } else if (obj.type === 'tool_use' && toolCounts.hasOwnProperty(obj.name)) {
+                            toolCounts[obj.name]++;
+                        }
+                    } catch (e) { }
+                }
+            });
+        }
+
+        const tr = document.createElement('tr');
+
+        if (resultObj) {
+            const usage = resultObj.usage || {};
+            const duration = resultObj.duration_ms ? (resultObj.duration_ms / 1000).toFixed(1) : '-';
+
+            tr.innerHTML = `
+                <td style="font-weight:600;">${getModelDisplayName(run.modelName)}</td>
+                <td><span class="status-badge status-${run.status || 'pending'}">${run.status || 'pending'}</span></td>
+                <td>${duration}</td>
+                <td>${resultObj.num_turns || '-'}</td>
+                <td>${usage.input_tokens || '-'}</td>
+                <td>${usage.output_tokens || '-'}</td>
+                <td>${usage.cache_read_input_tokens || '-'}</td>
+                <td>${toolCounts.TodoWrite}</td>
+                <td>${toolCounts.Read}</td>
+                <td>${toolCounts.Write}</td>
+                <td>${toolCounts.Bash}</td>
+            `;
+        } else {
+            tr.innerHTML = `
+                <td style="font-weight:600;">${getModelDisplayName(run.modelName)}</td>
+                <td><span class="status-badge status-${run.status || 'pending'}">${run.status || 'pending'}</span></td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+                <td>-</td>
+                <td>${toolCounts.TodoWrite}</td>
+                <td>${toolCounts.Read}</td>
+                <td>${toolCounts.Write}</td>
+                <td>${toolCounts.Bash}</td>
+            `;
+        }
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+    statsView.appendChild(container);
 }
 
 function renderComparisonView() {

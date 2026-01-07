@@ -151,6 +151,121 @@
             border-color: #6366f1;
         }
 
+        .stats-btn {
+            padding: 0 1rem;
+            height: 40px;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #10b981;
+            background: #ecfdf5;
+            border: 1px solid #d1fae5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            transition: all 0.2s;
+            margin-right: 0.5rem;
+            white-space: nowrap;
+        }
+
+        .stats-btn:hover {
+            background: #d1fae5;
+            transform: translateY(-1px);
+        }
+
+        .stats-btn.active {
+            background: #10b981;
+            color: white;
+            border-color: #10b981;
+        }
+
+        /* Stats View */
+        .stats-view {
+            display: none;
+            flex: 1;
+            overflow: auto;
+            padding: 2rem;
+            background: #f8fafc;
+        }
+
+        .stats-view.active {
+            display: block;
+        }
+
+        .stats-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 1rem;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        .stats-table th {
+            background: #f1f5f9;
+            padding: 1rem;
+            font-weight: 600;
+            color: #475569;
+            border-bottom: 2px solid #e2e8f0;
+            white-space: nowrap;
+        }
+
+        .stats-table td {
+            padding: 1rem;
+            color: #1e293b;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: top;
+        }
+
+        .stats-table tr:hover {
+            background: #f8fafc;
+        }
+
+        .stats-result-text {
+            max-width: 300px;
+            white-space: pre-wrap;
+            font-family: inherit;
+            display: -webkit-box;
+            -webkit-line-clamp: 4;
+            line-clamp: 4;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .status-badge.status-pending {
+            background-color: #fbbf24;
+        }
+
+        .status-badge.status-running {
+            background-color: #3b82f6;
+        }
+
+        .status-badge.status-completed {
+            background-color: #22c55e;
+        }
+
+        .status-badge.status-success {
+            background-color: #22c55e;
+        }
+
+        .status-badge.status-failed {
+            background-color: #ef4444;
+        }
+
+        .status-badge.status-error {
+            background-color: #ef4444;
+        }
+
         /* Comparison View */
         .comparison-view {
             display: none;
@@ -930,6 +1045,7 @@
         </main>
 
         <section id="comparison-view" class="comparison-view"></section>
+        <section id="stats-view" class="stats-view"></section>
     </div>
 
     <!-- File Preview Modal -->
