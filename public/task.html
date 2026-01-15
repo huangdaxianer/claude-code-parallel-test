@@ -88,6 +88,10 @@
             padding: 0 0.5rem;
         }
 
+        .sidebar.collapsed .task-history-list {
+            display: none;
+        }
+
         .history-item {
             padding: 0.75rem;
             margin-bottom: 0.25rem;
@@ -1183,9 +1187,7 @@
         <!-- Main Content Area (Right Side) -->
         <div class="main-wrapper">
             <header class="top-bar">
-                <div class="nav-header">
-                    <span class="sidebar-title">Task Details</span>
-                </div>
+
 
                 <div id="model-list" class="model-list">
                     <!-- Model tabs will be injected here -->
