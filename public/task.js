@@ -73,6 +73,8 @@ async function fetchTaskDetails() {
             renderStatisticsView();
         } else if (isCompareMode) {
             renderComparisonView();
+        } else if (isStatsMode) {
+            renderStatsView();
         } else {
             renderMainContent();
         }
@@ -163,6 +165,7 @@ function toggleCompareMode() {
 
     const statsView = document.getElementById('statistics-view');
     const comparisonView = document.getElementById('comparison-view');
+    const statsView = document.getElementById('stats-view');
     const mainContent = document.getElementById('main-content');
 
     if (isCompareMode) {
