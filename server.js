@@ -204,7 +204,10 @@ app.post('/api/tasks', (req, res) => {
     // 3. 创建该任务专属的 prompt 文件
     const specificPromptFile = path.join(TASKS_DIR, `prompt_${task.taskId}.txt`);
     const modelsStr = Array.isArray(task.models) ? task.models.join(',') : '';
-    const promptContent = `${finalBaseDir || ''};${task.title};${task.prompt};${task.taskId};${modelsStr}\n`;
+    // Sanitize prompt and title to remove newlines, as they break the shell script's read command
+    const safeTitle = (task.title || '').replace(/[\r\n]+/g, ' ');
+    const safePrompt = (task.prompt || '').replace(/[\r\n]+/g, ' ');
+    const promptContent = `${finalBaseDir || ''};${safeTitle};${safePrompt};${task.taskId};${modelsStr}\n`;
     fs.writeFileSync(specificPromptFile, promptContent);
 
 

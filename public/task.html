@@ -207,6 +207,57 @@
             display: none;
         }
 
+        /* Statistics View */
+        .statistics-view {
+            display: none;
+            flex: 1;
+            overflow: auto;
+            padding: 2rem;
+            background: #f8fafc;
+        }
+
+        .statistics-view.active {
+            display: block;
+        }
+
+        .stats-card {
+            background: white;
+            border-radius: 0.75rem;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            margin-bottom: 2rem;
+        }
+
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .stats-table th {
+            background: #f8fafc;
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            color: #475569;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .stats-table td {
+            padding: 1rem;
+            border-bottom: 1px solid #f1f5f9;
+            color: #1e293b;
+        }
+
+        .stats-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .stats-table tr:hover td {
+            background: #f8fafc;
+        }
+
         .panel-left {
             width: 60%;
             display: flex;
@@ -875,6 +926,36 @@
                 <div style="padding: 1rem; color: #94a3b8; font-size: 0.9rem;">Loading...</div>
             </div>
         </header>
+
+        <!-- Statistics View -->
+        <div id="statistics-view" class="statistics-view">
+            <div class="stats-card">
+                <table class="stats-table">
+                    <thead>
+                        <tr>
+                            <th>模型名称</th>
+                            <th>状态</th>
+                            <th>耗时 (s)</th>
+                            <th>轮次</th>
+                            <th>Input</th>
+                            <th>Output</th>
+                            <th>Cache Read</th>
+                            <th>TodoWrite</th>
+                            <th>Read</th>
+                            <th>Write</th>
+                            <th>Bash</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stats-table-body">
+                        <!-- Rows injected via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="comparison-view" class="comparison-view">
+            <!-- Comparison Frames -->
+        </div>
 
         <main class="main-content" id="main-content">
             <!-- Left Panel: Logs -->

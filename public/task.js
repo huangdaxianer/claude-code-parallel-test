@@ -11,6 +11,7 @@ let currentRuns = [];
 let activeFolder = null;
 let lastTaskResult = null;
 let isCompareMode = false;
+let isStatsMode = false;
 
 // 获取 Task ID
 const urlParams = new URLSearchParams(window.location.search);
@@ -18,13 +19,7 @@ const taskId = urlParams.get('id');
 
 // Utility to get human-readable model names
 function getModelDisplayName(modelName) {
-    const mapping = {
-        'doubao-seed-1-6-thinking-code-preview': 'preview',
-        'doubao-seed-1-6-thinking-code-preview-omega': 'GLM4.7',
-        'doubao-seed-1-6-thinking-code-preview-delta': 'delta',
-        'doubao-seed-1-8-preview-code-preview-alpha': '1.8 code'
-    };
-    return mapping[modelName] || modelName;
+    return modelName;
 }
 
 if (!taskId) {
@@ -74,7 +69,9 @@ async function fetchTaskDetails() {
         }
 
         renderSidebar();
-        if (isCompareMode) {
+        if (isStatsMode) {
+            renderStatisticsView();
+        } else if (isCompareMode) {
             renderComparisonView();
         } else {
             renderMainContent();
@@ -88,25 +85,41 @@ async function fetchTaskDetails() {
 function renderSidebar() {
     modelListEl.innerHTML = '';
 
-    // Add Comparison Mode Button
+    // 1. Stats Button
+    const statsBtn = document.createElement('div');
+    statsBtn.className = `compare-btn ${isStatsMode ? 'active' : ''}`;
+    statsBtn.style.marginRight = '0.5rem';
+    statsBtn.style.backgroundColor = isStatsMode ? '#10b981' : '#ecfdf5';
+    statsBtn.style.color = isStatsMode ? 'white' : '#059669';
+    statsBtn.style.borderColor = isStatsMode ? '#10b981' : '#d1fae5';
+    statsBtn.innerHTML = `<span>📈</span> 数据统计`;
+    statsBtn.onclick = toggleStatsMode;
+    modelListEl.appendChild(statsBtn);
+
+    // 2. Compare Button
     const compareBtn = document.createElement('div');
     compareBtn.className = `compare-btn ${isCompareMode ? 'active' : ''}`;
-    compareBtn.innerHTML = `<span>📊</span> Compare`;
+    compareBtn.innerHTML = `<span>📊</span> 产物对比`;
     compareBtn.onclick = toggleCompareMode;
     modelListEl.appendChild(compareBtn);
 
     currentRuns.forEach(run => {
-        const isSelected = !isCompareMode && run.folderName === activeFolder;
+        const isSelected = !isCompareMode && !isStatsMode && run.folderName === activeFolder;
 
         const tab = document.createElement('div');
         tab.className = `model-tab ${isSelected ? 'active' : ''}`;
         tab.onclick = () => {
             isCompareMode = false;
+            isStatsMode = false;
             activeFolder = run.folderName;
             renderSidebar();
-            renderMainContent();
+
+            // UI Switch
             document.getElementById('comparison-view').classList.remove('active');
+            document.getElementById('statistics-view').classList.remove('active');
             document.getElementById('main-content').classList.remove('hidden');
+
+            renderMainContent();
         };
 
         let displayName = getModelDisplayName(run.modelName);
@@ -120,15 +133,41 @@ function renderSidebar() {
     });
 }
 
-function toggleCompareMode() {
-    isCompareMode = !isCompareMode;
+function toggleStatsMode() {
+    isStatsMode = !isStatsMode;
+    isCompareMode = false; // Mutually exclusive
+
     renderSidebar();
 
+    const statsView = document.getElementById('statistics-view');
+    const comparisonView = document.getElementById('comparison-view');
+    const mainContent = document.getElementById('main-content');
+
+    if (isStatsMode) {
+        statsView.classList.add('active');
+        comparisonView.classList.remove('active');
+        mainContent.classList.add('hidden');
+        renderStatisticsView();
+    } else {
+        statsView.classList.remove('active');
+        mainContent.classList.remove('hidden');
+        renderMainContent();
+    }
+}
+
+function toggleCompareMode() {
+    isCompareMode = !isCompareMode;
+    isStatsMode = false; // Mutually exclusive
+
+    renderSidebar();
+
+    const statsView = document.getElementById('statistics-view');
     const comparisonView = document.getElementById('comparison-view');
     const mainContent = document.getElementById('main-content');
 
     if (isCompareMode) {
         comparisonView.classList.add('active');
+        statsView.classList.remove('active');
         mainContent.classList.add('hidden');
         renderComparisonView();
     } else {
@@ -136,6 +175,127 @@ function toggleCompareMode() {
         mainContent.classList.remove('hidden');
         renderMainContent();
     }
+}
+
+function calculateRunStats(run) {
+    const stats = {
+        modelName: getModelDisplayName(run.modelName),
+        status: run.status || 'pending',
+        duration: 0,
+        turns: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        toolCounts: {
+            TodoWrite: 0,
+            Read: 0,
+            Write: 0,
+            Bash: 0
+        }
+    };
+
+    if (!run.outputLog) return stats;
+
+    const lines = run.outputLog.split(/\r\n|\n|\r/);
+    let startTime = null;
+    let endTime = null;
+
+    lines.forEach(line => {
+        if (!line.trim()) return;
+        try {
+            if (!line.trim().startsWith('{')) return;
+            const obj = JSON.parse(line);
+
+            // 1. Duration calculation
+            if (obj.type === 'result') {
+                if (obj.duration_ms) {
+                    stats.duration = (obj.duration_ms / 1000).toFixed(1);
+                } else if (obj.duration) {
+                    stats.duration = (obj.duration / 1000).toFixed(1);
+                }
+
+                // Parse Total Usage from Result
+                if (obj.usage) {
+                    stats.inputTokens = obj.usage.input_tokens || 0;
+                    stats.outputTokens = obj.usage.output_tokens || 0;
+                    stats.cacheReadTokens = obj.usage.cache_read_input_tokens || 0;
+                } else if (obj.tokenUsage) {
+                    stats.inputTokens = obj.tokenUsage.input || obj.tokenUsage.input_tokens || 0;
+                    stats.outputTokens = obj.tokenUsage.output || obj.tokenUsage.output_tokens || 0;
+                    stats.cacheReadTokens = obj.tokenUsage.cacheRead || obj.tokenUsage.cache_read_input_tokens || 0;
+                }
+            }
+
+            // 2. Turns (User messages count)
+            if (obj.type === 'user') {
+                stats.turns++;
+            }
+
+            // 3. Fallback: Accumulate Tokens from message_stop if result usage is missing/zero
+            // Only if we haven't found a final result usage yet (simplification: just overwrite if > 0)
+            if (obj.type === 'message_stop' && obj.usage) {
+                const inputs = (obj.usage.input_tokens || 0);
+                const outputs = (obj.usage.output_tokens || 0);
+                const cache = (obj.usage.cache_read_input_tokens || 0);
+
+                // If the result object at end has 0, we might want to manually sum these up?
+                // But logs show result usage is explicitly 0. Let's trust result first, but if result not found, use sum.
+                // We'll store a running sum and use it if final stats are 0.
+            }
+
+            // 4. Tool Counts
+            // Look for tool_use type
+            if (obj.type === 'tool_use') {
+                const name = obj.name;
+                if (stats.toolCounts.hasOwnProperty(name)) {
+                    stats.toolCounts[name]++;
+                } else if (name === 'Edit') { // Count Edit as Write maybe? Or keep separate
+                    // User requested specifically: TodoWrite, Read, Write, Bash
+                    // If 'Edit' is used, maybe map to key?
+                    // stats.toolCounts.Write++; // Optional mapping
+                }
+            }
+            // Also check assistant message blocks for tool_use
+            if (obj.type === 'assistant' && obj.message && Array.isArray(obj.message.content)) {
+                obj.message.content.forEach(block => {
+                    if (block.type === 'tool_use') {
+                        const name = block.name;
+                        if (stats.toolCounts.hasOwnProperty(name)) {
+                            stats.toolCounts[name]++;
+                        }
+                    }
+                });
+            }
+
+        } catch (e) { }
+    });
+
+    return stats;
+}
+
+function renderStatisticsView() {
+    const tbody = document.getElementById('stats-table-body');
+    tbody.innerHTML = '';
+
+    currentRuns.forEach(run => {
+        const stats = calculateRunStats(run);
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="font-weight:600">${stats.modelName}</td>
+            <td><span class="status-badge status-${stats.status}">${stats.status}</span></td>
+            <td>${stats.duration || '-'}</td>
+            <td>${stats.turns}</td>
+            <td>${stats.inputTokens || '-'}</td>
+            <td>${stats.outputTokens || '-'}</td>
+            <td>${stats.cacheReadTokens || '-'}</td>
+            <td>${stats.toolCounts.TodoWrite}</td>
+            <td>${stats.toolCounts.Read}</td>
+            <td>${stats.toolCounts.Write}</td>
+            <td>${stats.toolCounts.Bash}</td>
+        `;
+        tbody.appendChild(tr);
+    });
 }
 
 function renderComparisonView() {
@@ -388,10 +548,14 @@ function renderMainContent() {
                         const firstContent = obj.message.content[0];
 
                         if (firstContent.type === 'text') {
+                            // Filter out "(no content)" noise
+                            const textVal = (firstContent.text || '').replace(/\s+$/, '');
+                            if (textVal.trim() === '(no content)') continue;
+
                             type = 'TXT';
                             isDirectText = true;
                             // Trim trailing whitespace/newlines from the text
-                            directTextContent = (firstContent.text || '').replace(/\s+$/, '');
+                            directTextContent = textVal;
                         } else if (firstContent.type === 'tool_use') {
                             const toolName = firstContent.name || 'tool';
                             type = toolName;
@@ -439,11 +603,14 @@ function renderMainContent() {
                                 const todos = firstContent.input.todos;
                                 const idx = todos.findIndex(t => t.status === 'in_progress');
                                 const allCompleted = todos.every(t => t.status === 'completed');
+                                const allPending = todos.every(t => t.status === 'pending');
 
                                 if (idx !== -1) {
                                     previewText = `(${idx + 1}/${todos.length}) ${todos[idx].content}`;
                                 } else if (allCompleted) {
                                     previewText = 'completed';
+                                } else if (allPending) {
+                                    previewText = `Assigned: ${todos.length} todos`;
                                 } else {
                                     previewText = firstContent.input ? JSON.stringify(firstContent.input) : '{}';
                                 }
@@ -509,11 +676,14 @@ function renderMainContent() {
                             const todos = obj.input.todos;
                             const idx = todos.findIndex(t => t.status === 'in_progress');
                             const allCompleted = todos.every(t => t.status === 'completed');
+                            const allPending = todos.every(t => t.status === 'pending');
 
                             if (idx !== -1) {
                                 previewText = `(${idx + 1}/${todos.length}) ${todos[idx].content}`;
                             } else if (allCompleted) {
                                 previewText = 'completed';
+                            } else if (allPending) {
+                                previewText = `Assigned: ${todos.length} todos`;
                             } else {
                                 previewText = obj.input ? JSON.stringify(obj.input) : '{}';
                             }
