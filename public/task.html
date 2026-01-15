@@ -78,7 +78,65 @@
             display: none;
         }
 
-        /* 4. Main Content */
+        .btn-new-task {
+            margin: 1rem 1rem 0.5rem 1rem;
+            padding: 0.75rem;
+            background: #0f172a;
+            color: #ffffff;
+            border-radius: 8px;
+            /* Slightly more rounded */
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .btn-new-task:hover {
+            background: #1e293b;
+            transform: translateY(-1px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .task-history-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem;
+            /* Better padding */
+        }
+
+        .history-item {
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.25rem;
+            border-radius: 6px;
+            cursor: pointer;
+            color: #475569;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .history-item:hover {
+            background: #f8fafc;
+            color: #1e293b;
+        }
+
+        .history-item.active {
+            background: #f1f5f9;
+            color: #2563eb;
+            font-weight: 600;
+            border-left-color: #2563eb;
+        }
+
+        /* Adjust main content background for contrast */
         .main-wrapper {
             grid-area: main;
             display: flex;
@@ -141,11 +199,12 @@
         }
 
         .model-tab {
-            padding: 0 1.25rem;
-            height: 40px;
-            border-radius: 0.5rem;
+            padding: 0.5rem 1rem;
+            height: 32px;
+            border-radius: 9999px;
+            /* Pill shape */
             cursor: pointer;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             font-weight: 500;
             color: #64748b;
             transition: all 0.2s;
@@ -153,9 +212,47 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 0.5rem;
+            gap: 0.4rem;
             white-space: nowrap;
-            background: #f8fafc;
+            background: #f1f5f9;
+        }
+
+        .model-tab:hover {
+            background: #e2e8f0;
+            color: #0f172a;
+        }
+
+        .model-tab.active {
+            background: #dcfce7;
+            color: #166534;
+            font-weight: 600;
+        }
+
+        .model-tab.status-running::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #eab308;
+            border-radius: 50%;
+        }
+
+        .model-tab.status-completed::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #22c55e;
+            border-radius: 50%;
+        }
+
+        .model-tab.status-failed::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #ef4444;
+            border-radius: 50%;
         }
 
         .model-tab:hover {
@@ -171,15 +268,15 @@
         }
 
         .compare-btn {
+            height: 36px;
             padding: 0 1rem;
-            height: 40px;
-            border-radius: 0.5rem;
+            border-radius: 6px;
             cursor: pointer;
             font-size: 0.85rem;
-            font-weight: 600;
-            color: #6366f1;
-            background: #eef2ff;
-            border: 1px solid #e0e7ff;
+            font-weight: 500;
+            color: #475569;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -187,29 +284,32 @@
             transition: all 0.2s;
             margin-right: 0.5rem;
             white-space: nowrap;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
         }
 
         .compare-btn:hover {
-            background: #e0e7ff;
-            transform: translateY(-1px);
+            background: #f8fafc;
+            border-color: #cbd5e1;
+            color: #1e293b;
         }
 
         .compare-btn.active {
-            background: #6366f1;
-            color: white;
-            border-color: #6366f1;
+            background: #eff6ff;
+            color: #2563eb;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
         }
 
         .stats-btn {
+            height: 36px;
             padding: 0 1rem;
-            height: 40px;
-            border-radius: 0.5rem;
+            border-radius: 6px;
             cursor: pointer;
             font-size: 0.85rem;
-            font-weight: 600;
-            color: #10b981;
-            background: #ecfdf5;
-            border: 1px solid #d1fae5;
+            font-weight: 500;
+            color: #475569;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -217,17 +317,20 @@
             transition: all 0.2s;
             margin-right: 0.5rem;
             white-space: nowrap;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
         }
 
         .stats-btn:hover {
-            background: #d1fae5;
-            transform: translateY(-1px);
+            background: #f8fafc;
+            border-color: #cbd5e1;
+            color: #1e293b;
         }
 
         .stats-btn.active {
-            background: #10b981;
-            color: white;
+            background: #ecfdf5;
+            color: #059669;
             border-color: #10b981;
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
         }
 
         /* Stats View */
