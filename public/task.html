@@ -39,7 +39,8 @@
         }
 
         .sidebar.collapsed {
-            width: 60px;
+            width: 0;
+            border-right: none;
         }
 
         .sidebar-header {
@@ -1160,14 +1161,6 @@
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header" style="justify-content: flex-start; gap: 1rem;">
-                <button id="sidebar-toggle" class="icon-btn-ghost">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="3" y1="12" x2="21" y2="12"></line>
-                        <line x1="3" y1="6" x2="21" y2="6"></line>
-                        <line x1="3" y1="18" x2="21" y2="18"></line>
-                    </svg>
-                </button>
                 <div class="logo">
                     <h1>Web Coding</h1>
                 </div>
@@ -1187,6 +1180,14 @@
         <!-- Main Content Area (Right Side) -->
         <div class="main-wrapper">
             <header class="top-bar">
+                <button id="sidebar-toggle" class="icon-btn-ghost" style="margin-right: 1rem;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
 
 
                 <div id="model-list" class="model-list">
