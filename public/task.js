@@ -196,7 +196,11 @@ function calculateRunStats(run) {
 
     if (!run.outputLog) return stats;
 
-    const lines = run.outputLog.split(/\r\n|\n|\r/);
+    // Fix: Handle multiple JSON objects on the same line (e.g. "}{")
+    const rawContent = run.outputLog || '';
+    const formattedContent = rawContent.replace(/}\s*{/g, '}\n{');
+
+    const lines = formattedContent.split(/\r\n|\n|\r/);
     let startTime = null;
     let endTime = null;
 
@@ -383,6 +387,9 @@ function renderMainContent() {
 
     // A. Strip ANSI Codes
     logText = logText.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+
+    // Fix: Handle multiple JSON objects on the same line (e.g. "}{")
+    logText = logText.replace(/}\s*{/g, '}\n{');
 
     // B. Split and Filter Noise
     // Split by CRLF, LF, or CR (to handle progress bar overwrites as separate lines)
