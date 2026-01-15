@@ -351,16 +351,14 @@ function renderModelList() {
 
 
     // 1. Stats Button
+    // 1. Stats Button
     const statsBtn = document.createElement('div');
-    statsBtn.className = `compare-btn ${isStatsMode ? 'active' : ''}`;
-    statsBtn.style.marginRight = '0.5rem';
-    statsBtn.style.backgroundColor = isStatsMode ? '#10b981' : '#ecfdf5';
-    statsBtn.style.color = isStatsMode ? 'white' : '#059669';
-    statsBtn.style.borderColor = isStatsMode ? '#10b981' : '#d1fae5';
+    statsBtn.className = `stats-btn ${isStatsMode ? 'active' : ''}`;
     statsBtn.innerHTML = `<span>📈</span> 数据统计`;
     statsBtn.onclick = toggleStatsMode;
     modelListEl.appendChild(statsBtn);
 
+    // 2. Compare Button
     // 2. Compare Button
     const compareBtn = document.createElement('div');
     compareBtn.className = `compare-btn ${isCompareMode ? 'active' : ''}`;
