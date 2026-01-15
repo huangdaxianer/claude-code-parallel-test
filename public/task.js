@@ -16,25 +16,51 @@ let compareLeftRun = null;
 let compareRightRun = null;
 
 // 获取 Task ID
+// 获取 Task ID (Initial)
 const urlParams = new URLSearchParams(window.location.search);
-const taskId = urlParams.get('id');
+let currentTaskId = urlParams.get('id');
+
+// Global Interval ID for clearing
+let refreshIntervalId = null;
 
 // Utility to get human-readable model names
 function getModelDisplayName(modelName) {
     return modelName;
 }
 
-if (!taskId) {
-    alert('No Task ID provided');
-    window.location.href = '/';
-} else {
-    init();
-}
+// Initial Load
+init();
 
 function init() {
-    fetchTaskDetails();
-    // 自动刷新
-    setInterval(fetchTaskDetails, 3000);
+    // Initialize Sidebar History
+    fetchTaskHistory();
+
+    // Setup Sidebar Toggle
+    document.getElementById('sidebar-toggle').addEventListener('click', () => {
+        document.getElementById('sidebar').classList.toggle('collapsed');
+    });
+
+    // Setup New Task Modal
+    document.getElementById('new-task-btn').addEventListener('click', openNewTaskModal);
+    document.getElementById('add-task-btn').addEventListener('click', startNewTask);
+    document.getElementById('folder-input').addEventListener('change', handleFolderUpload);
+    document.getElementById('browse-folder-btn').addEventListener('click', triggerFolderBrowse);
+    document.getElementById('random-prompt-btn').addEventListener('click', fillRandomPrompt);
+
+    // Initial Task Load
+    if (currentTaskId) {
+        loadTask(currentTaskId, false); // false = don't push state (already there)
+    } else {
+        // Show empty state or something
+        document.querySelector('.top-bar').style.display = 'none'; // Hide top bar if no task
+        document.getElementById('main-content').innerHTML = `
+            <div class="empty-state">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">👋</div>
+                <h2 style="margin-bottom: 0.5rem; color: #1e293b;">Welcome to Web Coding</h2>
+                <p style="color: #64748b;">Select a task from the sidebar or start a new one.</p>
+            </div>
+        `;
+    }
 
     // Close modal on click outside
     previewModal.addEventListener('click', (e) => {
@@ -43,13 +69,211 @@ function init() {
 
     // ESC to close modal
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closePreview();
+        if (e.key === 'Escape') {
+            closePreview();
+            closeNewTaskModal();
+        }
     });
+
+    // Handle Browser Back/Forward
+    window.addEventListener('popstate', (event) => {
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get('id');
+        if (id) {
+            loadTask(id, false);
+        } else {
+            currentTaskId = null;
+            // Reset UI to empty state could go here
+        }
+    });
+}
+
+// Function to Switch Tasks without Reload
+function loadTask(id, pushState = true) {
+    if (pushState) {
+        const newUrl = `?id=${id}`;
+        window.history.pushState({ path: newUrl }, '', newUrl);
+    }
+
+    currentTaskId = id;
+
+    // Reset State
+    currentRuns = [];
+    activeFolder = null;
+    isCompareMode = false;
+    isStatsMode = true; // Default back to Stats or stay? Usually reset is cleaner.
+
+    // Clear Interval
+    if (refreshIntervalId) clearInterval(refreshIntervalId);
+
+    // UI Reset
+    document.querySelector('.top-bar').style.display = 'flex';
+    document.getElementById('model-list').innerHTML = '<div style="padding: 1rem;">Loading...</div>';
+    document.getElementById('task-prompt-display').textContent = 'Loading...';
+    document.getElementById('log-display').innerHTML = '';
+    document.getElementById('stats-table-body').innerHTML = '';
+
+    // Re-fetch
+    fetchTaskDetails();
+    fetchTaskHistory(); // To update active highlighting
+
+    // Restart Interval
+    refreshIntervalId = setInterval(fetchTaskDetails, 3000);
+}
+
+
+// Sidebar & History Logic
+async function fetchTaskHistory() {
+    try {
+        const res = await fetch('/api/tasks');
+        const tasks = await res.json();
+        const listEl = document.getElementById('task-history-list');
+        listEl.innerHTML = '';
+
+        tasks.forEach(task => {
+            const item = document.createElement('div');
+            item.className = `history-item ${task.taskId === currentTaskId ? 'active' : ''}`;
+            item.innerHTML = `
+                <div style="flex:1; overflow:hidden;">
+                    <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${task.title || 'Untitled'}</div>
+                    <div style="font-size:0.75rem; color:#94a3b8;">${task.taskId}</div>
+                </div>
+            `;
+            item.onclick = (e) => {
+                e.preventDefault();
+                if (currentTaskId !== task.taskId) {
+                    loadTask(task.taskId);
+                }
+            };
+            listEl.appendChild(item);
+        });
+    } catch (e) {
+        console.error("Failed to fetch history:", e);
+    }
+}
+
+// New Task Modal Logic
+let selectedFolderPath = '';
+
+function openNewTaskModal() {
+    document.getElementById('new-task-modal').classList.add('show');
+}
+
+function closeNewTaskModal() {
+    document.getElementById('new-task-modal').classList.remove('show');
+}
+
+function triggerFolderBrowse() {
+    const browseBtn = document.getElementById('browse-folder-btn');
+    if (selectedFolderPath && browseBtn.classList.contains('has-file')) {
+        if (confirm('Clear selected folder?')) {
+            selectedFolderPath = '';
+            browseBtn.classList.remove('has-file');
+            browseBtn.querySelector('.folder-name').textContent = '';
+            document.getElementById('folder-input').value = '';
+        }
+        return;
+    }
+    document.getElementById('folder-input').click();
+}
+
+async function handleFolderUpload(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const browseBtn = document.getElementById('browse-folder-btn');
+    const iconSpan = browseBtn.querySelector('.icon');
+
+    try {
+        browseBtn.disabled = true;
+        iconSpan.textContent = '⏳';
+
+        const formData = new FormData();
+        const relativePath = files[0].webkitRelativePath;
+        const folderName = relativePath.split('/')[0];
+
+        formData.append('folderName', folderName);
+        for (let i = 0; i < files.length; i++) {
+            formData.append('files', files[i], files[i].webkitRelativePath);
+        }
+
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (data.path) {
+            selectedFolderPath = data.path;
+            browseBtn.classList.add('has-file');
+            browseBtn.querySelector('.folder-name').textContent = folderName;
+            iconSpan.textContent = '📁';
+        } else {
+            alert('Upload failed: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        console.error(err);
+        alert('Upload error');
+    } finally {
+        browseBtn.disabled = false;
+        if (!selectedFolderPath) iconSpan.textContent = '📁';
+    }
+}
+
+function fillRandomPrompt() {
+    const samplePrompts = [
+        '生成一个可在浏览器运行的打砖块小游戏，包含关卡、分数、音效和重新开始按钮。',
+        '生成一个 Minecraft 风格的 2D 沙盒小游戏，支持挖掘方块、放置方块和保存地图。',
+        '生成一个网页版贪吃蛇游戏，支持难度选择和最高分记录到 LocalStorage。',
+        '生成一个带登录注册的迷你博客网站（纯前端，假数据即可）。',
+        '生成一个网页版五子棋小游戏，支持人机对战。'
+    ];
+    document.getElementById('task-prompt').value = samplePrompts[Math.floor(Math.random() * samplePrompts.length)];
+}
+
+async function startNewTask() {
+    const prompt = document.getElementById('task-prompt').value.trim();
+    if (!prompt) return alert('Please enter a prompt');
+
+    const selectedModels = Array.from(document.querySelectorAll('input[name="model"]:checked')).map(cb => cb.value);
+    if (selectedModels.length === 0) return alert('Select at least one model');
+
+    const btn = document.getElementById('add-task-btn');
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+
+    try {
+        const newTaskId = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const newTask = {
+            baseDir: selectedFolderPath,
+            title: 'Initializing...',
+            prompt,
+            taskId: newTaskId,
+            models: selectedModels
+        };
+
+        const res = await fetch('/api/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task: newTask })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            closeNewTaskModal();
+            loadTask(newTaskId); // No reload, just SPA transition
+        } else {
+            alert('Failed to start task');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Error starting task');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Start Task';
+    }
 }
 
 async function fetchTaskDetails() {
     try {
-        const res = await fetch(`/api/task_details/${taskId}`);
+        const res = await fetch(`/api/task_details/${currentTaskId}`);
         const data = await res.json();
 
         if (!data.runs || data.runs.length === 0) {
@@ -91,36 +315,39 @@ async function fetchTaskDetails() {
             activeFolder = currentRuns[0].folderName;
         }
 
-        renderSidebar();
+        // Rename renderSidebar to renderModelList to avoid confusion with new sidebar
+        renderModelList();
+        if (currentTaskId) {
+            // ... visibility logic ...
+            const statsView = document.getElementById('statistics-view');
+            const comparisonView = document.getElementById('comparison-view');
+            const mainContent = document.getElementById('main-content');
 
-        const statsView = document.getElementById('statistics-view');
-        const comparisonView = document.getElementById('comparison-view');
-        const mainContent = document.getElementById('main-content');
-
-        if (isStatsMode) {
-            statsView.classList.add('active');
-            comparisonView.classList.remove('active');
-            mainContent.classList.add('hidden');
-            renderStatisticsView();
-        } else if (isCompareMode) {
-            comparisonView.classList.add('active');
-            statsView.classList.remove('active');
-            mainContent.classList.add('hidden');
-            renderComparisonView();
-        } else {
-            statsView.classList.remove('active');
-            comparisonView.classList.remove('active');
-            mainContent.classList.remove('hidden');
-            renderMainContent();
+            if (isStatsMode) {
+                statsView.classList.add('active');
+                comparisonView.classList.remove('active');
+                mainContent.classList.add('hidden');
+                renderStatisticsView();
+            } else if (isCompareMode) {
+                comparisonView.classList.add('active');
+                statsView.classList.remove('active');
+                mainContent.classList.add('hidden');
+                renderComparisonView();
+            } else {
+                statsView.classList.remove('active');
+                comparisonView.classList.remove('active');
+                mainContent.classList.remove('hidden');
+                renderMainContent();
+            }
         }
-
     } catch (err) {
         console.error('Failed to fetch details:', err);
     }
 }
 
-function renderSidebar() {
+function renderModelList() {
     modelListEl.innerHTML = '';
+
 
     // 1. Stats Button
     const statsBtn = document.createElement('div');
@@ -149,14 +376,26 @@ function renderSidebar() {
             isCompareMode = false;
             isStatsMode = false;
             activeFolder = run.folderName;
-            renderSidebar();
 
-            // UI Switch
+            // Re-render ONLY tabs immediately to show active state
+            renderModelList();
+
+            // UI Switch (Immediate)
             document.getElementById('comparison-view').classList.remove('active');
             document.getElementById('statistics-view').classList.remove('active');
             document.getElementById('main-content').classList.remove('hidden');
 
-            renderMainContent();
+            // Show loading immediately
+            logDisplayEl.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p style="margin-top: 1rem; font-size: 0.9rem;">Loading logs...</p></div>';
+
+            // Pre-set state to avoid double-clear/recursion in renderMainContent
+            logDisplayEl.dataset.lineCount = '0';
+            logDisplayEl.dataset.renderedFolder = activeFolder;
+
+            // Defer potentially heavy log parsing/rendering
+            setTimeout(() => {
+                renderMainContent();
+            }, 10);
         };
 
         let displayName = getModelDisplayName(run.modelName);
@@ -174,7 +413,7 @@ function toggleStatsMode() {
     isStatsMode = !isStatsMode;
     isCompareMode = false; // Mutually exclusive
 
-    renderSidebar();
+    renderModelList();
 
     const statsView = document.getElementById('statistics-view');
     const comparisonView = document.getElementById('comparison-view');
@@ -196,7 +435,7 @@ function toggleCompareMode() {
     isCompareMode = !isCompareMode;
     isStatsMode = false; // Mutually exclusive
 
-    renderSidebar();
+    renderModelList();
 
     const statsView = document.getElementById('statistics-view');
     const comparisonView = document.getElementById('comparison-view');
@@ -459,7 +698,7 @@ function renderMainContent() {
         logDisplayEl.innerHTML = '<div style="padding:2rem;">Loading logs...</div>';
 
         // Fetch specific log
-        fetch(`/api/task_logs/${taskId}/${activeRun.modelName}`)
+        fetch(`/api/task_logs/${currentTaskId}/${activeRun.modelName}`)
             .then(res => res.json())
             .then(data => {
                 activeRun.outputLog = data.outputLog || '';
