@@ -442,6 +442,12 @@ function renderMainContent() {
 
     let cleanLog = cleanLines.join('\n');
 
+    console.log('[Debug] Log Processing:', {
+        rawLength: activeRun.outputLog ? activeRun.outputLog.length : 0,
+        cleanLinesLength: cleanLines.length,
+        isJsonLogRaw: cleanLog.trim().startsWith('{')
+    });
+
     // 如果日志为空，显示 Empty State
     if (!cleanLog.trim()) {
         logDisplayEl.innerHTML = '<div class="empty-state"><p>Waiting for output...</p></div>';
@@ -475,8 +481,13 @@ function renderMainContent() {
                 }
 
                 // 1. Parse ALL lines to build the map (needed for correct merging)
-                const allObjects = cleanLines.map(line => {
-                    try { return JSON.parse(line); } catch (e) { return null; }
+                const allObjects = cleanLines.map((line, idx) => {
+                    try {
+                        return JSON.parse(line);
+                    } catch (e) {
+                        console.error(`[Error] JSON Parse failed at line ${idx}:`, line.substring(0, 100), e);
+                        return null;
+                    }
                 });
 
                 // 2. Build Tool Result Map
