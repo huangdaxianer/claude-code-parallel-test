@@ -12,6 +12,8 @@ let activeFolder = null;
 let lastTaskResult = null;
 let isCompareMode = false;
 let isStatsMode = false;
+let compareLeftRun = null;
+let compareRightRun = null;
 
 // 获取 Task ID
 const urlParams = new URLSearchParams(window.location.search);
@@ -57,9 +59,14 @@ async function fetchTaskDetails() {
 
         currentRuns = data.runs;
 
-        // 如果没有选中的 activeFolder，默认选第一个
         if (!activeFolder && currentRuns.length > 0) {
             activeFolder = currentRuns[0].folderName;
+        }
+
+        // Update Prompt Display
+        const promptEl = document.getElementById('task-prompt-display');
+        if (promptEl && data.prompt && promptEl.textContent !== data.prompt) {
+            promptEl.textContent = data.prompt;
         }
 
         // 确保 activeFolder 仍然存在于当前的 runs 中 (防止它被删除了?)
@@ -73,6 +80,8 @@ async function fetchTaskDetails() {
             renderStatisticsView();
         } else if (isCompareMode) {
             renderComparisonView();
+        } else if (isStatsMode) {
+            renderStatsView();
         } else {
             renderMainContent();
         }
@@ -302,80 +311,108 @@ function renderStatisticsView() {
     });
 }
 
-function renderComparisonView() {
-    const comparisonView = document.getElementById('comparison-view');
+function renderComparisonView() { // Revised for Split View
+    const runs = currentRuns || [];
+    if (runs.length === 0) return;
 
-    // 1. Get current folder list to handle additions/removals
-    const currentFolders = currentRuns.map(r => r.folderName);
-    const existingCards = Array.from(comparisonView.querySelectorAll('.comparison-card'));
+    // 1. Initialize Defaults if needed
+    if (!compareLeftRun && runs.length > 0) compareLeftRun = runs[0].folderName;
+    if (!compareRightRun && runs.length > 0) compareRightRun = runs.length > 1 ? runs[1].folderName : runs[0].folderName;
 
-    // 2. Remove cards that no longer exist
-    existingCards.forEach(card => {
-        if (!currentFolders.includes(card.dataset.folder)) {
-            card.remove();
+    // 2. Update Both Sides
+    updateComparisonSide('left');
+    updateComparisonSide('right');
+}
+
+// Global function for onchange event
+window.updateComparisonPanel = function (side) {
+    const select = document.getElementById(`select-${side}`);
+    if (side === 'left') compareLeftRun = select.value;
+    else compareRightRun = select.value;
+    renderComparisonView();
+};
+
+function updateComparisonSide(side) {
+    const select = document.getElementById(`select-${side}`);
+    const statusBadge = document.getElementById(`status-${side}`);
+    const iframe = document.getElementById(`iframe-${side}`);
+    const emptyState = document.getElementById(`empty-${side}`);
+
+    // a. Sync Options (Preserve selection if list hasn't effectively changed)
+    syncSelectOptions(select, currentRuns);
+
+    // b. Enforce Selection from State
+    const currentTarget = (side === 'left') ? compareLeftRun : compareRightRun;
+
+    // Validate target exists
+    if (currentTarget && currentRuns.find(r => r.folderName === currentTarget)) {
+        select.value = currentTarget;
+    } else {
+        // Fallback
+        if (currentRuns.length > 0) {
+            const fallback = currentRuns[0].folderName;
+            select.value = fallback;
+            if (side === 'left') compareLeftRun = fallback;
+            else compareRightRun = fallback;
         }
+    }
+
+    // c. Update Content
+    const run = currentRuns.find(r => r.folderName === select.value);
+    if (!run) return;
+
+    // Status
+    statusBadge.textContent = run.status;
+    statusBadge.className = `status-badge status-${run.status || 'pending'}`;
+    statusBadge.style.display = 'inline-block';
+
+    // Iframe Logic
+    const htmlFile = (run.generatedFiles || []).find(f => f.endsWith('.html'));
+
+    if (htmlFile) {
+        const targetSrc = `/artifacts/${run.folderName}/${htmlFile}`;
+        // Only update src if changed to avoid reload flickering
+        if (iframe.dataset.src !== targetSrc) {
+            iframe.src = targetSrc;
+            iframe.dataset.src = targetSrc;
+        }
+        iframe.style.display = 'block';
+        emptyState.style.display = 'none';
+    } else {
+        iframe.style.display = 'none';
+        iframe.dataset.src = '';
+        emptyState.style.display = 'flex';
+        emptyState.innerHTML = `<p>No HTML preview available<br><span style="font-size:0.8em;color:#cbd5e1;text-transform:uppercase">${run.status}</span></p>`;
+    }
+}
+
+function syncSelectOptions(select, runs) {
+    // Check if options need update
+    const currentOptionValues = Array.from(select.options).map(o => o.value).join(',');
+    const newOptionValues = runs.map(r => r.folderName).join(',');
+
+    if (currentOptionValues === newOptionValues) return; // No change needed
+
+    const savedValue = select.value;
+    select.innerHTML = '';
+
+    runs.forEach(run => {
+        const option = document.createElement('option');
+        option.value = run.folderName;
+        // Display Model Name + Status
+        let statusSymbol = '⏳';
+        if (run.status === 'running') statusSymbol = '🔄';
+        else if (run.status === 'completed') statusSymbol = '✅';
+
+        option.textContent = `${getModelDisplayName(run.modelName)} (${statusSymbol})`;
+        select.appendChild(option);
     });
 
-    // 3. Update or Add cards
-    currentRuns.forEach(run => {
-        let card = comparisonView.querySelector(`.comparison-card[data-folder="${run.folderName}"]`);
-        const htmlFile = (run.generatedFiles || []).find(f => f.endsWith('.html'));
-        const targetSrc = htmlFile ? `/artifacts/${run.folderName}/${htmlFile}` : null;
-
-        if (!card) {
-            // CREATE NEW CARD
-            card = document.createElement('div');
-            card.className = 'comparison-card';
-            card.dataset.folder = run.folderName;
-
-            const header = document.createElement('div');
-            header.className = 'comparison-card-header';
-            header.innerHTML = `
-                <span>${getModelDisplayName(run.modelName)}</span>
-                <span class="status-badge status-${run.status || 'pending'}">${run.status || 'pending'}</span>
-            `;
-            card.appendChild(header);
-
-            if (targetSrc) {
-                const iframe = document.createElement('iframe');
-                iframe.className = 'comparison-iframe';
-                iframe.src = targetSrc; // No timestamp initially
-                iframe.dataset.src = targetSrc;
-                card.appendChild(iframe);
-            } else {
-                const placeholder = document.createElement('div');
-                placeholder.className = 'empty-state';
-                placeholder.innerHTML = '<p>No HTML preview available</p>';
-                card.appendChild(placeholder);
-            }
-            comparisonView.appendChild(card);
-        } else {
-            // UPDATE EXISTING CARD
-            const badge = card.querySelector('.status-badge');
-            if (badge) {
-                badge.textContent = run.status || 'pending';
-                badge.className = `status-badge status-${run.status || 'pending'}`;
-            }
-
-            const iframe = card.querySelector('iframe');
-            if (iframe) {
-                if (targetSrc && iframe.dataset.src !== targetSrc) {
-                    iframe.src = targetSrc;
-                    iframe.dataset.src = targetSrc;
-                }
-            } else if (targetSrc) {
-                // Case where run didn't have HTML before but has it now
-                const placeholder = card.querySelector('.empty-state');
-                if (placeholder) placeholder.remove();
-
-                const newIframe = document.createElement('iframe');
-                newIframe.className = 'comparison-iframe';
-                newIframe.src = targetSrc;
-                newIframe.dataset.src = targetSrc;
-                card.appendChild(newIframe);
-            }
-        }
-    });
+    if (savedValue) {
+        // Try to restore selection
+        const exists = runs.find(r => r.folderName === savedValue);
+        if (exists) select.value = savedValue;
+    }
 }
 
 function renderMainContent() {
@@ -1188,4 +1225,21 @@ function downloadFiles() {
     }
     // Trigger download
     window.location.href = `/api/download_zip?folderName=${encodeURIComponent(activeFolder)}`;
+}
+
+function copyPrompt() {
+    const promptEl = document.getElementById('task-prompt-display');
+    if (!promptEl) return;
+
+    const text = promptEl.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copy-prompt-btn');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#10b981"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+        setTimeout(() => {
+            btn.innerHTML = originalHtml;
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy content: ', err);
+    });
 }
