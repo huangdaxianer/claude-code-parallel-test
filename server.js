@@ -318,13 +318,24 @@ app.get('/api/task_details/:taskId', (req, res) => {
             ? responseData.expectedModels
             : discoveredModels;
 
+        // Load Stats Cache
+        const statsCachePath = path.join(taskDir, 'task_stats.json');
+        let statsCache = {};
+        if (fs.existsSync(statsCachePath)) {
+            try {
+                statsCache = JSON.parse(fs.readFileSync(statsCachePath, 'utf8'));
+            } catch (e) { }
+        }
+        let cacheDirty = false;
+
         responseData.runs = modelsToReturn.map(modelName => {
             const folderPath = path.join(taskDir, modelName);
             const uniqueFolderIdentifier = path.join(taskId, modelName);
 
-            let outputLog = '';
+            let outputLog = null;
             let generatedFiles = [];
             let status = 'pending';
+            let stats = null;
 
             if (fs.existsSync(folderPath)) {
                 status = 'running';
@@ -332,26 +343,45 @@ app.get('/api/task_details/:taskId', (req, res) => {
                 try {
                     const logFilePath = path.join(taskDir, `${modelName}.txt`);
                     if (fs.existsSync(logFilePath)) {
-                        const fullLog = fs.readFileSync(logFilePath, 'utf8');
-                        outputLog = null; // Don't send full log by default
+                        const logStat = fs.statSync(logFilePath);
+                        const mtime = logStat.mtimeMs;
 
-                        // Check status
-                        const lines = fullLog.split('\n').filter(l => l.trim());
-                        if (lines.length > 0) {
-                            status = 'running';
-                            try {
-                                const lastLine = lines[lines.length - 1];
-                                const lastObj = JSON.parse(lastLine);
-                                if (lastObj.type === 'result') {
-                                    status = 'completed';
-                                }
-                            } catch (err) { }
+                        // Check Cache
+                        if (statsCache[modelName] && statsCache[modelName].mtime === mtime && statsCache[modelName].stats) {
+                            // Cache Hit
+                            stats = statsCache[modelName].stats;
+                            status = statsCache[modelName].status;
                         } else {
-                            status = 'pending';
-                        }
+                            // Cache Miss - Read File
+                            const fullLog = fs.readFileSync(logFilePath, 'utf8');
+                            outputLog = null;
 
-                        // Calculate Stats
-                        stats = calculateLogStats(fullLog);
+                            // Check status
+                            const lines = fullLog.split('\n').filter(l => l.trim());
+                            if (lines.length > 0) {
+                                status = 'running';
+                                try {
+                                    const lastLine = lines[lines.length - 1];
+                                    const lastObj = JSON.parse(lastLine);
+                                    if (lastObj.type === 'result') {
+                                        status = 'completed';
+                                    }
+                                } catch (err) { }
+                            } else {
+                                status = 'pending';
+                            }
+
+                            // Calculate Stats
+                            stats = calculateLogStats(fullLog);
+
+                            // Update Cache
+                            statsCache[modelName] = {
+                                mtime: mtime,
+                                stats: stats,
+                                status: status
+                            };
+                            cacheDirty = true;
+                        }
                     }
                 } catch (err) {
                     console.error(`Error processing log for ${modelName}:`, err);
@@ -389,6 +419,15 @@ app.get('/api/task_details/:taskId', (req, res) => {
                 status
             };
         });
+
+        // Save Cache if dirty
+        if (cacheDirty) {
+            try {
+                fs.writeFileSync(statsCachePath, JSON.stringify(statsCache, null, 2));
+            } catch (e) {
+                console.error("Failed to save stats cache:", e);
+            }
+        }
 
         res.json(responseData);
     });
