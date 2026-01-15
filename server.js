@@ -332,56 +332,59 @@ app.get('/api/task_details/:taskId', (req, res) => {
                 try {
                     const logFilePath = path.join(taskDir, `${modelName}.txt`);
                     if (fs.existsSync(logFilePath)) {
-                        outputLog = fs.readFileSync(logFilePath, 'utf8');
-                        const lines = outputLog.split('\n').filter(l => l.trim());
+                        const fullLog = fs.readFileSync(logFilePath, 'utf8');
+                        outputLog = null; // Don't send full log by default
+
+                        // Check status
+                        const lines = fullLog.split('\n').filter(l => l.trim());
                         if (lines.length > 0) {
                             status = 'running';
                             try {
-                                // 检查最后一行是否是 result 类型
                                 const lastLine = lines[lines.length - 1];
                                 const lastObj = JSON.parse(lastLine);
                                 if (lastObj.type === 'result') {
                                     status = 'completed';
                                 }
-                            } catch (err) {
-                                // 如果最后一行解析失败，可能还在写入中，保持 running
-                            }
+                            } catch (err) { }
                         } else {
                             status = 'pending';
                         }
-                    }
-                } catch (e) {
-                    outputLog = '(Starting...)';
-                    status = 'pending';
-                }
 
-                // 读取文件夹内的文件列表
+                        // Calculate Stats
+                        stats = calculateLogStats(fullLog);
+                    }
+                } catch (err) {
+                    console.error(`Error processing log for ${modelName}:`, err);
+                }
+            }
+
+            // Find generated files
+            if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
                 try {
-                    const readDirRecursive = (dir) => {
-                        let results = [];
-                        const list = fs.readdirSync(dir, { withFileTypes: true });
-                        list.forEach(file => {
-                            if (file.name === 'node_modules' || file.name === '.git' || file.name === '.DS_Store' || file.name.startsWith('prompt')) return;
-                            const fullPath = path.join(dir, file.name);
-                            const relPath = path.relative(folderPath, fullPath);
-                            if (file.isDirectory()) {
-                                results = results.concat(readDirRecursive(fullPath));
+                    const walkSync = (dir, filelist = []) => {
+                        const files = fs.readdirSync(dir);
+                        files.forEach(file => {
+                            const filepath = path.join(dir, file);
+                            if (fs.statSync(filepath).isDirectory()) {
+                                walkSync(filepath, filelist);
                             } else {
-                                results.push(relPath);
+                                // Return relative path from model folder
+                                filelist.push(path.relative(folderPath, filepath));
                             }
                         });
-                        return results;
+                        return filelist;
                     };
-                    generatedFiles = readDirRecursive(folderPath);
-                } catch (e) { }
-            } else {
-                outputLog = 'Waiting for model process...';
+                    generatedFiles = walkSync(folderPath);
+                } catch (e) {
+                    console.error(`Error reading generated files for ${modelName}:`, e);
+                }
             }
 
             return {
                 folderName: uniqueFolderIdentifier,
                 modelName,
-                outputLog,
+                // outputLog, // Exclude heavy log
+                stats,     // Include calculated stats
                 generatedFiles,
                 status
             };
@@ -389,6 +392,23 @@ app.get('/api/task_details/:taskId', (req, res) => {
 
         res.json(responseData);
     });
+});
+
+// 新增：单独获取特定模型的完整日志
+app.get('/api/task_logs/:taskId/:modelName', (req, res) => {
+    const { taskId, modelName } = req.params;
+    const logFilePath = path.join(TASKS_DIR, taskId, `${modelName}.txt`);
+
+    if (fs.existsSync(logFilePath)) {
+        try {
+            const content = fs.readFileSync(logFilePath, 'utf-8');
+            res.json({ outputLog: content });
+        } catch (err) {
+            res.status(500).json({ error: 'Failed to read log file' });
+        }
+    } else {
+        res.json({ outputLog: '' });
+    }
 });
 
 const archiver = require('archiver');
@@ -538,6 +558,68 @@ app.delete('/api/tasks/:taskId', (req, res) => {
 
     res.json({ success: true });
 });
+
+
+// Helper to calculate stats on valid JSON logs
+function calculateLogStats(logContent) {
+    const stats = {
+        duration: 0,
+        turns: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        toolCounts: {
+            TodoWrite: 0,
+            Read: 0,
+            Write: 0,
+            Bash: 0
+        }
+    };
+
+    if (!logContent) return stats;
+
+    // Handle duplicate newlines or concatenated JSON objects just in case
+    const formattedContent = logContent.replace(/}\s*{/g, '}\n{');
+    const lines = formattedContent.split(/\r\n|\n|\r/);
+
+    lines.forEach(line => {
+        if (!line.trim() || !line.trim().startsWith('{')) return;
+        try {
+            const obj = JSON.parse(line);
+
+            if (obj.type === 'result') {
+                if (obj.duration_ms) stats.duration = (obj.duration_ms / 1000).toFixed(1);
+                else if (obj.duration) stats.duration = (obj.duration / 1000).toFixed(1);
+
+                if (obj.usage) {
+                    stats.inputTokens = obj.usage.input_tokens || 0;
+                    stats.outputTokens = obj.usage.output_tokens || 0;
+                    stats.cacheReadTokens = obj.usage.cache_read_input_tokens || 0;
+                } else if (obj.tokenUsage) {
+                    stats.inputTokens = obj.tokenUsage.input || obj.tokenUsage.input_tokens || 0;
+                    stats.outputTokens = obj.tokenUsage.output || obj.tokenUsage.output_tokens || 0;
+                    stats.cacheReadTokens = obj.tokenUsage.cacheRead || obj.tokenUsage.cache_read_input_tokens || 0;
+                }
+            }
+
+            if (obj.type === 'user') stats.turns++;
+
+            if (obj.type === 'tool_use') {
+                const name = obj.name;
+                if (stats.toolCounts.hasOwnProperty(name)) stats.toolCounts[name]++;
+            }
+            if (obj.type === 'assistant' && obj.message && Array.isArray(obj.message.content)) {
+                obj.message.content.forEach(block => {
+                    if (block.type === 'tool_use') {
+                        const name = block.name;
+                        if (stats.toolCounts.hasOwnProperty(name)) stats.toolCounts[name]++;
+                    }
+                });
+            }
+        } catch (e) { }
+    });
+    return stats;
+}
 
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);

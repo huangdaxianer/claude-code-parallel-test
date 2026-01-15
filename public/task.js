@@ -11,7 +11,7 @@ let currentRuns = [];
 let activeFolder = null;
 let lastTaskResult = null;
 let isCompareMode = false;
-let isStatsMode = false;
+let isStatsMode = true;
 let compareLeftRun = null;
 let compareRightRun = null;
 
@@ -57,9 +57,25 @@ async function fetchTaskDetails() {
             return;
         }
 
-        currentRuns = data.runs;
+        // Merge new data with existing logs to prevent overwriting full logs with nulls
+        if (currentRuns.length > 0) {
+            const oldRunsMap = new Map(currentRuns.map(r => [r.folderName, r]));
+            currentRuns = data.runs.map(newRun => {
+                const oldRun = oldRunsMap.get(newRun.folderName);
+                // If we have a local log and the new one is null (slim response), keep the local one
+                // UNLESS the status changed to running/completed, implying update needed?
+                // Actually, simply keeping it is fine. If we need fresh, we fetch.
+                if (oldRun && oldRun.outputLog && !newRun.outputLog) {
+                    newRun.outputLog = oldRun.outputLog;
+                }
+                return newRun;
+            });
+        } else {
+            currentRuns = data.runs;
+        }
 
-        if (!activeFolder && currentRuns.length > 0) {
+        // Only auto-select if NOT in stats mode and no active folder
+        if (!isStatsMode && !activeFolder && currentRuns.length > 0) {
             activeFolder = currentRuns[0].folderName;
         }
 
@@ -71,18 +87,30 @@ async function fetchTaskDetails() {
 
         // 确保 activeFolder 仍然存在于当前的 runs 中 (防止它被删除了?)
         const activeRunExists = currentRuns.find(r => r.folderName === activeFolder);
-        if (!activeRunExists && currentRuns.length > 0) {
+        if (!activeRunExists && currentRuns.length > 0 && !isStatsMode) {
             activeFolder = currentRuns[0].folderName;
         }
 
         renderSidebar();
+
+        const statsView = document.getElementById('statistics-view');
+        const comparisonView = document.getElementById('comparison-view');
+        const mainContent = document.getElementById('main-content');
+
         if (isStatsMode) {
+            statsView.classList.add('active');
+            comparisonView.classList.remove('active');
+            mainContent.classList.add('hidden');
             renderStatisticsView();
         } else if (isCompareMode) {
+            comparisonView.classList.add('active');
+            statsView.classList.remove('active');
+            mainContent.classList.add('hidden');
             renderComparisonView();
-        } else if (isStatsMode) {
-            renderStatsView();
         } else {
+            statsView.classList.remove('active');
+            comparisonView.classList.remove('active');
+            mainContent.classList.remove('hidden');
             renderMainContent();
         }
 
@@ -203,6 +231,11 @@ function calculateRunStats(run) {
         }
     };
 
+    // Use backend pre-calculated stats if available
+    if (run.stats) {
+        return { ...stats, ...run.stats };
+    }
+
     if (!run.outputLog) return stats;
 
     // Fix: Handle multiple JSON objects on the same line (e.g. "}{")
@@ -289,6 +322,7 @@ function calculateRunStats(run) {
 function renderStatisticsView() {
     const tbody = document.getElementById('stats-table-body');
     tbody.innerHTML = '';
+    console.log('[Debug] Rendering Stats View for runs:', currentRuns.length);
 
     currentRuns.forEach(run => {
         const stats = calculateRunStats(run);
@@ -416,11 +450,31 @@ function syncSelectOptions(select, runs) {
 }
 
 function renderMainContent() {
+    if (!activeFolder) return;
     const activeRun = currentRuns.find(r => r.folderName === activeFolder);
     if (!activeRun) return;
 
+    // Check if log is missing (lazy load)
+    if (activeRun.outputLog === undefined || activeRun.outputLog === null) {
+        logDisplayEl.innerHTML = '<div style="padding:2rem;">Loading logs...</div>';
+
+        // Fetch specific log
+        fetch(`/api/task_logs/${taskId}/${activeRun.modelName}`)
+            .then(res => res.json())
+            .then(data => {
+                activeRun.outputLog = data.outputLog || '';
+                renderMainContent(); // Re-render with log
+            })
+            .catch(err => {
+                logDisplayEl.innerHTML = `<div style="color:red;padding:2rem;">Failed to load logs: ${err.message}</div>`;
+            });
+        return;
+    }
+
+    const content = activeRun.outputLog || '';
+
     // 1. Render Log
-    let logText = activeRun.outputLog || '';
+    let logText = content;
 
     // A. Strip ANSI Codes
     logText = logText.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
@@ -519,10 +573,14 @@ function renderMainContent() {
 
                 // 1. Parse ALL lines to build the map (needed for correct merging)
                 const allObjects = cleanLines.map((line, idx) => {
+                    if (!line.trim()) return null; // Skip empty lines
                     try {
                         return JSON.parse(line);
                     } catch (e) {
-                        console.error(`[Error] JSON Parse failed at line ${idx}:`, line.substring(0, 100), e);
+                        // Only log if it really looks like JSON (starts with {) but failed
+                        if (line.trim().startsWith('{')) {
+                            console.error(`[Error] JSON Parse failed at line ${idx}:`, line.substring(0, 100), e);
+                        }
                         return null;
                     }
                 });
