@@ -172,7 +172,6 @@ function toggleCompareMode() {
 
     const statsView = document.getElementById('statistics-view');
     const comparisonView = document.getElementById('comparison-view');
-    const statsView = document.getElementById('stats-view');
     const mainContent = document.getElementById('main-content');
 
     if (isCompareMode) {
