@@ -84,6 +84,7 @@ while IFS=';' read -r base_dir title prompt task_id models_str <&3 || [[ -n "$ba
             if ! nohup sudo -n -H -u claude-user "$CLAUDE_BIN" -p "$prompt" \
                 --model "$model_name" \
                 --allowedTools 'Read(./**),Edit(./**),Bash(*)' \
+                --disallowedTools 'EnterPlanMode,ExitPlanMode' \
                 --dangerously-skip-permissions \
                 --output-format stream-json --verbose \
                 > "../${model_name}.txt" 2>&1 &

@@ -277,37 +277,48 @@
         }
 
         .comparison-view.active {
-            display: grid;
-            grid-auto-flow: column;
-            grid-auto-columns: 1fr;
+            display: flex;
+            flex-direction: row;
         }
 
-        .comparison-card {
+        .comparison-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
             background: white;
             border-radius: 0.75rem;
             border: 1px solid #e2e8f0;
-            display: flex;
-            flex-direction: column;
             overflow: hidden;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
-        .comparison-card-header {
+        .comparison-header {
             padding: 0.5rem 1rem;
             background: #f8fafc;
             border-bottom: 1px solid #e2e8f0;
-            font-weight: 600;
-            font-size: 0.85rem;
-            color: #475569;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            height: 50px;
+        }
+
+        .model-selector {
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.375rem;
+            font-size: 0.9rem;
+            color: #334155;
+            background-color: #ffffff;
+            cursor: pointer;
+            min-width: 200px;
         }
 
         .comparison-iframe {
             flex: 1;
             border: none;
             background: white;
+            width: 100%;
+            height: 100%;
         }
 
         /* Main Content - Split View */
@@ -1044,6 +1055,25 @@
 
         <!-- Statistics View -->
         <div id="statistics-view" class="statistics-view">
+            <!-- Prompt Display Section -->
+            <div class="stats-card" style="margin-bottom: 1.5rem; padding: 1.5rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                    <h3 style="margin:0; font-size:1rem; color:#1e293b;">Prompt</h3>
+                    <button id="copy-prompt-btn" class="back-btn" onclick="copyPrompt()"
+                        style="padding:0.4rem 0.6rem; font-size:0.8rem; display:flex; align-items:center; gap:0.4rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                        Copy
+                    </button>
+                </div>
+                <div id="task-prompt-display"
+                    style="background:#f1f5f9; padding:1rem; border-radius:0.5rem; font-family:'Menlo',monospace; font-size:0.9rem; color:#334155; white-space:pre-wrap; max-height:300px; overflow-y:auto;">
+                    Loading prompt...</div>
+            </div>
+
             <div class="stats-card">
                 <table class="stats-table">
                     <thead>
@@ -1069,7 +1099,37 @@
         </div>
 
         <div id="comparison-view" class="comparison-view">
-            <!-- Comparison Frames -->
+            <!-- Left Panel -->
+            <div class="comparison-panel" id="comparison-left">
+                <div class="comparison-header">
+                    <select class="model-selector" id="select-left" onchange="updateComparisonPanel('left')">
+                        <option value="" disabled selected>Select Model</option>
+                    </select>
+                    <span id="status-left" class="status-badge" style="display:none"></span>
+                </div>
+                <div style="flex:1; position:relative; overflow:hidden;">
+                    <iframe id="iframe-left" class="comparison-iframe"></iframe>
+                    <div id="empty-left" class="empty-state" style="position:absolute; inset:0; background:white;">
+                        <p>No preview available</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel -->
+            <div class="comparison-panel" id="comparison-right">
+                <div class="comparison-header">
+                    <select class="model-selector" id="select-right" onchange="updateComparisonPanel('right')">
+                        <option value="" disabled selected>Select Model</option>
+                    </select>
+                    <span id="status-right" class="status-badge" style="display:none"></span>
+                </div>
+                <div style="flex:1; position:relative; overflow:hidden;">
+                    <iframe id="iframe-right" class="comparison-iframe"></iframe>
+                    <div id="empty-right" class="empty-state" style="position:absolute; inset:0; background:white;">
+                        <p>No preview available</p>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <main class="main-content" id="main-content">
@@ -1125,8 +1185,7 @@
             </div>
         </main>
 
-        <section id="comparison-view" class="comparison-view"></section>
-        <section id="stats-view" class="stats-view"></section>
+
     </div>
 
     <!-- File Preview Modal -->
