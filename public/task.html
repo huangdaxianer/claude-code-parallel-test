@@ -18,143 +18,74 @@
             overflow: hidden;
         }
 
-        /* Updated App Layout for Sidebar */
         .app-layout {
-            display: flex;
-            flex-direction: row;
-            /* Horizontal Layout */
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            grid-template-rows: 64px 1fr;
+            grid-template-areas:
+                "logo topbar"
+                "sidebar main";
             width: 100vw;
             height: 100vh;
             overflow: hidden;
         }
 
-        .sidebar {
-            width: 250px;
-            background: #ffffff;
-            border-right: 1px solid #e2e8f0;
-            display: flex;
-            flex-direction: column;
-            transition: width 0.3s ease;
-            z-index: 50;
+        .app-layout.collapsed {
+            grid-template-areas:
+                "logo topbar"
+                "main main";
         }
 
-        .sidebar.collapsed {
-            width: 0;
-            border-right: none;
-        }
-
+        /* 1. Logo Area */
         .sidebar-header {
-            height: 64px;
+            grid-area: logo;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            /* justify-content: space-between; */
+            gap: 1rem;
             padding: 0 1rem;
+            border-right: 1px solid #e2e8f0;
             border-bottom: 1px solid #e2e8f0;
-        }
-
-        .sidebar.collapsed .sidebar-header {
-            justify-content: center;
-            padding: 0;
-        }
-
-        .sidebar.collapsed .logo h1,
-        .sidebar.collapsed .btn-new-task .text {
-            display: none;
-        }
-
-        .btn-new-task {
-            margin: 1rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-            padding: 0.75rem;
-            background: #000;
-            color: #fff;
-            border-radius: 0.5rem;
-            font-weight: 600;
-            border: none;
-            cursor: pointer;
-            overflow: hidden;
-        }
-
-        .sidebar.collapsed .btn-new-task {
-            padding: 0.75rem 0;
-            margin: 1rem 0.5rem;
-        }
-
-        .task-history-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 0 0.5rem;
-        }
-
-        .sidebar.collapsed .task-history-list {
-            display: none;
-        }
-
-        .history-item {
-            padding: 0.75rem;
-            margin-bottom: 0.25rem;
-            border-radius: 0.5rem;
-            cursor: pointer;
-            color: #475569;
-            font-size: 0.9rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            transition: all 0.2s;
-        }
-
-        .history-item:hover {
-            background: #f1f5f9;
-            color: #0f172a;
-        }
-
-        .history-item.active {
-            background: #eff6ff;
-            color: #2563eb;
-            font-weight: 500;
-        }
-
-        .main-wrapper {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            overflow: hidden;
             background: #ffffff;
+            z-index: 20;
         }
 
-        .icon-btn-ghost {
-            background: none;
-            border: none;
-            cursor: pointer;
-            color: #64748b;
-            padding: 4px;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .icon-btn-ghost:hover {
-            background: #f1f5f9;
-            color: #000;
-        }
-
-        /* Top Bar - Model Tabs */
+        /* 2. Top Bar */
         .top-bar {
-            height: 64px;
-            background: #ffffff;
-            border-bottom: 1px solid #e2e8f0;
+            grid-area: topbar;
             display: flex;
             align-items: center;
             padding: 0 1.5rem;
-            flex-shrink: 0;
             gap: 2rem;
-            margin-bottom: 0;
-            /* Clear global header margin */
+            background: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+            z-index: 10;
+        }
+
+        /* 3. Sidebar List */
+        .sidebar {
+            grid-area: sidebar;
+            display: flex;
+            flex-direction: column;
+            background: #ffffff;
+            border-right: 1px solid #e2e8f0;
+            overflow-y: auto;
+            width: auto;
+            /* Reset fixed width */
+        }
+
+        .app-layout.collapsed .sidebar {
+            display: none;
+        }
+
+        /* 4. Main Content */
+        .main-wrapper {
+            grid-area: main;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #ffffff;
+            /* Reset margins/paddings as grid handles layout */
         }
 
         .nav-header {
@@ -166,6 +97,7 @@
             padding-right: 1.5rem;
             height: 32px;
         }
+
 
         .back-btn {
             background: none;
@@ -1157,14 +1089,24 @@
 </head>
 
 <body>
-    <div class="app-layout">
+    <div class="app-layout" id="app-layout">
+        <!-- 1. Logo Area -->
+        <div class="sidebar-header">
+            <button id="sidebar-toggle" class="icon-btn-ghost">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+            <div class="logo">
+                <h1>Web Coding</h1>
+            </div>
+        </div>
+
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header" style="justify-content: flex-start; gap: 1rem;">
-                <div class="logo">
-                    <h1>Web Coding</h1>
-                </div>
-            </div>
 
             <button id="new-task-btn" class="btn-new-task">
                 <span class="icon">+</span>
@@ -1178,23 +1120,19 @@
         </aside>
 
         <!-- Main Content Area (Right Side) -->
-        <div class="main-wrapper">
-            <header class="top-bar">
-                <button id="sidebar-toggle" class="icon-btn-ghost" style="margin-right: 1rem;">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="3" y1="12" x2="21" y2="12"></line>
-                        <line x1="3" y1="6" x2="21" y2="6"></line>
-                        <line x1="3" y1="18" x2="21" y2="18"></line>
-                    </svg>
-                </button>
+        <!-- 3. Top Bar -->
+        <header class="top-bar">
 
 
-                <div id="model-list" class="model-list">
-                    <!-- Model tabs will be injected here -->
-                    <div style="padding: 1rem; color: #94a3b8; font-size: 0.9rem;">Loading...</div>
-                </div>
-            </header>
+
+            <div id="model-list" class="model-list">
+                <!-- Model tabs will be injected here -->
+                <div style="padding: 1rem; color: #94a3b8; font-size: 0.9rem;">Loading...</div>
+            </div>
+        </header>
+
+        <!-- 4. Main Content Area (Right Side) -->
+        <div class="main-wrapper" id="main-content-wrapper">
 
             <!-- Statistics View -->
             <div id="statistics-view" class="statistics-view">

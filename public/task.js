@@ -36,8 +36,9 @@ function init() {
     fetchTaskHistory();
 
     // Setup Sidebar Toggle
+    // Setup Sidebar Toggle
     document.getElementById('sidebar-toggle').addEventListener('click', () => {
-        document.getElementById('sidebar').classList.toggle('collapsed');
+        document.getElementById('app-layout').classList.toggle('collapsed');
     });
 
     // Setup New Task Modal
