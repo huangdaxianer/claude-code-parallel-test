@@ -208,8 +208,6 @@ async function fetchTaskHistory() {
 }
 
 async function deleteTask(taskId) {
-    if (!confirm('确定要删除这个任务吗？此操作不可逆。')) return;
-
     try {
         const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
         const data = await res.json();
