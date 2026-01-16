@@ -139,7 +139,8 @@ app.post('/api/browse', (req, res) => {
 });
 
 // 上传文件夹接口 (保持目录结构)
-app.post('/api/upload', upload.array('files', 1000), (req, res) => {
+// Increase maxCount to 100k to handle large folders
+app.post('/api/upload', upload.array('files', 100000), (req, res) => {
     const folderName = req.body.folderName;
     if (!folderName) {
         console.error('[Upload] Error: Missing folderName in request body');
@@ -660,5 +661,22 @@ function calculateLogStats(logContent) {
     });
     return stats;
 }
+
+// Multer error handling middleware (must be after routes)
+app.use((err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        console.error('[MulterError]', err);
+        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+            return res.status(400).json({
+                error: '文件数量超过上限或字段名错误。请检查上传的文件数量（当前上限 100,000）或联系管理员。',
+                detail: err.message
+            });
+        }
+        return res.status(400).json({ error: `上传错误: ${err.message}`, code: err.code });
+    }
+    // Generic error handler
+    console.error('[ServerError]', err);
+    res.status(500).json({ error: err.message || 'Internal Server Error' });
+});
 
 
