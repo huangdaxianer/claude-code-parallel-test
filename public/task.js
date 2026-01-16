@@ -280,7 +280,8 @@ async function handleFolderUpload(e) {
 
         formData.append('folderName', folderName);
         for (let i = 0; i < files.length; i++) {
-            formData.append('files', files[i], files[i].webkitRelativePath);
+            formData.append('files', files[i]);
+            formData.append('filePaths', files[i].webkitRelativePath);
         }
 
         console.log(`[Upload] FormData prepared. Sending request to server...`);

@@ -162,6 +162,13 @@ app.post('/api/upload', upload.any(), (req, res) => {
 
         const filesToProcess = req.files.filter(f => f.fieldname === 'files');
         const fileCount = filesToProcess.length;
+
+        // Ensure filePaths is an array
+        let filePaths = req.body.filePaths;
+        if (!Array.isArray(filePaths)) {
+            filePaths = [filePaths];
+        }
+
         let totalBytes = 0;
         filesToProcess.forEach(f => totalBytes += f.size);
         const sizeInMB = (totalBytes / (1024 * 1024)).toFixed(2);
@@ -169,15 +176,23 @@ app.post('/api/upload', upload.any(), (req, res) => {
         console.log(`[Upload] Received ${fileCount} files, total size: ${sizeInMB} MB`);
 
         filesToProcess.forEach((file, index) => {
-            const relPath = file.originalname;
-            const fullPath = path.join(targetBase, relPath);
+            // Use the explicit path sent from the client
+            const relPath = filePaths[index] || file.originalname;
+
+            // The path starts with the folder name, e.g. "my-project/src/index.js"
+            // Since targetBase is already .../TIMESTAMP_my-project, we should join 
+            // relative to the PARENT of targetBase to avoid double nesting, 
+            // OR join relative to targetBase but strip the first component.
+
+            // Let's join relative to targetBase's parent directory
+            const parentDir = path.dirname(targetBase);
+            const fullPath = path.join(parentDir, `${uploadId}_${relPath}`);
             const dir = path.dirname(fullPath);
 
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
             fs.renameSync(file.path, fullPath);
 
-            // Log every 100 files or the last one to avoid spamming too much
             if (index % 100 === 0 || index === fileCount - 1) {
                 console.log(`[Upload] Processing: ${index + 1}/${fileCount} files...`);
             }
