@@ -953,9 +953,175 @@
         }
 
         .close-btn:hover {
-            background: #ef4444;
-            color: white;
+            background: #f1f5f9;
+            color: #ef4444;
             border-color: #ef4444;
+        }
+
+        /* New Task Form Styles */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1rem 0;
+        }
+
+        textarea#task-prompt {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 1rem;
+            padding: 1.25rem;
+            padding-bottom: 4rem;
+            color: #000000;
+            font-family: inherit;
+            font-size: 1.1rem;
+            line-height: 1.6;
+            transition: all 0.3s;
+            width: 100%;
+            resize: none;
+            min-height: 150px;
+        }
+
+        textarea#task-prompt:focus {
+            outline: none;
+            border-color: #000000;
+            background: #ffffff;
+        }
+
+        .textarea-container {
+            position: relative;
+            width: 100%;
+        }
+
+        .action-buttons {
+            position: absolute;
+            bottom: 1rem;
+            left: 1rem;
+            display: flex;
+            gap: 0.5rem;
+            z-index: 10;
+        }
+
+        .icon-btn {
+            min-width: 2.2rem;
+            height: 2.2rem;
+            padding: 0;
+            border-radius: 50%;
+            border: 1px solid #e2e8f0;
+            background: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .icon-btn:hover {
+            border-color: #000000;
+            transform: scale(1.1);
+        }
+
+        .icon-btn.has-file {
+            min-width: 6rem;
+            width: auto;
+            padding: 0 1rem;
+            border-radius: 2rem;
+            background: #ecfdf5;
+            border-color: #10b981;
+        }
+
+        .icon-btn .folder-name {
+            max-width: 0;
+            opacity: 0;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.4s ease;
+            color: #059669;
+            margin-left: 0;
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .icon-btn.has-file .folder-name {
+            max-width: 300px;
+            opacity: 1;
+            margin-left: 0.5rem;
+        }
+
+        .model-selection {
+            margin-top: 0.5rem;
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            cursor: pointer;
+            padding: 0.5rem 0.75rem;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .checkbox-item:hover {
+            border-color: #000;
+        }
+
+        .checkbox-item input {
+            display: none;
+        }
+
+        .checkbox-item:has(input:checked) {
+            background: #f1f5f9;
+            border-color: #000;
+            font-weight: 600;
+        }
+
+        .checkmark {
+            width: 16px;
+            height: 16px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            position: relative;
+        }
+
+        .checkbox-item input:checked+.checkmark::after {
+            content: '✓';
+            font-size: 10px;
+            color: #000;
+        }
+
+        .btn-primary {
+            background: #000000;
+            color: #ffffff;
+            border: none;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            background: #1e293b;
+            transform: translateY(-2px);
         }
 
         /* Empty State */
@@ -1420,15 +1586,7 @@
             <main class="main-content" id="main-content">
                 <!-- Left Panel: Logs -->
                 <div class="panel-left" id="panel-left">
-                    <div class="panel-header">
-                        <div class="panel-title">
-                            Execution Log
-                        </div>
-                        <button id="info-btn" class="info-btn" onclick="showTaskResult()" title="View Task Result"
-                            style="margin-right: 0;">
-                            <span class="info-icon">i</span>
-                        </button>
-                    </div>
+
                     <div id="log-display" class="log-display">
                         <div class="empty-state">
                             <div class="loading-spinner"></div>
