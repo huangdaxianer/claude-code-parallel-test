@@ -14,6 +14,7 @@ let isCompareMode = false;
 let isStatsMode = true;
 let compareLeftRun = null;
 let compareRightRun = null;
+let activeMenuTaskId = null; // Track which task's menu is open
 
 // 获取 Task ID
 // 获取 Task ID (Initial)
@@ -50,17 +51,7 @@ function init() {
 
     // Initial Task Load
     if (currentTaskId) {
-        loadTask(currentTaskId, false); // false = don't push state (already there)
-    } else {
-        // Show empty state or something
-        document.querySelector('.top-bar').style.display = 'none'; // Hide top bar if no task
-        document.getElementById('main-content').innerHTML = `
-            <div class="empty-state">
-                <div style="font-size: 3rem; margin-bottom: 1rem;">👋</div>
-                <h2 style="margin-bottom: 0.5rem; color: #1e293b;">Welcome to Web Coding</h2>
-                <p style="color: #64748b;">Select a task from the sidebar or start a new one.</p>
-            </div>
-        `;
+        loadTask(currentTaskId, false); // false = don't push state
     }
 
     // Close modal on click outside
@@ -73,6 +64,23 @@ function init() {
         if (e.key === 'Escape') {
             closePreview();
             closeNewTaskModal();
+        }
+    });
+
+    // Close dropdown menu on click outside
+    document.addEventListener('click', (e) => {
+        const menu = document.getElementById('item-dropdown-menu');
+        const isMenuBtn = e.target.closest('.item-menu-btn');
+        if (!isMenuBtn) {
+            menu.classList.remove('show');
+            activeMenuTaskId = null;
+        }
+    });
+
+    // Setup Delete Menu Action
+    document.getElementById('delete-task-menu-item').addEventListener('click', () => {
+        if (activeMenuTaskId) {
+            deleteTask(activeMenuTaskId);
         }
     });
 
@@ -136,20 +144,90 @@ async function fetchTaskHistory() {
             item.className = `history-item ${task.taskId === currentTaskId ? 'active' : ''}`;
             item.innerHTML = `
                 <div style="flex:1; overflow:hidden;">
-                    <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${task.title || 'Untitled'}</div>
+                    <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right: 20px;">${task.title || 'Untitled'}</div>
                     <div style="font-size:0.75rem; color:#94a3b8;">${task.taskId}</div>
                 </div>
+                <button class="item-menu-btn" data-task-id="${task.taskId}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="1"></circle>
+                        <circle cx="12" cy="5" r="1"></circle>
+                        <circle cx="12" cy="19" r="1"></circle>
+                    </svg>
+                </button>
             `;
             item.onclick = (e) => {
+                if (e.target.closest('.item-menu-btn')) return; // Prevent navigation when clicking menu
                 e.preventDefault();
                 if (currentTaskId !== task.taskId) {
                     loadTask(task.taskId);
                 }
             };
+
+            // Setup Menu Trigger
+            const menuBtn = item.querySelector('.item-menu-btn');
+            menuBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const menu = document.getElementById('item-dropdown-menu');
+                const rect = menuBtn.getBoundingClientRect();
+
+                // Toggle same menu
+                if (activeMenuTaskId === task.taskId && menu.classList.contains('show')) {
+                    menu.classList.remove('show');
+                    activeMenuTaskId = null;
+                    return;
+                }
+
+                activeMenuTaskId = task.taskId;
+
+                // Position menu
+                menu.style.top = `${rect.bottom + 5}px`;
+                menu.style.left = `${rect.right - 120}px`;
+                menu.classList.add('show');
+            };
+
             listEl.appendChild(item);
         });
+
+        // Auto-load first task if none is active
+        if (!currentTaskId && tasks.length > 0) {
+            loadTask(tasks[0].taskId, true);
+        } else if (tasks.length === 0) {
+            // If no tasks at all, hide top bar and show a simple empty message
+            document.querySelector('.top-bar').style.display = 'none';
+            document.getElementById('main-content-wrapper').innerHTML = `
+                <div class="empty-state" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #64748b;">
+                    <p>No tasks found. Click "New Task" to start.</p>
+                </div>
+            `;
+        }
     } catch (e) {
         console.error("Failed to fetch history:", e);
+    }
+}
+
+async function deleteTask(taskId) {
+    if (!confirm('确定要删除这个任务吗？此操作不可逆。')) return;
+
+    try {
+        const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+        const data = await res.json();
+
+        if (data.success) {
+            // If deleting current task, go back to home
+            if (taskId === currentTaskId) {
+                window.history.pushState({}, '', window.location.pathname);
+                location.reload(); // Simple reload to clear state
+            } else {
+                fetchTaskHistory(); // Just refresh list
+            }
+        } else {
+            alert('删除失败: ' + (data.error || '未知错误'));
+        }
+    } catch (e) {
+        console.error('Delete error:', e);
+        alert('删除请求失败');
     }
 }
 

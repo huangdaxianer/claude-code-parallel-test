@@ -86,6 +86,11 @@ app.use(bodyParser.json());
 app.use(express.static('public'));
 app.use('/artifacts', express.static(TASKS_DIR)); // Allow serving task files for preview
 
+// Redirect root to task.html
+app.get('/', (req, res) => {
+    res.redirect('/task.html');
+});
+
 
 const HISTORY_FILE = path.join(TASKS_DIR, 'history.json');
 
@@ -240,33 +245,7 @@ app.post('/api/tasks', (req, res) => {
 
 // ... (other endpoints)
 
-// 执行脚本
-app.post('/api/execute', (req, res) => {
-    console.log('Starting parallel batch execution...');
 
-    // 使用 spawn 替代 exec，避免 maxBuffer 限制导致长运行任务被杀
-    const child = spawn('bash', [SCRIPT_FILE]);
-
-    // 立即返回，不等待执行结束
-    res.json({ success: true, message: 'Execution started in background' });
-
-    // 实时流式输出日志
-    child.stdout.on('data', (data) => {
-        process.stdout.write(data); // 输出到主进程控制台
-    });
-
-    child.stderr.on('data', (data) => {
-        process.stderr.write(data);
-    });
-
-    child.on('close', (code) => {
-        console.log(`Batch execution process exited with code ${code}`);
-    });
-
-    child.on('error', (err) => {
-        console.error('Failed to start subprocess:', err);
-    });
-});
 
 // 获取任务详情：根据 nested structure (TaskID/ModelName)
 app.get('/api/task_details/:taskId', (req, res) => {
