@@ -820,577 +820,186 @@ function renderMainContent() {
     const activeRun = currentRuns.find(r => r.folderName === activeFolder);
     if (!activeRun) return;
 
-    // Check if log is missing (lazy load)
-    if (activeRun.outputLog === undefined || activeRun.outputLog === null) {
-        logDisplayEl.innerHTML = '<div style="padding:2rem;">Loading logs...</div>';
+    // 1. Render Trajectory (Log)
+    if (activeRun.runId) {
+        logDisplayEl.classList.remove('markdown-view');
 
-        // Fetch specific log
-        fetch(`/api/task_logs/${currentTaskId}/${activeRun.modelName}`)
-            .then(res => res.json())
-            .then(data => {
-                activeRun.outputLog = data.outputLog || '';
-                renderMainContent(); // Re-render with log
-            })
-            .catch(err => {
-                logDisplayEl.innerHTML = `<div style="color:red;padding:2rem;">Failed to load logs: ${err.message}</div>`;
-            });
-        return;
-    }
+        const lastRenderedCount = parseInt(logDisplayEl.dataset.lineCount || '0', 10);
+        const lastRenderedFolder = logDisplayEl.dataset.renderedFolder;
 
-    const content = activeRun.outputLog || '';
-
-    // 1. Render Log
-    let logText = content;
-
-    // A. Strip ANSI Codes
-    logText = logText.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
-
-    // Fix: Handle multiple JSON objects on the same line (e.g. "}{")
-    logText = logText.replace(/}\s*{/g, '}\n{');
-
-    // B. Split and Filter Noise
-    // Split by CRLF, LF, or CR (to handle progress bar overwrites as separate lines)
-    let lines = logText.split(/\r\n|\n|\r/);
-
-    const noiseKeywords = [
-        //    'Press Ctrl-D', '[?25l', '[?2026',
-        //    'Tips for getting started', 'Welcome back', 'API Usage Billing',
-        //    '? for shortcuts', 'esc to interrupt', 'Cost:',
-        //    '─'.repeat(10) // Long separators
-    ];
-
-    let filteredLines = lines.filter(line => {
-        // Check for ASCII banner borders
-        if (line.match(/^[│╭╰]/)) return false;
-
-        // Check for noise keywords
-        for (const keyword of noiseKeywords) {
-            if (line.includes(keyword)) return false;
+        if (lastRenderedFolder !== activeFolder) {
+            logDisplayEl.dataset.lineCount = '0';
+            logDisplayEl.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p style="margin-top: 1rem;">Loading events...</p></div>';
+            logDisplayEl.dataset.renderedFolder = activeFolder;
         }
 
-        // Remove empty prompts strictly ">  "
-        if (line.trim() === '>') return false;
+        fetch(`/api/task_events/${activeRun.runId}`)
+            .then(res => res.json())
+            .then(data => {
+                const events = data.events || [];
+                const currentCount = events.length;
 
-        return true;
-    });
-
-    // C. Deduplicate consecutive identical lines
-    // Also remove excessive empty lines (more than 1 in a row)
-    // C. Deduplicate consecutive identical lines
-    // Also remove excessive empty lines (more than 1 in a row)
-    let cleanLines = [];
-    filteredLines.forEach((line, index) => {
-        const trimmed = line.trim();
-
-        // Filter out specific artifacts requested by user
-        if (trimmed.includes('^D')) return;
-        if (trimmed.includes('[?25h')) return;
-
-        const prevLine = cleanLines.length > 0 ? cleanLines[cleanLines.length - 1] : null;
-
-        // 1. Skip if identical to previous line (ignoring whitespace for comparison)
-        if (prevLine && prevLine.trim() === trimmed) return;
-
-        // 2. Skip excessive empty lines
-        if (trimmed === '' && prevLine && prevLine.trim() === '') return;
-
-        cleanLines.push(line);
-    });
-
-    let cleanLog = cleanLines.join('\n');
-
-    console.log('[Debug] Log Processing:', {
-        rawLength: activeRun.outputLog ? activeRun.outputLog.length : 0,
-        cleanLinesLength: cleanLines.length,
-        isJsonLogRaw: cleanLog.trim().startsWith('{')
-    });
-
-    // 如果日志为空，显示 Empty State
-    if (!cleanLog.trim()) {
-        logDisplayEl.innerHTML = '<div class="empty-state"><p>Waiting for output...</p></div>';
-    } else {
-        // Detect if content looks like JSON stream (starts with {)
-        const isJsonLog = cleanLog.trim().startsWith('{');
-
-        if (isJsonLog) {
-            logDisplayEl.classList.remove('markdown-view');
-
-            // Incremental Rendering Logic
-            const lastRenderedCount = parseInt(logDisplayEl.dataset.lineCount || '0', 10);
-            const lastRenderedFolder = logDisplayEl.dataset.renderedFolder;
-            const currentLineCount = cleanLines.length;
-
-            // CRITICAL: If the active folder changed, we MUST reset the incremental state 
-            // otherwise we'll show lines from the previous model.
-            if (lastRenderedFolder !== activeFolder) {
-                logDisplayEl.dataset.lineCount = '0';
-                logDisplayEl.innerHTML = '';
-                logDisplayEl.dataset.renderedFolder = activeFolder;
-                // Re-calculate lastRenderedCount after reset
-                renderMainContent();
-                return;
-            }
-
-            if (currentLineCount > lastRenderedCount) {
-                // If it's a fresh render, clear first
-                if (lastRenderedCount === 0) {
-                    logDisplayEl.innerHTML = '';
-                }
-
-                // 1. Parse ALL lines to build the map (needed for correct merging)
-                const allObjects = cleanLines.map((line, idx) => {
-                    if (!line.trim()) return null; // Skip empty lines
-                    try {
-                        return JSON.parse(line);
-                    } catch (e) {
-                        // Only log if it really looks like JSON (starts with {) but failed
-                        if (line.trim().startsWith('{')) {
-                            console.error(`[Error] JSON Parse failed at line ${idx}:`, line.substring(0, 100), e);
-                        }
-                        return null;
+                if (currentCount > lastRenderedCount || lastRenderedFolder !== activeFolder) {
+                    if (lastRenderedCount === 0 || lastRenderedFolder !== activeFolder) {
+                        logDisplayEl.innerHTML = '';
                     }
-                });
 
-                // 2. Build Tool Result Map
-                const toolResultsMap = {};
-                allObjects.forEach(obj => {
-                    if (!obj) return;
+                    const fragment = document.createDocumentFragment();
+                    const startIndex = (lastRenderedFolder === activeFolder) ? lastRenderedCount : 0;
 
-                    // Case A: Standard tool_result type
-                    if (obj.type === 'tool_result' && obj.tool_use_id) {
-                        toolResultsMap[obj.tool_use_id] = obj;
-                    }
-                    // Case B: User message with tool_result content block (Anthropic API style)
-                    else if (obj.type === 'user' && obj.message && Array.isArray(obj.message.content)) {
-                        obj.message.content.forEach(block => {
-                            if (block.type === 'tool_result' && block.tool_use_id) {
-                                toolResultsMap[block.tool_use_id] = {
-                                    ...obj, // keep parent context if needed, or just the block
-                                    // Flatten important fields for easy access
-                                    tool_use_id: block.tool_use_id,
-                                    is_error: block.is_error,
-                                    content: block.content
-                                };
+                    for (let i = startIndex; i < currentCount; i++) {
+                        const event = events[i];
+                        if (event.type === 'TXT') {
+                            const div = document.createElement('div');
+                            div.className = 'text-log-entry markdown-body';
+                            try {
+                                div.innerHTML = marked.parse(event.preview_text);
+                            } catch (e) {
+                                div.textContent = event.preview_text;
                             }
-                        });
-                    }
-                });
-
-                const fragment = document.createDocumentFragment();
-
-                // 3. Render ONLY the new lines
-                for (let i = lastRenderedCount; i < currentLineCount; i++) {
-                    const line = cleanLines[i];
-                    const obj = allObjects[i]; // Use pre-parsed object
-
-                    if (!obj) {
-                        // Fallback for non-JSON lines
-                        const div = document.createElement('div');
-                        div.textContent = line;
-                        div.style.padding = '0.5rem';
-                        div.style.color = '#ef4444';
-                        fragment.appendChild(div);
-                        continue;
-                    }
-
-                    // SKIP RULES:
-                    // 1. Hide system messages
-                    if (obj.type === 'system') continue;
-
-                    // 2. Hide standalone tool_result messages (because they are merged into their parent tool_use)
-                    if (obj.type === 'tool_result' && obj.tool_use_id) continue;
-                    // 3. Hide user messages that are purely tool results matches
-                    if (obj.type === 'user' && obj.message && Array.isArray(obj.message.content)) {
-                        // Check if ALL blocks in this user message are tool_results that we have mapped
-                        // Simplification: If it contains tool_result, we hide it from main stream 
-                        // because we attach it to the tool_use.
-                        const hasToolResult = obj.message.content.some(b => b.type === 'tool_result' && b.tool_use_id);
-                        if (hasToolResult) continue;
-                    }
-
-                    // Determine Type and Preview based on content
-                    let type = 'INFO';
-                    let typeClass = '';
-                    let previewText = '';
-                    let isDirectText = false;
-                    let directTextContent = '';
-
-                    // Tool Use Merge State
-                    let mergedResultObj = null;
-                    let resultTypeClass = '';
-
-                    // Fallback preview
-                    previewText = JSON.stringify(obj).slice(0, 100);
-
-                    // 1. Check for standard 'assistant' message structure with content array
-                    if (obj.type === 'assistant' && obj.message && Array.isArray(obj.message.content) && obj.message.content.length > 0) {
-                        const firstContent = obj.message.content[0];
-
-                        if (firstContent.type === 'text') {
-                            // Filter out "(no content)" noise
-                            const textVal = (firstContent.text || '').replace(/\s+$/, '');
-                            if (textVal.trim() === '(no content)') continue;
-
-                            type = 'TXT';
-                            isDirectText = true;
-                            // Trim trailing whitespace/newlines from the text
-                            directTextContent = textVal;
-                        } else if (firstContent.type === 'tool_use') {
-                            const toolName = firstContent.name || 'tool';
-                            type = toolName;
-                            // Set Read tool to green by default as per user request
-                            typeClass = (toolName === 'Read') ? 'type-success' : 'type-tool';
-
-                            // CHECK FOR MATCHING RESULT
-                            if (firstContent.id && toolResultsMap[firstContent.id]) {
-                                mergedResultObj = toolResultsMap[firstContent.id];
-                                // Determine success/error color based on RESULT content
-                                let resultContentStr = '';
-                                if (Array.isArray(mergedResultObj.content)) {
-                                    // Try to get text from first block if it's text/json
-                                    resultContentStr = JSON.stringify(mergedResultObj.content);
-                                    if (mergedResultObj.content[0] && mergedResultObj.content[0].text) resultContentStr = mergedResultObj.content[0].text;
-                                } else {
-                                    resultContentStr = String(mergedResultObj.content || '');
-                                }
-
-                                if (mergedResultObj.is_error === false) {
-                                    resultTypeClass = 'type-success';
-                                } else if (mergedResultObj.is_error === true) {
-                                    resultTypeClass = 'type-error';
-                                } else if (resultContentStr.toLowerCase().includes('successfully') || resultContentStr.includes("has been updated. Here's the result")) {
-                                    resultTypeClass = 'type-success';
-                                } else {
-                                    // Default if matched but no clear status (e.g. gray) -> keep we assume success-ish or neutral?
-                                    // User said: "if above rules not met, keep gray". 
-                                    // For tool name itself, we usually use blue. 
-                                    // Wait, user said: "change the tool name background color ... to green/red"
-                                    // So we override typeClass.
-                                }
-
-                                if (resultTypeClass) {
-                                    typeClass = resultTypeClass;
-                                }
-                            }
-
-                            // Specific check for Bash/Write description per user request
-                            if (toolName === 'Bash' && firstContent.input && firstContent.input.description) {
-                                previewText = firstContent.input.description;
-                            } else if ((toolName === 'Write' || toolName === 'Edit' || toolName === 'Read') && firstContent.input && firstContent.input.file_path) {
-                                // Just show the filename for file tools
-                                previewText = firstContent.input.file_path.split('/').pop();
-                            } else if (toolName === 'TodoWrite' && firstContent.input && Array.isArray(firstContent.input.todos)) {
-                                const todos = firstContent.input.todos;
-                                const idx = todos.findIndex(t => t.status === 'in_progress');
-                                const allCompleted = todos.every(t => t.status === 'completed');
-                                const allPending = todos.every(t => t.status === 'pending');
-
-                                if (idx !== -1) {
-                                    previewText = `(${idx + 1}/${todos.length}) ${todos[idx].content}`;
-                                } else if (allCompleted) {
-                                    previewText = 'completed';
-                                } else if (allPending) {
-                                    previewText = `Assigned: ${todos.length} todos`;
-                                } else {
-                                    previewText = firstContent.input ? JSON.stringify(firstContent.input) : '{}';
-                                }
-                            } else {
-                                previewText = firstContent.input ? JSON.stringify(firstContent.input) : '{}';
-                            }
-                        }
-                    }
-                    // 2. [SKIPPED] User blocks are handled in skip rules or below if not tool_result
-                    else if (obj.type === 'user') {
-                        // If we are here, it's a user message that DOES NOT contain tool results (or we failed to filter it)
-                        // It might be a regular user chat message
-                        type = 'USER';
-                        typeClass = 'type-content';
-                        if (obj.message && Array.isArray(obj.message.content) && obj.message.content[0]) {
-                            const first = obj.message.content[0];
-                            previewText = first.content || first.text || JSON.stringify(first);
-                        }
-                    }
-                    // 3. [SKIPPED] Standalone tool_result handled in skip rules
-
-                    // 4. Handle Error specifically
-                    else if (obj.type === 'error' || obj.error) {
-                        type = 'ERROR';
-                        typeClass = 'type-error';
-                        previewText = (obj.error && obj.error.message) ? obj.error.message : JSON.stringify(obj);
-                    }
-                    // 5. Standalone Top-Level Tool Use (if any engines output this format directly)
-                    else if (obj.type === 'tool_use') {
-                        const toolName = obj.name || 'tool';
-                        type = toolName;
-                        // Set Read tool to green by default as per user request
-                        typeClass = (toolName === 'Read') ? 'type-success' : 'type-tool';
-
-                        // CHECK FOR MATCHING RESULT (Top level id)
-                        if (obj.id && toolResultsMap[obj.id]) {
-                            mergedResultObj = toolResultsMap[obj.id];
-                            let resultContentStr = '';
-                            if (Array.isArray(mergedResultObj.content)) {
-                                resultContentStr = JSON.stringify(mergedResultObj.content);
-                                if (mergedResultObj.content[0] && mergedResultObj.content[0].text) resultContentStr = mergedResultObj.content[0].text;
-                            } else {
-                                resultContentStr = String(mergedResultObj.content || '');
-                            }
-
-                            if (mergedResultObj.is_error === false) {
-                                resultTypeClass = 'type-success';
-                            } else if (mergedResultObj.is_error === true) {
-                                resultTypeClass = 'type-error';
-                            } else if (resultContentStr.toLowerCase().includes('successfully') || resultContentStr.includes("has been updated. Here's the result")) {
-                                resultTypeClass = 'type-success';
-                            }
-
-                            if (resultTypeClass) {
-                                typeClass = resultTypeClass;
-                            }
-                        }
-
-                        if (toolName === 'Bash' && obj.input && obj.input.description) {
-                            previewText = obj.input.description;
-                        } else if ((toolName === 'Write' || toolName === 'Edit' || toolName === 'Read') && obj.input && obj.input.file_path) {
-                            previewText = obj.input.file_path.split('/').pop();
-                        } else if (toolName === 'TodoWrite' && obj.input && Array.isArray(obj.input.todos)) {
-                            const todos = obj.input.todos;
-                            const idx = todos.findIndex(t => t.status === 'in_progress');
-                            const allCompleted = todos.every(t => t.status === 'completed');
-                            const allPending = todos.every(t => t.status === 'pending');
-
-                            if (idx !== -1) {
-                                previewText = `(${idx + 1}/${todos.length}) ${todos[idx].content}`;
-                            } else if (allCompleted) {
-                                previewText = 'completed';
-                            } else if (allPending) {
-                                previewText = `Assigned: ${todos.length} todos`;
-                            } else {
-                                previewText = obj.input ? JSON.stringify(obj.input) : '{}';
-                            }
+                            fragment.appendChild(div);
                         } else {
-                            previewText = obj.input ? JSON.stringify(obj.input) : '{}';
+                            const details = document.createElement('details');
+                            details.className = 'json-log-entry';
+                            details.dataset.eventId = event.id;
+
+                            const summary = document.createElement('summary');
+                            summary.className = 'json-summary';
+                            const safePreview = event.preview_text.length > 200 ? event.preview_text.slice(0, 200) + '...' : event.preview_text;
+
+                            summary.innerHTML = `
+                                <span class="json-type-badge ${event.status_class || 'type-tool'}">${event.type}</span>
+                                <span class="json-preview-text" title="${escapeHtml(event.preview_text)}">${escapeHtml(safePreview)}</span>
+                            `;
+
+                            const body = document.createElement('div');
+                            body.className = 'json-body';
+                            body.innerHTML = '<div class="loading-spinner" style="margin: 1rem;"></div>';
+
+                            details.appendChild(summary);
+                            details.appendChild(body);
+
+                            details.ontoggle = () => {
+                                if (details.open && !details.dataset.loaded) {
+                                    fetch(`/api/log_event_content/${event.id}`)
+                                        .then(r => r.json())
+                                        .then(d => {
+                                            body.innerHTML = '';
+                                            const contents = d.contents || [d.content];
+                                            contents.forEach((content, idx) => {
+                                                if (contents.length > 1) {
+                                                    const header = document.createElement('div');
+                                                    header.className = 'json-block-header';
+                                                    header.textContent = idx === 0 ? 'Tool Call' : `Tool Result`;
+                                                    header.style.fontSize = '0.75rem';
+                                                    header.style.fontWeight = 'bold';
+                                                    header.style.opacity = '0.6';
+                                                    header.style.marginTop = idx === 0 ? '0' : '1rem';
+                                                    header.style.marginBottom = '0.25rem';
+                                                    header.style.textTransform = 'uppercase';
+                                                    body.appendChild(header);
+                                                }
+                                                const pre = document.createElement('pre');
+                                                try {
+                                                    const obj = JSON.parse(content);
+                                                    pre.innerHTML = syntaxHighlight(obj);
+                                                } catch (e) {
+                                                    pre.textContent = content;
+                                                }
+                                                body.appendChild(pre);
+                                            });
+                                            details.dataset.loaded = 'true';
+                                        });
+                                }
+                            };
+                            fragment.appendChild(details);
                         }
-                    } else if (obj.type === 'result') {
-                        // Store the result object but don't render it in the stream (hidden by default logic for merged results? 
-                        // Wait, previous logic was: if (obj.type === 'tool_result' && obj.tool_use_id) continue;
-                        // This is type 'result', which usually comes at the very end.
-                        // We should capture it.
-                        lastTaskResult = obj;
-                        // If we want to hide it from the log stream as per user saying "click to show":
-                        continue;
                     }
-                    // 6. Other types fallback
-                    else {
-                        if (obj.type === 'message_start') { type = 'START'; previewText = 'Message Start'; }
-                        else if (obj.type === 'message_stop') { type = 'STOP'; previewText = 'Message Stop'; }
-                        else if (obj.type === 'content_block_delta') { type = 'STREAM'; previewText = 'Streaming...'; }
-                        else if (obj.type) { type = obj.type.toUpperCase(); }
-                    }
 
-                    // Render DIRECT TEXT if applicable
-                    if (isDirectText) {
-                        const div = document.createElement('div');
-                        div.className = 'text-log-entry';
-                        try {
-                            div.innerHTML = marked.parse(directTextContent);
-                            div.classList.add('markdown-body');
-                        } catch (e) {
-                            div.textContent = directTextContent;
-                        }
-                        fragment.appendChild(div);
-                    } else {
-                        // Render JSON Collapsible for others
-                        const details = document.createElement('details');
-                        details.className = 'json-log-entry';
+                    logDisplayEl.appendChild(fragment);
+                    logDisplayEl.dataset.lineCount = currentCount;
+                    logDisplayEl.dataset.renderedFolder = activeFolder;
 
-                        let shouldAutoExpand = (type === 'ERROR');
-                        if (shouldAutoExpand) details.open = true;
-
-                        // Summary
-                        const summary = document.createElement('summary');
-                        summary.className = 'json-summary';
-
-                        // Truncate preview text
-                        const safePreviewText = previewText.length > 150 ? previewText.slice(0, 150) + '...' : previewText;
-
-                        summary.innerHTML = `
-                            <span class="json-type-badge ${typeClass}">${type}</span>
-                            <span class="json-preview-text" title="${escapeHtml(previewText)}">${escapeHtml(safePreviewText)}</span>
-                        `;
-
-                        // Body
-                        const body = document.createElement('div');
-                        body.className = 'json-body';
-
-                        // 1. Original Tool Call Usage JSON
-                        const preCall = document.createElement('pre');
-                        let callHtml = syntaxHighlight(obj);
-                        // Clean up brackets for assistant messages if needed (legacy logic preserved)
-                        if (obj.type === 'assistant' && obj.message && obj.message.content) {
-                            // Optional: strip outer brackets? keeping existing logic
-                            let highlighted = syntaxHighlight(obj.message.content);
-                            highlighted = highlighted.replace(/^\s*\[/, '').replace(/\]\s*$/, '');
-                            callHtml = highlighted.trim();
-                        }
-                        preCall.innerHTML = callHtml;
-                        body.appendChild(preCall);
-
-                        // 2. Merged Result JSON (if exists)
-                        if (mergedResultObj) {
-                            const separator = document.createElement('div');
-                            separator.style.borderTop = '1px dashed #e2e8f0';
-                            separator.style.margin = '1rem 0';
-                            separator.style.paddingTop = '0.5rem';
-                            separator.style.color = '#94a3b8';
-                            separator.style.fontSize = '0.75rem';
-                            separator.textContent = 'TOOL RESULT:';
-                            body.appendChild(separator);
-
-                            const preResult = document.createElement('pre');
-                            // Extract content if it's a wrapper object, or just show the whole thing
-                            // Showing the relevant content makes sense
-                            let resultToShow = mergedResultObj;
-                            // If it was extracted from a user block, we might want to show just the content block
-                            if (mergedResultObj.type === 'user') {
-                                // It's likely the full user message object, let's try to isolate the tool_result block
-                                // Actually in our map we stored the full block properties merged.
-                                // Let's just show the clean object we constructed in the map + any other props?
-                                // For simplicity, show the constructed object which has { tool_use_id, content, is_error }
-                                resultToShow = {
-                                    type: 'tool_result',
-                                    tool_use_id: mergedResultObj.tool_use_id,
-                                    is_error: mergedResultObj.is_error,
-                                    content: mergedResultObj.content
-                                };
-                            }
-                            preResult.innerHTML = syntaxHighlight(resultToShow);
-                            body.appendChild(preResult);
-                        }
-
-                        details.appendChild(summary);
-                        details.appendChild(body);
-
-                        fragment.appendChild(details);
-                    }
+                    const isScrolled = logDisplayEl.scrollHeight - logDisplayEl.scrollTop <= logDisplayEl.clientHeight + 200;
+                    if (isScrolled) logDisplayEl.scrollTop = logDisplayEl.scrollHeight;
                 }
+            })
+            .catch(err => {
+                console.error('Failed to fetch events:', err);
+                logDisplayEl.innerHTML = `<div style="color:red;padding:2rem;">Failed to load events: ${err.message}</div>`;
+            });
+    } else {
+        // Fallback for Legacy Tasks without runId (Markdown logs)
+        if (activeRun.outputLog === undefined || activeRun.outputLog === null) {
+            logDisplayEl.innerHTML = '<div style="padding:2rem;">Loading legacy logs...</div>';
+            fetch(`/api/task_logs/${currentTaskId}/${activeRun.modelName}`)
+                .then(res => res.json())
+                .then(data => {
+                    activeRun.outputLog = data.outputLog || '';
+                    renderMainContent();
+                });
+            return;
+        }
 
-                logDisplayEl.appendChild(fragment);
-                logDisplayEl.dataset.lineCount = currentLineCount;
+        const logText = (activeRun.outputLog || '')
+            .replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
+            .replace(/}\s*{/g, '}\n{');
 
-                // Auto scroll if near bottom
-                const isScrolledToBottom = logDisplayEl.scrollHeight - logDisplayEl.scrollTop <= logDisplayEl.clientHeight + 100;
-                if (isScrolledToBottom) {
-                    logDisplayEl.scrollTop = logDisplayEl.scrollHeight;
-                }
-            }
-
-            // If log was cleared or reset (shorter than before), force re-render
-            if (currentLineCount < lastRenderedCount) {
-                logDisplayEl.dataset.lineCount = '0';
-                logDisplayEl.innerHTML = '';
-                renderMainContent(); // Recurse once to render from scratch
-            }
-
+        if (!logText.trim()) {
+            logDisplayEl.innerHTML = '<div class="empty-state"><p>Waiting for output...</p></div>';
         } else {
-            // Clean up dataset if switching back to text mode
-            logDisplayEl.dataset.lineCount = '0';
-            // Existing Markdown Logic
-            if (logDisplayEl.getAttribute('data-raw') !== cleanLog) {
-                const isScrolledToBottom = logDisplayEl.scrollHeight - logDisplayEl.scrollTop <= logDisplayEl.clientHeight + 50;
-
-                // Render Markdown
-                try {
-                    logDisplayEl.innerHTML = marked.parse(cleanLog);
-                    logDisplayEl.classList.add('markdown-view');
-                } catch (e) {
-                    logDisplayEl.innerText = cleanLog; // Fallback
-                    logDisplayEl.classList.remove('markdown-view');
-                }
-
-                logDisplayEl.setAttribute('data-raw', cleanLog);
-
-                if (isScrolledToBottom) {
-                    logDisplayEl.scrollTop = logDisplayEl.scrollHeight;
-                }
+            const isScrolled = logDisplayEl.scrollHeight - logDisplayEl.scrollTop <= logDisplayEl.clientHeight + 100;
+            try {
+                logDisplayEl.innerHTML = marked.parse(logText);
+                logDisplayEl.classList.add('markdown-view');
+            } catch (e) {
+                logDisplayEl.textContent = logText;
             }
+            if (isScrolled) logDisplayEl.scrollTop = logDisplayEl.scrollHeight;
         }
     }
 
     // 2. Render Files
     const newFiles = activeRun.generatedFiles || [];
-
-    // Check for HTML files to enable Preview capability
     const htmlFile = newFiles.find(f => f.endsWith('.html'));
+
     const previewTabBtn = document.querySelector('.tab[data-tab="preview"]');
     if (previewTabBtn) {
         if (htmlFile) {
             previewTabBtn.style.display = 'block';
-            // Optional: Auto-switch to preview if it's the first time we see an HTML file? 
-            // Let's stick to user manual switch for now, or auto-switch if user hasn't clicked anything.
         } else {
-            // Hide preview tab if no HTML
             previewTabBtn.style.display = 'none';
             if (activeTab === 'preview') switchTab('files');
         }
     }
 
-    // Update Iframe if active and html exists
+    // 3. Update Preview Iframe if active
     if (activeTab === 'preview' && htmlFile) {
         const iframe = document.getElementById('preview-iframe');
-        // Construct static path: /artifacts/{folderName}/{htmlFile}
         const targetSrc = `/artifacts/${activeRun.folderName}/${htmlFile}`;
-
-        // Only update if src changed (ignoring timestamp) 
-        const currentSrc = iframe.getAttribute('data-src');
-        if (currentSrc !== targetSrc) {
-            // Add timestamp to prevent caching issues
+        if (iframe.getAttribute('data-src') !== targetSrc) {
             iframe.src = targetSrc + `?t=${Date.now()}`;
             iframe.setAttribute('data-src', targetSrc);
-
-            // Force resize after load to fix Three.js/Canvas sizing issues in iframe
             iframe.onload = () => {
-                setTimeout(() => {
-                    if (iframe.contentWindow) {
-                        iframe.contentWindow.dispatchEvent(new Event('resize'));
-                    }
-                }, 100);
-                setTimeout(() => {
-                    if (iframe.contentWindow) {
-                        iframe.contentWindow.dispatchEvent(new Event('resize'));
-                    }
-                }, 500);
+                setTimeout(() => { if (iframe.contentWindow) iframe.contentWindow.dispatchEvent(new Event('resize')); }, 100);
             };
         }
     }
 
-    // 状态保持：记录当前展开的文件夹
-    // 简单的全量对比，如果列表内容变了再重绘 DOM
+    // 4. Update File Tree
     const newFilesHash = JSON.stringify(newFiles.sort());
-    const oldFilesHash = fileListEl.dataset.filesHash;
-
-    if (newFilesHash !== oldFilesHash) {
+    if (newFilesHash !== fileListEl.dataset.filesHash) {
+        const scrollPos = document.getElementById('file-list-container')?.scrollTop || 0;
         fileListEl.dataset.filesHash = newFilesHash;
-
-        // 保存当前的滚动位置
-        const scrollPos = document.getElementById('file-list-container').scrollTop;
-
         fileListEl.innerHTML = '';
         if (newFiles.length === 0) {
-            fileListEl.innerHTML = `
-                <div class="empty-state" style="height:200px;">
-                    <span style="font-size:2rem; opacity:0.2;">📂</span>
-                    <p style="margin-top:0.5rem; font-size:0.9rem;">No files generated yet</p>
-                </div>`;
+            fileListEl.innerHTML = '<div class="empty-state" style="height:200px;"><p>No files generated</p></div>';
         } else {
-            // Build Tree Structure
             const tree = buildFileTree(newFiles);
-            // Render Tree
             fileListEl.appendChild(renderFileTree(tree, activeRun.folderName));
         }
-
-        // 恢复滚动位置
-        document.getElementById('file-list-container').scrollTop = scrollPos;
+        const container = document.getElementById('file-list-container');
+        if (container) container.scrollTop = scrollPos;
     }
 }
 

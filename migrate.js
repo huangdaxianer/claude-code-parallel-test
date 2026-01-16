@@ -82,49 +82,75 @@ async function migrate() {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    const insertLog = db.prepare(`
+        INSERT INTO log_entries (run_id, line_number, type, tool_name, tool_use_id, preview_text, status_class, content)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const updateLogStatus = db.prepare(`
+        UPDATE log_entries SET status_class = ? WHERE run_id = ? AND tool_use_id = ?
+    `);
+
     const migrateAll = db.transaction((tasks) => {
         for (const task of tasks) {
             insertTask.run(task.taskId, task.title, task.prompt, task.baseDir);
 
             const taskDir = path.join(TASKS_DIR, task.taskId);
             if (fs.existsSync(taskDir)) {
-                // Models were recorded in task.models or found in directory
                 const models = task.models || [];
-
                 models.forEach(modelName => {
                     const logFilePath = path.join(taskDir, `${modelName}.txt`);
-                    let status = 'pending';
-                    let stats = { duration: 0, turns: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, toolCounts: { TodoWrite: 0, Read: 0, Write: 0, Bash: 0 } };
-
                     if (fs.existsSync(logFilePath)) {
                         const content = fs.readFileSync(logFilePath, 'utf8');
-                        stats = calculateLogStats(content);
+                        const stats = calculateLogStats(content);
 
-                        // Determine status
-                        const lines = content.split('\n').filter(l => l.trim());
-                        if (lines.length > 0) {
-                            status = 'running';
+                        const rawLines = content.split('\n').filter(l => l.trim());
+                        let status = 'completed';
+                        if (rawLines.length === 0) status = 'pending';
+                        else if (!content.includes('"type":"result"')) status = 'running';
+
+                        const result = insertRun.run(
+                            task.taskId,
+                            modelName,
+                            status,
+                            stats.duration,
+                            stats.turns,
+                            stats.inputTokens,
+                            stats.outputTokens,
+                            stats.cacheReadTokens,
+                            stats.toolCounts.TodoWrite,
+                            stats.toolCounts.Read,
+                            stats.toolCounts.Write,
+                            stats.toolCounts.Bash
+                        );
+
+                        const runId = result.lastInsertRowid;
+                        db.prepare('DELETE FROM log_entries WHERE run_id = ?').run(runId);
+
+                        const lines = content.replace(/}\s*{/g, '}\n{').split('\n');
+                        let lineNo = 0;
+                        lines.forEach(line => {
+                            if (!line.trim().startsWith('{')) return;
                             try {
-                                const lastLine = lines[lines.length - 1];
-                                if (lastLine.includes('"type":"result"')) status = 'completed';
-                            } catch (e) { }
-                        }
-                    }
+                                const obj = JSON.parse(line);
+                                lineNo++;
 
-                    insertRun.run(
-                        task.taskId,
-                        modelName,
-                        status,
-                        stats.duration,
-                        stats.turns,
-                        stats.inputTokens,
-                        stats.outputTokens,
-                        stats.cacheReadTokens,
-                        stats.toolCounts.TodoWrite,
-                        stats.toolCounts.Read,
-                        stats.toolCounts.Write,
-                        stats.toolCounts.Bash
-                    );
+                                const entries = getLogEntries(obj, line, runId);
+                                entries.forEach(entry => {
+                                    insertLog.run(
+                                        runId,
+                                        lineNo,
+                                        entry.skip ? 'HIDDEN_' + entry.type : entry.type,
+                                        entry.toolName || null,
+                                        entry.toolUseId || null,
+                                        entry.previewText || '',
+                                        entry.typeClass || (entry.skip ? 'type-tool' : 'type-content'),
+                                        entry.content
+                                    );
+                                });
+                            } catch (e) { }
+                        });
+                    }
                 });
             }
         }
@@ -132,6 +158,82 @@ async function migrate() {
 
     migrateAll(history);
     console.log('Migration completed successfully!');
+}
+
+function getLogEntries(obj, rawPart, runId) {
+    const entries = [];
+
+    if (obj.type === 'assistant' && obj.message && Array.isArray(obj.message.content)) {
+        obj.message.content.forEach(block => {
+            if (block.type === 'text' && block.text && block.text.trim() && block.text.trim() !== '(no content)') {
+                entries.push({ type: 'TXT', typeClass: 'type-content', previewText: block.text.trim(), content: JSON.stringify(block) });
+            } else if (block.type === 'thought' && block.thought && block.thought.trim()) {
+                entries.push({ type: 'TXT', typeClass: 'type-content', previewText: `*Thought: ${block.thought.trim().slice(0, 500)}...*`, content: JSON.stringify(block) });
+            } else if (block.type === 'tool_use') {
+                entries.push(processToolUse(block, JSON.stringify(block)));
+            }
+        });
+    } else if (obj.type === 'tool_use') {
+        entries.push(processToolUse(obj, rawPart));
+    } else if (obj.type === 'user' && obj.message && Array.isArray(obj.message.content)) {
+        obj.message.content.forEach(block => {
+            if (block.type === 'tool_result' && block.tool_use_id) {
+                updateToolStatus(block, runId);
+                entries.push({ type: 'tool_result', toolUseId: block.tool_use_id, skip: true, content: JSON.stringify(block) });
+            } else if (block.type === 'text' || (block.content && block.type !== 'tool_result')) {
+                const text = block.text || (typeof block.content === 'string' ? block.content : JSON.stringify(block.content));
+                entries.push({ type: 'USER', typeClass: 'type-content', previewText: text, content: JSON.stringify(block) });
+            }
+        });
+    } else if (obj.type === 'tool_result') {
+        updateToolStatus(obj, runId);
+        entries.push({ type: 'tool_result', toolUseId: obj.tool_use_id, skip: true, content: rawPart });
+    } else if (obj.type === 'error' || obj.error) {
+        entries.push({ type: 'ERROR', typeClass: 'type-error', previewText: (obj.error && obj.error.message) ? obj.error.message : JSON.stringify(obj), content: rawPart });
+    } else if (obj.type === 'assistant' && typeof obj.message === 'string' && obj.message.trim()) {
+        entries.push({ type: 'TXT', typeClass: 'type-content', previewText: obj.message.trim(), content: rawPart });
+    }
+
+    return entries;
+}
+
+function processToolUse(toolObj, rawPart) {
+    const toolName = toolObj.name || 'tool';
+    const toolUseId = toolObj.id;
+    let typeClass = (['Read', 'EnterPlanMode', 'ExitPlanMode'].includes(toolName)) ? 'type-success' : 'type-tool';
+    let previewText = '';
+
+    const input = toolObj.input || {};
+    if (toolName === 'Bash' && input.command) previewText = input.command;
+    else if (['Write', 'Edit', 'Read'].includes(toolName) && input.file_path) previewText = input.file_path.split('/').pop();
+    else if (toolName === 'ExitPlanMode' && input.plan) previewText = input.plan;
+    else if (toolName === 'AskUserQuestion') {
+        if (input.question) previewText = input.question;
+        else if (Array.isArray(input.questions) && input.questions[0]) previewText = input.questions[0].question || JSON.stringify(input);
+        else previewText = JSON.stringify(input);
+    } else if (toolName === 'TodoWrite' && Array.isArray(input.todos)) {
+        const todos = input.todos;
+        const idx = todos.findIndex(t => t.status === 'in_progress');
+        if (idx !== -1) previewText = `(${idx + 1}/${todos.length}) ${todos[idx].content}`;
+        else if (todos.every(t => t.status === 'completed')) previewText = 'completed';
+        else previewText = `Assigned: ${todos.length} todos`;
+    } else previewText = JSON.stringify(input);
+
+    return { type: toolName, toolName, toolUseId, typeClass, previewText, content: rawPart };
+}
+
+function updateToolStatus(block, runId) {
+    let resultClass = block.is_error ? 'type-error' : 'type-success';
+    const targetTool = db.prepare('SELECT tool_name FROM log_entries WHERE run_id = ? AND tool_use_id = ?').get(runId, block.tool_use_id);
+    if (targetTool && ['EnterPlanMode', 'ExitPlanMode', 'Read'].includes(targetTool.tool_name)) {
+        resultClass = 'type-success';
+    }
+    if (resultClass !== 'type-success' && !block.is_error && block.content) {
+        const contentStr = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+        if (contentStr.toLowerCase().includes('successfully') || contentStr.includes("has been updated")) resultClass = 'type-success';
+    }
+    const updateLogStatus = db.prepare('UPDATE log_entries SET status_class = ? WHERE run_id = ? AND tool_use_id = ?');
+    updateLogStatus.run(resultClass, runId, block.tool_use_id);
 }
 
 migrate().catch(err => {

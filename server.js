@@ -328,6 +328,7 @@ app.get('/api/task_details/:taskId', (req, res) => {
                 // For now, we trust the DB stats. Real-time updates will be handled by ingestion.
 
                 return {
+                    runId: run.id,
                     folderName: path.join(taskId, run.model_name),
                     modelName: run.model_name,
                     status: run.status,
@@ -370,6 +371,47 @@ app.get('/api/task_logs/:taskId/:modelName', (req, res) => {
         }
     } else {
         res.json({ outputLog: '' });
+    }
+});
+
+// 新增：获取结构化日志事件（Trajectory 预览列表）
+app.get('/api/task_events/:runId', (req, res) => {
+    const { runId } = req.params;
+    try {
+        const events = db.prepare(`
+            SELECT id, type, tool_name, tool_use_id, preview_text, status_class 
+            FROM log_entries 
+            WHERE run_id = ? AND type NOT LIKE 'HIDDEN_%'
+            ORDER BY line_number ASC
+        `).all(runId);
+        res.json({ events });
+    } catch (e) {
+        console.error('Error fetching task events:', e);
+        res.status(500).json({ error: 'Failed to fetch task events' });
+    }
+});
+
+// 新增：获取特定日志条目的完整 JSON 内容 (并自动关联相关的 tool_result)
+app.get('/api/log_event_content/:eventId', (req, res) => {
+    const { eventId } = req.params;
+    try {
+        const entry = db.prepare('SELECT run_id, tool_use_id, content FROM log_entries WHERE id = ?').get(eventId);
+        if (!entry) return res.status(404).json({ error: 'Log entry not found' });
+
+        if (entry.tool_use_id) {
+            // Fetch all entries for this tool_use_id (e.g. use + result)
+            const entries = db.prepare(`
+                SELECT content FROM log_entries 
+                WHERE run_id = ? AND tool_use_id = ? 
+                ORDER BY line_number ASC
+            `).all(entry.run_id, entry.tool_use_id);
+            res.json({ contents: entries.map(e => e.content) });
+        } else {
+            res.json({ contents: [entry.content] });
+        }
+    } catch (e) {
+        console.error('Error fetching event content:', e);
+        res.status(500).json({ error: 'Failed to fetch event content' });
     }
 });
 

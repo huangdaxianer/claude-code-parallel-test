@@ -54,4 +54,14 @@ db.exec(`
     CREATE INDEX IF NOT EXISTS idx_model_runs_task_id ON model_runs(task_id);
 `);
 
+// Migration: Add new columns to log_entries if they don't exist
+try { db.exec("ALTER TABLE log_entries ADD COLUMN type TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE log_entries ADD COLUMN tool_name TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE log_entries ADD COLUMN tool_use_id TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE log_entries ADD COLUMN preview_text TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE log_entries ADD COLUMN status_class TEXT"); } catch (e) { }
+
+// Now safe to create index
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_log_tool_use_id ON log_entries(tool_use_id)"); } catch (e) { }
+
 module.exports = db;
