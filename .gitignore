@@ -20,8 +20,6 @@ temp_uploads/
 .DS_Store
 
 # Junk files
-z.end*
-[removed]*
 
 # Environment variables
 .env

@@ -20,10 +20,12 @@
   "description": "",
   "dependencies": {
     "archiver": "^7.0.1",
+    "better-sqlite3": "^12.6.0",
     "body-parser": "^2.2.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "sqlite3": "^5.1.7"
   }
 }

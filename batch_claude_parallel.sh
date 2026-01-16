@@ -81,13 +81,15 @@ while IFS=';' read -r base_dir title prompt task_id models_str <&3 || [[ -n "$ba
             # 使用简化的 sudo 命令，直接运行 claude 而不通过 bash -c
             # 这样可以减少 visudo 的配置项 (只需 claude 二进制本身)
             # 同时使用 -H 确保 Home 目录正确映射到 claude-user
+            # 同时输出到文本日志和数据库抓取脚本
             if ! nohup sudo -n -H -u claude-user "$CLAUDE_BIN" -p "$prompt" \
                 --model "$model_name" \
                 --allowedTools 'Read(./**),Edit(./**),Bash(*)' \
                 --disallowedTools 'EnterPlanMode,ExitPlanMode' \
                 --dangerously-skip-permissions \
-                --output-format stream-json --verbose \
-                > "../${model_name}.txt" 2>&1 &
+                --output-format stream-json --verbose 2>&1 | \
+                tee "../${model_name}.txt" | \
+                node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name" &
             then
                 echo "[错误] sudo 权限拒绝。请检查 visudo 配置。" > "../${model_name}.txt"
                 exit 1

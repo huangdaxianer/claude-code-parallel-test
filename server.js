@@ -7,6 +7,7 @@ const { exec, spawn } = require('child_process');
 const cors = require('cors');
 const https = require('https');
 const multer = require('multer');
+const db = require('./db');
 
 
 const app = express();
@@ -98,26 +99,24 @@ app.get('/', (req, res) => {
 });
 
 
-const HISTORY_FILE = path.join(TASKS_DIR, 'history.json');
 
-
-// 获取所有任务 (从 history.json 读取)
+// 获取所有任务 (从数据库读取)
 app.get('/api/tasks', (req, res) => {
-    if (fs.existsSync(HISTORY_FILE)) {
-        try {
-            const history = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
-            // 按时间倒序返回
-            return res.json(history.reverse());
-        } catch (e) {
-            console.error('Error reading history:', e);
-            return res.json([]);
-        }
+    try {
+        const tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at DESC').all();
+        // Convert camelCase if needed, but here we use taskId etc.
+        // Actually, let's keep it consistent with what the front-end expects
+        return res.json(tasks.map(t => ({
+            taskId: t.task_id,
+            title: t.title,
+            prompt: t.prompt,
+            baseDir: t.base_dir,
+            createdAt: t.created_at
+        })));
+    } catch (e) {
+        console.error('Error reading tasks from DB:', e);
+        return res.status(500).json({ error: 'Failed to fetch tasks' });
     }
-    // Fallback: 如果没有 history.json，尝试读取 prompt.txt (简单兼容)
-    if (!fs.existsSync(PROMPT_FILE)) {
-        return res.json([]);
-    }
-    return res.json([]);
 });
 
 // 弹出原生文件夹选择器 (仅限 macOS)
@@ -216,15 +215,23 @@ app.post('/api/tasks', (req, res) => {
         return res.status(400).json({ error: 'Invalid task format' });
     }
 
-    // 1. 立即加入历史记录 (此时标题是 "正在生成描述...")
-    let history = [];
-    if (fs.existsSync(HISTORY_FILE)) {
-        try {
-            history = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
-        } catch (e) { }
+    // 1. 立即加入数据库记录
+    try {
+        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir) VALUES (?, ?, ?, ?)');
+        insertTask.run(task.taskId, task.title, task.prompt, task.baseDir);
+
+        const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_name, status) VALUES (?, ?, ?)');
+        const models = Array.isArray(task.models) ? task.models : [];
+        const insertManyRuns = db.transaction((taskId, modelList) => {
+            for (const m of modelList) {
+                insertRun.run(taskId, m, 'pending');
+            }
+        });
+        insertManyRuns(task.taskId, models);
+    } catch (e) {
+        console.error('Error saving task to DB:', e);
+        return res.status(500).json({ error: 'Failed to save task' });
     }
-    history.push(task);
-    fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
 
     // 2. 处理上传的项目文件夹：如果是从 temp_uploads 上传的，移动到任务专属目录
     let finalBaseDir = task.baseDir;
@@ -262,18 +269,14 @@ app.post('/api/tasks', (req, res) => {
         try { fs.unlinkSync(specificPromptFile); } catch (e) { }
     });
 
-    // 4. 异步生成 AI 标题，并在生成后更新历史记录
+    // 4. 异步生成 AI 标题，并在生成后更新数据库
     generateTitle(task.prompt).then(aiTitle => {
         try {
-            let currentHistory = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
-            const taskIndex = currentHistory.findIndex(t => t.taskId === task.taskId);
-            if (taskIndex !== -1) {
-                currentHistory[taskIndex].title = aiTitle;
-                fs.writeFileSync(HISTORY_FILE, JSON.stringify(currentHistory, null, 2));
-                console.log(`[ID: ${task.taskId}] Title updated to: ${aiTitle}`);
-            }
+            const updateTitle = db.prepare('UPDATE tasks SET title = ? WHERE task_id = ?');
+            updateTitle.run(aiTitle, task.taskId);
+            console.log(`[ID: ${task.taskId}] Title updated to: ${aiTitle}`);
         } catch (e) {
-            console.error("Error updating title in history:", e);
+            console.error("Error updating title in DB:", e);
         }
     });
 
@@ -285,169 +288,72 @@ app.post('/api/tasks', (req, res) => {
 
 
 
-// 获取任务详情：根据 nested structure (TaskID/ModelName)
+// 获取任务详情：从数据库读取
 app.get('/api/task_details/:taskId', (req, res) => {
     const { taskId } = req.params;
     const taskDir = path.join(TASKS_DIR, taskId);
 
-
-    // 0. 从 history.json 获取该任务的原始信息 (为了知道预期的模型列表)
-    let taskMeta = null;
-    if (fs.existsSync(HISTORY_FILE)) {
-        try {
-            const history = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
-            taskMeta = history.find(t => t.taskId === taskId);
-        } catch (e) { }
-    }
-
-    const responseData = {
-        taskId,
-        title: taskMeta ? taskMeta.title : 'Unknown Task',
-        prompt: taskMeta ? taskMeta.prompt : '',
-        expectedModels: taskMeta ? taskMeta.models : [],
-        runs: []
-    };
-
-    if (!fs.existsSync(taskDir) || !fs.statSync(taskDir).isDirectory()) {
-        // 如果目录还没创建，也返回预期的模型列表，方便前端显示
-        if (responseData.expectedModels) {
-            responseData.runs = responseData.expectedModels.map(m => ({
-                folderName: path.join(taskId, m),
-                modelName: m,
-                outputLog: 'Waiting for execution to start...',
-                generatedFiles: [],
-                status: 'pending'
-            }));
+    try {
+        const task = db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId);
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found' });
         }
-        return res.json(responseData);
-    }
 
-    // New Structure Logic
-    fs.readdir(taskDir, { withFileTypes: true }, (err, files) => {
-        if (err) return res.status(500).json({ error: 'Failed to read task directory' });
+        const runs = db.prepare('SELECT * FROM model_runs WHERE task_id = ?').all(taskId);
 
-        // 每个子文件夹就是一个 Model Run
-        const modelDirs = files.filter(dirent => dirent.isDirectory());
-        const discoveredModels = modelDirs.map(d => d.name);
+        const responseData = {
+            taskId: task.task_id,
+            title: task.title,
+            prompt: task.prompt,
+            runs: runs.map(run => {
+                const folderPath = path.join(taskDir, run.model_name);
+                let generatedFiles = [];
 
-        // 如果 history 里记录了模型，我们按照 history 里的顺序和列表返回
-        const modelsToReturn = responseData.expectedModels && responseData.expectedModels.length > 0
-            ? responseData.expectedModels
-            : discoveredModels;
-
-        // Load Stats Cache
-        const statsCachePath = path.join(taskDir, 'task_stats.json');
-        let statsCache = {};
-        if (fs.existsSync(statsCachePath)) {
-            try {
-                statsCache = JSON.parse(fs.readFileSync(statsCachePath, 'utf8'));
-            } catch (e) { }
-        }
-        let cacheDirty = false;
-
-        responseData.runs = modelsToReturn.map(modelName => {
-            const folderPath = path.join(taskDir, modelName);
-            const uniqueFolderIdentifier = path.join(taskId, modelName);
-
-            let outputLog = null;
-            let generatedFiles = [];
-            let status = 'pending';
-            let stats = null;
-
-            if (fs.existsSync(folderPath)) {
-                status = 'running';
-                // 读取日志逻辑调整：从任务根目录读取 模型名.txt
-                try {
-                    const logFilePath = path.join(taskDir, `${modelName}.txt`);
-                    if (fs.existsSync(logFilePath)) {
-                        const logStat = fs.statSync(logFilePath);
-                        const mtime = logStat.mtimeMs;
-
-                        // Check Cache
-                        if (statsCache[modelName] && statsCache[modelName].mtime === mtime && statsCache[modelName].stats) {
-                            // Cache Hit
-                            stats = statsCache[modelName].stats;
-                            status = statsCache[modelName].status;
-                        } else {
-                            // Cache Miss - Read File
-                            const fullLog = fs.readFileSync(logFilePath, 'utf8');
-                            outputLog = null;
-
-                            // Check status
-                            const lines = fullLog.split('\n').filter(l => l.trim());
-                            if (lines.length > 0) {
-                                status = 'running';
-                                try {
-                                    const lastLine = lines[lines.length - 1];
-                                    const lastObj = JSON.parse(lastLine);
-                                    if (lastObj.type === 'result') {
-                                        status = 'completed';
-                                    }
-                                } catch (err) { }
-                            } else {
-                                status = 'pending';
-                            }
-
-                            // Calculate Stats
-                            stats = calculateLogStats(fullLog);
-
-                            // Update Cache
-                            statsCache[modelName] = {
-                                mtime: mtime,
-                                stats: stats,
-                                status: status
-                            };
-                            cacheDirty = true;
-                        }
-                    }
-                } catch (err) {
-                    console.error(`Error processing log for ${modelName}:`, err);
-                }
-            }
-
-            // Find generated files
-            if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
-                try {
+                if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
                     const walkSync = (dir, filelist = []) => {
-                        const files = fs.readdirSync(dir);
-                        files.forEach(file => {
+                        fs.readdirSync(dir).forEach(file => {
                             const filepath = path.join(dir, file);
                             if (fs.statSync(filepath).isDirectory()) {
                                 walkSync(filepath, filelist);
                             } else {
-                                // Return relative path from model folder
                                 filelist.push(path.relative(folderPath, filepath));
                             }
                         });
                         return filelist;
                     };
                     generatedFiles = walkSync(folderPath);
-                } catch (e) {
-                    console.error(`Error reading generated files for ${modelName}:`, e);
                 }
-            }
 
-            return {
-                folderName: uniqueFolderIdentifier,
-                modelName,
-                // outputLog, // Exclude heavy log
-                stats,     // Include calculated stats
-                generatedFiles,
-                status
-            };
-        });
+                // Check if we need to update stats from log (if status is still running/pending or cache bit missing)
+                // For now, we trust the DB stats. Real-time updates will be handled by ingestion.
 
-        // Save Cache if dirty
-        if (cacheDirty) {
-            try {
-                fs.writeFileSync(statsCachePath, JSON.stringify(statsCache, null, 2));
-            } catch (e) {
-                console.error("Failed to save stats cache:", e);
-            }
-        }
+                return {
+                    folderName: path.join(taskId, run.model_name),
+                    modelName: run.model_name,
+                    status: run.status,
+                    generatedFiles,
+                    stats: {
+                        duration: run.duration,
+                        turns: run.turns,
+                        inputTokens: run.input_tokens,
+                        outputTokens: run.output_tokens,
+                        cacheReadTokens: run.cache_read_tokens,
+                        toolCounts: {
+                            TodoWrite: run.count_todo_write,
+                            Read: run.count_read,
+                            Write: run.count_write,
+                            Bash: run.count_bash
+                        }
+                    }
+                };
+            })
+        };
 
         res.json(responseData);
-    });
+    } catch (e) {
+        console.error('Error fetching task details:', e);
+        res.status(500).json({ error: 'Failed to fetch task details' });
+    }
 });
 
 // 新增：单独获取特定模型的完整日志
@@ -576,20 +482,11 @@ app.get('/api/download_zip', (req, res) => {
 app.delete('/api/tasks/:taskId', (req, res) => {
     const { taskId } = req.params;
 
-    // 1. 从 history.json 删除
-    if (fs.existsSync(HISTORY_FILE)) {
-        try {
-            let history = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8'));
-            const initialLength = history.length;
-            history = history.filter(t => t.taskId !== taskId);
-
-            if (history.length < initialLength) {
-                fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
-            }
-        } catch (e) {
-            console.error('Error updating history:', e);
-            return res.status(500).json({ error: 'Failed to update history' });
-        }
+    try {
+        db.prepare('DELETE FROM tasks WHERE task_id = ?').run(taskId);
+    } catch (e) {
+        console.error('Error deleting task from DB:', e);
+        return res.status(500).json({ error: 'Failed to delete task from database' });
     }
 
     // 2. 删除目录和 prompt 文件
@@ -616,66 +513,7 @@ app.delete('/api/tasks/:taskId', (req, res) => {
 });
 
 
-// Helper to calculate stats on valid JSON logs
-function calculateLogStats(logContent) {
-    const stats = {
-        duration: 0,
-        turns: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        toolCounts: {
-            TodoWrite: 0,
-            Read: 0,
-            Write: 0,
-            Bash: 0
-        }
-    };
-
-    if (!logContent) return stats;
-
-    // Handle duplicate newlines or concatenated JSON objects just in case
-    const formattedContent = logContent.replace(/}\s*{/g, '}\n{');
-    const lines = formattedContent.split(/\r\n|\n|\r/);
-
-    lines.forEach(line => {
-        if (!line.trim() || !line.trim().startsWith('{')) return;
-        try {
-            const obj = JSON.parse(line);
-
-            if (obj.type === 'result') {
-                if (obj.duration_ms) stats.duration = (obj.duration_ms / 1000).toFixed(1);
-                else if (obj.duration) stats.duration = (obj.duration / 1000).toFixed(1);
-
-                if (obj.usage) {
-                    stats.inputTokens = obj.usage.input_tokens || 0;
-                    stats.outputTokens = obj.usage.output_tokens || 0;
-                    stats.cacheReadTokens = obj.usage.cache_read_input_tokens || 0;
-                } else if (obj.tokenUsage) {
-                    stats.inputTokens = obj.tokenUsage.input || obj.tokenUsage.input_tokens || 0;
-                    stats.outputTokens = obj.tokenUsage.output || obj.tokenUsage.output_tokens || 0;
-                    stats.cacheReadTokens = obj.tokenUsage.cacheRead || obj.tokenUsage.cache_read_input_tokens || 0;
-                }
-            }
-
-            if (obj.type === 'user') stats.turns++;
-
-            if (obj.type === 'tool_use') {
-                const name = obj.name;
-                if (stats.toolCounts.hasOwnProperty(name)) stats.toolCounts[name]++;
-            }
-            if (obj.type === 'assistant' && obj.message && Array.isArray(obj.message.content)) {
-                obj.message.content.forEach(block => {
-                    if (block.type === 'tool_use') {
-                        const name = block.name;
-                        if (stats.toolCounts.hasOwnProperty(name)) stats.toolCounts[name]++;
-                    }
-                });
-            }
-        } catch (e) { }
-    });
-    return stats;
-}
+// Legacy calculateLogStats removed as it is now handled by ingest.js or migrate.js
 
 // Multer error handling middleware (must be after routes)
 app.use((err, req, res, next) => {
