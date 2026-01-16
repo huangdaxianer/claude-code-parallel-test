@@ -231,8 +231,39 @@ async function deleteTask(taskId) {
 
 // New Task Modal Logic
 let selectedFolderPath = '';
+let incrementalSrcTaskId = null; // Track if we are branching from an existing task
+let incrementalSrcModelName = null; // Track specific model subfolder
 
 function openNewTaskModal() {
+    // Standard open: Reset incremental state
+    incrementalSrcTaskId = null;
+    document.getElementById('random-prompt-btn').style.display = 'inline-flex';
+    document.getElementById('browse-folder-btn').classList.remove('has-file');
+    document.getElementById('browse-folder-btn').querySelector('.folder-name').textContent = '';
+    selectedFolderPath = '';
+
+    document.getElementById('new-task-modal').classList.add('show');
+}
+
+function openIncrementalTaskModal() {
+    if (!currentTaskId) return;
+
+    // Incremental open: Set state
+    incrementalSrcTaskId = currentTaskId;
+    incrementalSrcModelName = activeFolder; // e.g. 'banana'
+    selectedFolderPath = `INCREMENTAL_FROM_${currentTaskId}_${incrementalSrcModelName}`;
+
+    // Update UI pre-fill
+    const browseBtn = document.getElementById('browse-folder-btn');
+    browseBtn.classList.add('has-file');
+    browseBtn.querySelector('.folder-name').textContent = `Base: ${incrementalSrcModelName || 'All'} (${currentTaskId})`;
+
+    // Hide random prompt button
+    document.getElementById('random-prompt-btn').style.display = 'none';
+
+    // Clear prompt
+    document.getElementById('task-prompt').value = '';
+
     document.getElementById('new-task-modal').classList.add('show');
 }
 
@@ -245,9 +276,12 @@ function triggerFolderBrowse() {
     if (selectedFolderPath && browseBtn.classList.contains('has-file')) {
         if (confirm('Clear selected folder?')) {
             selectedFolderPath = '';
+            incrementalSrcTaskId = null; // Reset incremental state on clear
+            incrementalSrcModelName = null;
             browseBtn.classList.remove('has-file');
             browseBtn.querySelector('.folder-name').textContent = '';
             document.getElementById('folder-input').value = '';
+            document.getElementById('random-prompt-btn').style.display = 'inline-flex'; // Show random button again
         }
         return;
     }
@@ -375,7 +409,9 @@ async function startNewTask() {
             title: 'Initializing...',
             prompt,
             taskId: newTaskId,
-            models: selectedModels
+            models: selectedModels,
+            srcTaskId: incrementalSrcTaskId, // Send source task ID to server
+            srcModelName: incrementalSrcModelName // Send source model name
         };
 
         const res = await fetch('/api/tasks', {

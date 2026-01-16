@@ -1634,14 +1634,22 @@
 
                 <!-- Right Panel: Files & Preview -->
                 <div class="panel-right">
-                    <div class="panel-header" style="height: 60px; padding: 0 1.5rem; justify-content: space-between;">
-                        <div class="tabs">
+                    <div class="panel-header"
+                        style="height: 60px; padding: 0 1.5rem; justify-content: flex-start; gap: 1rem;">
+                        <div class="tabs" style="margin-right: 1rem;">
                             <button class="tab active" data-tab="files" onclick="switchTab('files')">Files</button>
                             <button class="tab" data-tab="preview" onclick="switchTab('preview')">Preview</button>
                         </div>
-                        <button class="info-btn" onclick="downloadFiles()" title="Download Files as ZIP">
-                            <span class="info-icon" style="font-weight: bold;">↓</span>
-                        </button>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="info-btn" onclick="downloadFiles()" title="下载当前产物"
+                                style="width: auto; padding: 0 0.8rem; font-size: 0.85rem; background: #f1f5f9; border-radius: 6px;">
+                                下载产物
+                            </button>
+                            <button class="info-btn" onclick="openIncrementalTaskModal()" title="基于当前结果继续开发"
+                                style="width: auto; padding: 0 0.8rem; font-size: 0.85rem; background: #f1f5f9; border-radius: 6px;">
+                                增量开发
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Files Tab Content -->

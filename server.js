@@ -233,10 +233,79 @@ app.post('/api/tasks', (req, res) => {
         return res.status(500).json({ error: 'Failed to save task' });
     }
 
-    // 2. 处理上传的项目文件夹：如果是从 temp_uploads 上传的，移动到任务专属目录
+    // 2. 预定义变量
     let finalBaseDir = task.baseDir;
     const taskDir = path.join(TASKS_DIR, task.taskId);
 
+    // 1.5 处理增量开发：如果指定了 srcTaskId，则从该任务目录复制文件作为新任务的 source
+    if (task.srcTaskId) {
+        let srcTaskDir = path.join(TASKS_DIR, task.srcTaskId);
+        let targetPath = path.join(taskDir, 'source');
+
+        if (task.srcModelName) {
+            // 如果仅想基于特定的 output 文件夹继续（如 tasks/7L6WXV/strawberry/）
+            // 我们将其内容复制到 tasks/NewID/source/strawberry/ 中
+            // 注意：新的任务脚本通常期望 source 文件夹下就是文件根目录。
+            // 之前的 copyFiles(srcTaskDir, targetPath) 是把 tasks/ID/* 复制到 tasks/NewID/source/*
+
+            // 如果用户选了 strawberry 文件夹，我们应该把 tasks/ID/strawberry/* 复制到 tasks/NewID/source/* 
+            // 这样新任务就以 strawberry 的产物作为根目录开始。
+            // 否则，如果还是复制到 tasks/NewID/source/strawberry/，那么新任务脚本可能找不到文件（取决于它去哪找）。
+            // 通常项目上传是上传一个文件夹，比如 'my-project'，然后脚本在 'source/my-project' 下面找？
+            // 之前的上传逻辑是：上传到 `TASK/source/FolderName`。
+
+            // 所以如果我们选了 strawberry，应该把内容复制到 `TASK/source/strawberry`，然后 baseDir 指向 `TASK/source`。
+
+            srcTaskDir = path.join(srcTaskDir, task.srcModelName);
+            targetPath = path.join(targetPath, task.srcModelName);
+        }
+
+        if (fs.existsSync(srcTaskDir)) {
+            try {
+                if (!fs.existsSync(taskDir)) fs.mkdirSync(taskDir, { recursive: true });
+                if (!fs.existsSync(targetPath)) fs.mkdirSync(targetPath, { recursive: true });
+
+                console.log(`[Incremental] Copying files from ${srcTaskDir} to ${targetPath}`);
+
+                // Recursive Copy Function excluding logs and hidden files
+                const copyFiles = (src, dest) => {
+                    const items = fs.readdirSync(src);
+                    items.forEach(item => {
+                        if (item.endsWith('.txt')) return; // Logs
+                        if (item === '.agent') return;
+
+                        const srcPath = path.join(src, item);
+                        const destPath = path.join(dest, item);
+
+                        try {
+                            const stat = fs.statSync(srcPath);
+                            if (stat.isDirectory()) {
+                                if (!fs.existsSync(destPath)) fs.mkdirSync(destPath);
+                                copyFiles(srcPath, destPath);
+                            } else {
+                                fs.copyFileSync(srcPath, destPath);
+                            }
+                        } catch (e) { /* ignore missing/locked */ }
+                    });
+                };
+
+                copyFiles(srcTaskDir, targetPath);
+
+                // baseDir 统一指向 source 目录的父级（如果是上传文件夹，baseDir 是 source/FolderName 的相对路径）
+                // 不，看之前的 upload 逻辑，res.json({ path: targetBase }) 返回的是 source/FolderName。
+                // 这里的 finalBaseDir 就应该是 path.relative(__dirname, targetPath)。
+                finalBaseDir = path.relative(__dirname, targetPath);
+                task.baseDir = finalBaseDir;
+                console.log(`[Incremental] Setup complete. Base dir: ${finalBaseDir}`);
+
+            } catch (err) {
+                console.error('[Incremental] Copy failed:', err);
+            }
+        }
+    }
+
+
+    // 2. 处理上传的项目文件夹：如果是从 temp_uploads 上传的，移动到任务专属目录
     if (finalBaseDir && finalBaseDir.includes('temp_uploads')) {
         const sourcePath = finalBaseDir;
         const targetPath = path.join(taskDir, 'source');
