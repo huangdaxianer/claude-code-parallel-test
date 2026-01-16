@@ -138,9 +138,8 @@ app.post('/api/browse', (req, res) => {
     });
 });
 
-// 上传文件夹接口 (保持目录结构)
-// Increase maxCount to 100k to handle large folders
-app.post('/api/upload', upload.array('files', 100000), (req, res) => {
+// 上传文件夹接口 (保持目录结构) - 使用 .any() 允许接收任意数量和字段的文件，彻底解决 Unexpected Field 报错
+app.post('/api/upload', upload.any(), (req, res) => {
     const folderName = req.body.folderName;
     if (!folderName) {
         console.error('[Upload] Error: Missing folderName in request body');
@@ -161,14 +160,15 @@ app.post('/api/upload', upload.array('files', 100000), (req, res) => {
             return res.status(400).json({ error: '没有接收到文件' });
         }
 
-        const fileCount = req.files.length;
+        const filesToProcess = req.files.filter(f => f.fieldname === 'files');
+        const fileCount = filesToProcess.length;
         let totalBytes = 0;
-        req.files.forEach(f => totalBytes += f.size);
+        filesToProcess.forEach(f => totalBytes += f.size);
         const sizeInMB = (totalBytes / (1024 * 1024)).toFixed(2);
 
         console.log(`[Upload] Received ${fileCount} files, total size: ${sizeInMB} MB`);
 
-        req.files.forEach((file, index) => {
+        filesToProcess.forEach((file, index) => {
             const relPath = file.originalname;
             const fullPath = path.join(targetBase, relPath);
             const dir = path.dirname(fullPath);
