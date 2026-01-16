@@ -286,18 +286,44 @@ async function handleFolderUpload(e) {
         console.log(`[Upload] FormData prepared. Sending request to server...`);
         const startTime = Date.now();
 
-        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        // Use XHR for progress tracking
+        const xhr = new XMLHttpRequest();
+        const progressRing = document.getElementById('upload-progress-ring');
+        const circle = progressRing.querySelector('.progress-ring__circle');
+        const circumference = 14 * 2 * Math.PI; // r=14
 
-        const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-        console.log(`[Upload] Server responded in ${duration}s. Status: ${res.status}`);
+        progressRing.classList.add('show');
+        circle.style.strokeDashoffset = circumference;
 
-        if (!res.ok) {
-            const errorText = await res.text();
-            console.error(`[Upload] Server error (${res.status}):`, errorText);
-            throw new Error(`Server returned ${res.status}: ${errorText}`);
-        }
+        const uploadPromise = new Promise((resolve, reject) => {
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percent = event.loaded / event.total;
+                    const offset = circumference - (percent * circumference);
+                    circle.style.strokeDashoffset = offset;
+                }
+            };
 
-        const data = await res.json();
+            xhr.onload = () => {
+                const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+                console.log(`[Upload] Server responded in ${duration}s. Status: ${xhr.status}`);
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        resolve(JSON.parse(xhr.responseText));
+                    } catch (e) {
+                        reject(new Error('Invalid JSON response from server'));
+                    }
+                } else {
+                    reject(new Error(xhr.responseText || `Server returned ${xhr.status}`));
+                }
+            };
+
+            xhr.onerror = () => reject(new Error('Network error during upload'));
+            xhr.open('POST', '/api/upload');
+            xhr.send(formData);
+        });
+
+        const data = await uploadPromise;
 
         if (data.path) {
             console.log(`[Upload] Upload successful! Target path: ${data.path}`);
@@ -314,6 +340,7 @@ async function handleFolderUpload(e) {
         alert('Upload error: ' + err.message);
     } finally {
         browseBtn.disabled = false;
+        document.getElementById('upload-progress-ring').classList.remove('show');
         if (!selectedFolderPath) iconSpan.textContent = '📁';
     }
 }

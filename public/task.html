@@ -1051,6 +1051,24 @@
             margin-left: 0.5rem;
         }
 
+        .progress-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-90deg);
+            pointer-events: none;
+            display: none;
+        }
+
+        .progress-ring.show {
+            display: block;
+        }
+
+        .progress-ring__circle {
+            transition: stroke-dashoffset 0.1s;
+            transform-origin: 50% 50%;
+        }
+
         .model-selection {
             margin-top: 0.5rem;
         }
@@ -1657,8 +1675,15 @@
                                 style="min-height:120px;"></textarea>
                             <div class="action-buttons">
                                 <button type="button" id="browse-folder-btn" class="icon-btn"
-                                    title="Upload Project Folder">
+                                    title="Upload Project Folder" style="position: relative;">
                                     <span class="icon">📁</span>
+                                    <svg class="progress-ring" width="32" height="32" id="upload-progress-ring">
+                                        <circle class="progress-ring__track" stroke="#e2e8f0" stroke-width="2"
+                                            fill="transparent" r="14" cx="16" cy="16" />
+                                        <circle class="progress-ring__circle" stroke="#10b981" stroke-width="2"
+                                            fill="transparent" r="14" cx="16" cy="16"
+                                            style="stroke-dasharray: 88; stroke-dashoffset: 88;" />
+                                    </svg>
                                     <span class="folder-name"></span>
                                 </button>
                                 <button type="button" id="random-prompt-btn" class="icon-btn" title="Random Prompt">
