@@ -1038,7 +1038,8 @@ function renderMainContent() {
                         } else if (firstContent.type === 'tool_use') {
                             const toolName = firstContent.name || 'tool';
                             type = toolName;
-                            typeClass = 'type-tool';
+                            // Set Read tool to green by default as per user request
+                            typeClass = (toolName === 'Read') ? 'type-success' : 'type-tool';
 
                             // CHECK FOR MATCHING RESULT
                             if (firstContent.id && toolResultsMap[firstContent.id]) {
@@ -1121,7 +1122,8 @@ function renderMainContent() {
                     else if (obj.type === 'tool_use') {
                         const toolName = obj.name || 'tool';
                         type = toolName;
-                        typeClass = 'type-tool';
+                        // Set Read tool to green by default as per user request
+                        typeClass = (toolName === 'Read') ? 'type-success' : 'type-tool';
 
                         // CHECK FOR MATCHING RESULT (Top level id)
                         if (obj.id && toolResultsMap[obj.id]) {
