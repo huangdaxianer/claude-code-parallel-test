@@ -11,6 +11,11 @@ const multer = require('multer');
 
 const app = express();
 const PORT = 3001;
+
+const server = app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+});
+server.timeout = 300000; // 5 minutes timeout for large uploads
 const PROMPT_FILE = path.join(__dirname, 'prompt.txt');
 const SCRIPT_FILE = path.join(__dirname, 'batch_claude_parallel.sh');
 const TASKS_DIR = path.join(__dirname, 'tasks');
@@ -82,7 +87,8 @@ async function generateTitle(userPrompt) {
 }
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static('public'));
 app.use('/artifacts', express.static(TASKS_DIR)); // Allow serving task files for preview
 
@@ -133,37 +139,53 @@ app.post('/api/browse', (req, res) => {
 });
 
 // 上传文件夹接口 (保持目录结构)
-app.post('/api/upload', upload.array('files'), (req, res) => {
+app.post('/api/upload', upload.array('files', 1000), (req, res) => {
     const folderName = req.body.folderName;
-    if (!folderName) return res.status(400).json({ error: 'Missing folderName' });
+    if (!folderName) {
+        console.error('[Upload] Error: Missing folderName in request body');
+        return res.status(400).json({ error: 'Missing folderName' });
+    }
 
-    // 使用单一时间戳确保本次上传的所有文件都在同一个目录下
     const uploadId = Date.now();
     const targetBase = path.join(UPLOAD_DIR, `${uploadId}_${folderName}`);
+    console.log(`[Upload] Starting process for folder: ${folderName} (ID: ${uploadId})`);
 
     try {
-        if (!fs.existsSync(targetBase)) fs.mkdirSync(targetBase, { recursive: true });
+        if (!fs.existsSync(targetBase)) {
+            fs.mkdirSync(targetBase, { recursive: true });
+        }
 
         if (!req.files || req.files.length === 0) {
+            console.error('[Upload] Error: No files received from multer');
             return res.status(400).json({ error: '没有接收到文件' });
         }
 
-        req.files.forEach(file => {
-            // file.originalname 包含了前端传来的相对路径 (webkitRelativePath)
+        const fileCount = req.files.length;
+        let totalBytes = 0;
+        req.files.forEach(f => totalBytes += f.size);
+        const sizeInMB = (totalBytes / (1024 * 1024)).toFixed(2);
+
+        console.log(`[Upload] Received ${fileCount} files, total size: ${sizeInMB} MB`);
+
+        req.files.forEach((file, index) => {
             const relPath = file.originalname;
             const fullPath = path.join(targetBase, relPath);
             const dir = path.dirname(fullPath);
 
-            // 递归创建子目录
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-            // 将临时随机命名的文件移动到正确的相对位置
             fs.renameSync(file.path, fullPath);
+
+            // Log every 100 files or the last one to avoid spamming too much
+            if (index % 100 === 0 || index === fileCount - 1) {
+                console.log(`[Upload] Processing: ${index + 1}/${fileCount} files...`);
+            }
         });
 
+        console.log(`[Upload] Successfully processed folder: ${targetBase}`);
         res.json({ path: targetBase });
     } catch (err) {
-        console.error('Upload error:', err);
+        console.error('[Upload] Fatal server error during processing:', err);
         res.status(500).json({ error: `处理上传文件失败: ${err.message}` });
     }
 });
@@ -639,6 +661,4 @@ function calculateLogStats(logContent) {
     return stats;
 }
 
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-});
+

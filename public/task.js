@@ -261,6 +261,15 @@ async function handleFolderUpload(e) {
     const browseBtn = document.getElementById('browse-folder-btn');
     const iconSpan = browseBtn.querySelector('.icon');
 
+    const totalFiles = files.length;
+    let totalSize = 0;
+    for (let i = 0; i < files.length; i++) {
+        totalSize += files[i].size;
+    }
+    const sizeInMB = (totalSize / (1024 * 1024)).toFixed(2);
+
+    console.log(`[Upload] Starting folder upload: ${totalFiles} files, ${sizeInMB} MB`);
+
     try {
         browseBtn.disabled = true;
         iconSpan.textContent = '⏳';
@@ -274,20 +283,35 @@ async function handleFolderUpload(e) {
             formData.append('files', files[i], files[i].webkitRelativePath);
         }
 
+        console.log(`[Upload] FormData prepared. Sending request to server...`);
+        const startTime = Date.now();
+
         const res = await fetch('/api/upload', { method: 'POST', body: formData });
+
+        const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+        console.log(`[Upload] Server responded in ${duration}s. Status: ${res.status}`);
+
+        if (!res.ok) {
+            const errorText = await res.text();
+            console.error(`[Upload] Server error (${res.status}):`, errorText);
+            throw new Error(`Server returned ${res.status}: ${errorText}`);
+        }
+
         const data = await res.json();
 
         if (data.path) {
+            console.log(`[Upload] Upload successful! Target path: ${data.path}`);
             selectedFolderPath = data.path;
             browseBtn.classList.add('has-file');
             browseBtn.querySelector('.folder-name').textContent = folderName;
             iconSpan.textContent = '📁';
         } else {
+            console.error(`[Upload] Upload failed according to data payload:`, data);
             alert('Upload failed: ' + (data.error || 'Unknown error'));
         }
     } catch (err) {
-        console.error(err);
-        alert('Upload error');
+        console.error(`[Upload] Catch block caught an error:`, err);
+        alert('Upload error: ' + err.message);
     } finally {
         browseBtn.disabled = false;
         if (!selectedFolderPath) iconSpan.textContent = '📁';
@@ -1580,15 +1604,7 @@ function syntaxHighlight(json) {
     });
 }
 
-function showTaskResult() {
-    if (!lastTaskResult) {
-        alert('No result available yet.');
-        return;
-    }
-    previewFilename.textContent = 'Task Result';
-    previewBody.innerHTML = syntaxHighlight(lastTaskResult);
-    previewModal.classList.add('show');
-}
+
 
 function downloadFiles() {
     if (!activeFolder) {
