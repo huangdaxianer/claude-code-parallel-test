@@ -368,9 +368,6 @@
             cursor: pointer;
             font-size: 0.85rem;
             font-weight: 500;
-            color: #2563eb;
-            background: #eff6ff;
-            border: 1px solid #dbeafe;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -380,23 +377,39 @@
             white-space: nowrap;
         }
 
-        .compare-btn:hover,
-        .stats-btn:hover {
+        /* Compare Button Specific Styles */
+        .compare-btn {
+            color: #2563eb;
+            background: #eff6ff;
+            border: 1px solid #dbeafe;
+        }
+
+        .compare-btn:hover {
             background: #dbeafe;
             color: #1d4ed8;
         }
 
         .compare-btn.active {
             background: #1e40af;
-            /* Deep Blue */
             color: #ffffff;
             border-color: #1e40af;
             font-weight: 600;
         }
 
+        /* Stats Button Specific Styles */
+        .stats-btn {
+            color: #059669;
+            background: #ecfdf5;
+            border: 1px solid #d1fae5;
+        }
+
+        .stats-btn:hover {
+            background: #d1fae5;
+            color: #047857;
+        }
+
         .stats-btn.active {
             background: #059669;
-            /* Deep Green */
             color: #ffffff;
             border-color: #059669;
             font-weight: 600;
