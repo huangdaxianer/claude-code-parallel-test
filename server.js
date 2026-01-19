@@ -320,22 +320,28 @@ app.post('/api/tasks', (req, res) => {
         }
     }
 
-    // 3. 创建该任务专属的 prompt 文件
-    const specificPromptFile = path.join(TASKS_DIR, `prompt_${task.taskId}.txt`);
-    const modelsStr = Array.isArray(task.models) ? task.models.join(',') : '';
-    // Sanitize prompt and title to remove newlines, as they break the shell script's read command
-    const safeTitle = (task.title || '').replace(/[\r\n]+/g, ' ');
-    const safePrompt = (task.prompt || '').replace(/[\r\n]+/g, ' ');
-    const promptContent = `${finalBaseDir || ''};${safeTitle};${safePrompt};${task.taskId};${modelsStr}\n`;
-    fs.writeFileSync(specificPromptFile, promptContent);
+    // 3. (Refactored) Invoke script with Task ID. Content is fetched from DB.
+    console.log(`[ID: ${task.taskId}] Spawning task with script: ${SCRIPT_FILE} and ID: ${task.taskId}`);
+    // Explicitly set LANG environment variable to ensure proper encoding for child process
+    const child = spawn('bash', [SCRIPT_FILE, task.taskId], {
+        env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' }
+    });
 
+    child.stdout.on('data', (data) => console.log(`[Task ${task.taskId} STDOUT] ${data}`));
+    child.stderr.on('data', (data) => console.error(`[Task ${task.taskId} STDERR] ${data}`));
 
-    // 3. 异步启动脚本执行，不阻塞响应
-    const child = spawn('bash', [SCRIPT_FILE, specificPromptFile]);
-    child.stdout.on('data', (data) => console.log(`[Task ${task.taskId}] ${data}`));
-    child.on('close', () => {
+    child.on('error', (err) => {
+        console.error(`[Task ${task.taskId} ERROR] Failed to spawn process:`, err);
+    });
+
+    child.on('exit', (code, signal) => {
+        console.log(`[Task ${task.taskId} EXIT] Process exited with code ${code} and signal ${signal}`);
         // 完成后删除临时 prompt 文件
         try { fs.unlinkSync(specificPromptFile); } catch (e) { }
+    });
+
+    child.on('close', (code) => {
+        console.log(`[Task ${task.taskId} CLOSE] Stream closed with code ${code}`);
     });
 
     // 4. 异步生成 AI 标题，并在生成后更新数据库
