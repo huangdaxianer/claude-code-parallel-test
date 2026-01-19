@@ -803,17 +803,22 @@ function updateComparisonSide(side) {
     statusBadge.style.display = 'inline-block';
 
     // Iframe Logic
+    // Iframe Logic
     const htmlFile = (run.generatedFiles || []).find(f => f.endsWith('.html'));
+    const packageJson = (run.generatedFiles || []).find(f => f === 'package.json');
+    const hasPreview = htmlFile || packageJson;
 
-    if (htmlFile) {
-        const targetSrc = `/artifacts/${run.folderName}/${htmlFile}`;
-        // Only update src if changed to avoid reload flickering
-        if (iframe.dataset.src !== targetSrc) {
-            iframe.src = targetSrc;
-            iframe.dataset.src = targetSrc;
-        }
+    if (hasPreview) {
         iframe.style.display = 'block';
         emptyState.style.display = 'none';
+
+        const runId = run.folderName;
+        if (iframe.dataset.runId !== runId) {
+            iframe.dataset.runId = runId;
+            const parts = runId.split('/');
+            // Use container (parent of iframe) for overlay
+            loadPreview(parts[0], parts[1], iframe, iframe.parentElement);
+        }
     } else {
         iframe.style.display = 'none';
         iframe.dataset.src = '';
@@ -998,10 +1003,12 @@ function renderMainContent() {
     // 2. Render Files
     const newFiles = activeRun.generatedFiles || [];
     const htmlFile = newFiles.find(f => f.endsWith('.html'));
+    const packageJson = newFiles.find(f => f === 'package.json');
+    const hasPreview = htmlFile || packageJson;
 
     const previewTabBtn = document.querySelector('.tab[data-tab="preview"]');
     if (previewTabBtn) {
-        if (htmlFile) {
+        if (hasPreview) {
             previewTabBtn.style.display = 'block';
         } else {
             previewTabBtn.style.display = 'none';
@@ -1010,15 +1017,27 @@ function renderMainContent() {
     }
 
     // 3. Update Preview Iframe if active
-    if (activeTab === 'preview' && htmlFile) {
+    if (activeTab === 'preview') { // Removed hasPreview check for debugging
+        console.log(`[Debug] Checking Preview state for ${activeFolder}`);
         const iframe = document.getElementById('preview-iframe');
-        const targetSrc = `/artifacts/${activeRun.folderName}/${htmlFile}`;
-        if (iframe.getAttribute('data-src') !== targetSrc) {
-            iframe.src = targetSrc + `?t=${Date.now()}`;
-            iframe.setAttribute('data-src', targetSrc);
-            iframe.onload = () => {
-                setTimeout(() => { if (iframe.contentWindow) iframe.contentWindow.dispatchEvent(new Event('resize')); }, 100);
-            };
+        const container = document.getElementById('tab-content-preview');
+
+        // Always try to load preview to trigger UI updates even if no runId logic yet
+        // Fallback runId
+        // Use global currentTaskId because activeRun might not have it populated
+        const runId = currentTaskId + '/' + activeRun.modelName;
+
+        // Avoid reloading if we are already showing this run's preview
+        if (iframe.getAttribute('data-run-id') !== runId) {
+            console.log(`[Debug] Loading preview for ${runId}`);
+            iframe.setAttribute('data-run-id', runId);
+            loadPreview(currentTaskId, activeRun.modelName, iframe, container);
+        } else {
+            // Force UI update anyway
+            console.log(`[Debug] Preview already loaded. Force UI check.`);
+            // Manually ensure status bar is visible
+            const sb = document.getElementById('preview-status-bar');
+            if (sb) sb.style.display = 'flex';
         }
     }
 
@@ -1306,3 +1325,89 @@ function copyPrompt() {
         console.error('Failed to copy content: ', err);
     });
 }
+
+// --- Preview Logic ---
+async function loadPreview(taskId, modelName, iframe, container) {
+    if (!taskId || !modelName) return;
+
+    // Remove existing overlay
+    const existingOverlay = container.querySelector('.preview-loading-overlay');
+    if (existingOverlay) existingOverlay.remove();
+
+    // Status Bar Elements
+    const statusBar = document.getElementById('preview-status-bar');
+    const statusDot = document.getElementById('preview-status-dot');
+    const statusText = document.getElementById('preview-status-text');
+    const urlDisplay = document.getElementById('preview-url-display');
+
+    if (statusBar) {
+        statusBar.style.display = 'flex';
+        statusDot.className = 'status-dot status-pending';
+        statusText.textContent = 'Connecting to preview server...';
+        urlDisplay.textContent = '-';
+    }
+
+    // Create new overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'preview-loading-overlay';
+    // Fix lint: border-radius
+    overlay.style.cssText = 'position:absolute; inset:0; background:white; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; top:37px;';
+    overlay.innerHTML = '<div class="loading-spinner"></div><p style="margin-top:1rem; color:#64748b; font-size:0.9rem">Starting environment...</p>';
+
+    // Ensure container is relative
+    if (getComputedStyle(container).position === 'static') {
+        container.style.position = 'relative';
+    }
+    container.appendChild(overlay);
+
+    try {
+        const res = await fetch('/api/preview/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ taskId, modelName })
+        });
+        const data = await res.json();
+
+        if (data.url) {
+            const currentSrc = iframe.getAttribute('data-src');
+            // Update Iframe
+            if (currentSrc !== data.url) {
+                iframe.src = data.url;
+                iframe.setAttribute('data-src', data.url);
+                iframe.style.display = 'block';
+            }
+            overlay.remove();
+
+            // Update Status Bar Success
+            if (statusBar) {
+                statusDot.className = 'status-dot status-completed';
+                statusText.textContent = 'Preview Running';
+                urlDisplay.textContent = data.url;
+            }
+
+        } else {
+            throw new Error(data.error || 'Unknown response');
+        }
+    } catch (e) {
+        overlay.innerHTML = `<p style="color:#ef4444; padding:1rem; text-align:center">Preview failed:<br>${e.message}</p>`;
+
+        // Update Status Bar Error
+        if (statusBar) {
+            statusDot.className = 'status-dot status-failed';
+            statusText.textContent = 'Connection Failed';
+            urlDisplay.textContent = 'Error';
+        }
+    }
+}
+
+// Global Reload Helper
+window.reloadPreview = function () {
+    // Find active iframe and reload
+    const iframe = document.getElementById('preview-iframe');
+    const container = document.getElementById('tab-content-preview');
+    const runId = iframe.getAttribute('data-run-id');
+    if (runId) {
+        const [taskId, modelName] = runId.split('/');
+        loadPreview(taskId, modelName, iframe, container);
+    }
+};

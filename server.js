@@ -8,6 +8,7 @@ const cors = require('cors');
 const https = require('https');
 const multer = require('multer');
 const db = require('./db');
+const net = require('net');
 
 
 const app = express();
@@ -336,8 +337,7 @@ app.post('/api/tasks', (req, res) => {
 
     child.on('exit', (code, signal) => {
         console.log(`[Task ${task.taskId} EXIT] Process exited with code ${code} and signal ${signal}`);
-        // 完成后删除临时 prompt 文件
-        try { fs.unlinkSync(specificPromptFile); } catch (e) { }
+        // Cleanup not needed as prompt file is no longer used
     });
 
     child.on('close', (code) => {
@@ -359,7 +359,247 @@ app.post('/api/tasks', (req, res) => {
     res.json({ success: true, taskId: task.taskId });
 });
 
-// ... (other endpoints)
+// --- Dynamic Preview Logic ---
+
+const runningPreviews = {}; // folderName -> { proc, port, url, lastAccess }
+
+// Helper Methods
+const http = require('http');
+
+function checkPort(port) {
+    return new Promise((resolve) => {
+        const server = net.createServer();
+        server.once('error', (err) => {
+            if (err.code === 'EADDRINUSE') resolve(true);
+            else resolve(false);
+        });
+        server.once('listening', () => {
+            server.close();
+            resolve(false);
+        });
+        server.listen(port);
+    });
+}
+
+const allocatedPorts = new Set(); // Track ports assigned but not yet bound
+
+async function findFreePort(start = 4000, end = 5000) {
+    for (let p = start; p <= end; p++) {
+        if (allocatedPorts.has(p)) continue;
+        if (!(await checkPort(p))) {
+            allocatedPorts.add(p);
+            // Release from set after 30 seconds (assumed bound by then or failed)
+            setTimeout(() => allocatedPorts.delete(p), 30000);
+            return p;
+        }
+    }
+    throw new Error('No free ports available');
+}
+
+// 1. Recursive PID lookup
+function getChildPids(pid) {
+    return new Promise((resolve) => {
+        exec(`pgrep -P ${pid}`, (err, stdout) => {
+            if (err || !stdout) return resolve([]);
+            const pids = stdout.trim().split(/\s+/).map(p => parseInt(p, 10));
+            Promise.all(pids.map(getChildPids)).then(grandChildren => {
+                const all = [...pids, ...grandChildren.flat()];
+                resolve(all);
+            });
+        });
+    });
+}
+
+// 2. Find listening ports for PIDs
+async function getListeningPorts(pids) {
+    if (pids.length === 0) return [];
+    const pidList = pids.join(',');
+    return new Promise((resolve) => {
+        exec(`lsof -a -iTCP -sTCP:LISTEN -p ${pidList} -n -P -Fn`, (err, stdout) => {
+            if (err || !stdout) return resolve([]);
+            const ports = new Set();
+            stdout.split('\n').forEach(line => {
+                if (line.startsWith('n')) {
+                    const part = line.substring(1);
+                    const portMatch = part.match(/:(\d+)$/);
+                    if (portMatch) ports.add(parseInt(portMatch[1], 10));
+                }
+            });
+            resolve(Array.from(ports));
+        });
+    });
+}
+
+// 3. Probe service type
+async function probePort(port) {
+    return new Promise(resolve => {
+        // Use localhost to allow Node to resolve to ::1 or 127.0.0.1 as needed
+        const req = http.get(`http://localhost:${port}/`, { timeout: 2000 }, (res) => {
+            let data = '';
+            res.on('data', chunk => { if (data.length < 1000) data += chunk; });
+            res.on('end', () => {
+                const type = (res.headers['content-type'] || '').toLowerCase();
+                const body = data.toString().toLowerCase();
+                let score = 0;
+                let serviceType = 'unknown';
+
+                if (type.includes('text/html') || body.includes('<!doctype html>') || body.includes('<html')) {
+                    score = 100;
+                    serviceType = 'frontend';
+                } else if (type.includes('application/json') || body.startsWith('{')) {
+                    score = 10;
+                    serviceType = 'backend';
+                } else {
+                    score = 1;
+                }
+                if (res.statusCode === 404) score /= 2;
+                resolve({ port, score, serviceType, statusCode: res.statusCode });
+            });
+        });
+        req.on('error', () => resolve({ port, score: -1, serviceType: 'error' }));
+        req.on('timeout', () => { req.destroy(); resolve({ port, score: -1, serviceType: 'timeout' }); });
+    });
+}
+
+// Helper: Determine startup command
+async function detectStartCommand(projectPath) {
+    const pkgPath = path.join(projectPath, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+        try {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            const scripts = pkg.scripts || {};
+            if (scripts.start) return { cmd: 'npm', args: ['start'] };
+            if (scripts.dev) return { cmd: 'npm', args: ['run', 'dev'] };
+        } catch (e) {
+            console.warn(`[Preview] Failed to parse package.json: ${e.message}`);
+        }
+    }
+    const commonEntries = ['server.js', 'app.js', 'index.js', 'main.js'];
+    for (const entry of commonEntries) {
+        if (fs.existsSync(path.join(projectPath, entry))) return { cmd: 'node', args: [entry] };
+    }
+    throw new Error('Unable to determine start command');
+}
+
+// Preview API
+app.post('/api/preview/start', async (req, res) => {
+    const { taskId, modelName } = req.body;
+    if (!taskId || !modelName) return res.status(400).json({ error: 'Missing params' });
+
+    const folderName = `${taskId}/${modelName}`;
+    const projectPath = path.join(TASKS_DIR, taskId, modelName);
+
+    // 1. Check if folder exists
+    if (!fs.existsSync(projectPath) || !fs.statSync(projectPath).isDirectory()) {
+        return res.json({ type: 'static', url: `/artifacts/${folderName}/index.html` });
+    }
+
+    // 2. Check if already running
+    if (runningPreviews[folderName]) {
+        const info = runningPreviews[folderName];
+        try {
+            // Check if process exists
+            process.kill(info.proc.pid, 0);
+            runningPreviews[folderName].lastAccess = Date.now();
+            return res.json({ type: 'server', url: runningPreviews[folderName].url });
+        } catch (e) {
+            delete runningPreviews[folderName]; // Process dead
+        }
+    }
+
+    try {
+        const allocatedPort = await findFreePort();
+
+        // Install deps if needed
+        if (fs.existsSync(path.join(projectPath, 'package.json')) && !fs.existsSync(path.join(projectPath, 'node_modules'))) {
+            await new Promise((resolve, reject) => {
+                exec('npm install', { cwd: projectPath }, (err) => err ? reject(err) : resolve());
+            });
+        }
+
+        const { cmd, args } = await detectStartCommand(projectPath);
+        console.log(`[Preview] Starting ${folderName} using ${cmd} ${args.join(' ')} (Allocated: ${allocatedPort})`);
+
+        const child = spawn(cmd, args, {
+            cwd: projectPath,
+            env: { ...process.env, PORT: allocatedPort, HOST: '0.0.0.0' },
+            detached: false
+        });
+
+        child.stdout.on('data', d => console.log(`[P ${folderName}] ${d}`.trim()));
+        child.stderr.on('data', d => console.error(`[P ${folderName} ERR] ${d}`.trim()));
+
+        // --- Multi-port Scanning Strategy ---
+        const MAX_RETRIES = 30; // 30 seconds
+        let retries = 0;
+        let bestCandidate = null;
+
+        const scanInterval = setInterval(async () => {
+            retries++;
+
+            // 1. Find PIDs
+            const pids = [child.pid, ...(await getChildPids(child.pid))];
+
+            // 2. Find Ports
+            const ports = await getListeningPorts(pids);
+
+            if (ports.length > 0) {
+                // 3. Probe Ports
+                const results = await Promise.all(ports.map(probePort));
+                // Sort: Frontend (HTML) > Backend (JSON) > Unknown
+                results.sort((a, b) => b.score - a.score);
+
+                const best = results[0];
+                if (best && best.score > 0) {
+                    // Check if we found the allocated port too?
+                    // We prefer any port that serves HTML.
+
+                    if (best.serviceType === 'frontend') {
+                        // Found HTML! Resolve immediately.
+                        console.log(`[Preview] Found Frontend at port ${best.port}`);
+                        clearInterval(scanInterval);
+                        finish(best.port);
+                        return;
+                    }
+
+                    // Keep track of best candidate (e.g. backend) in case we timeout
+                    if (!bestCandidate || best.score > bestCandidate.score) {
+                        bestCandidate = best;
+                    }
+                }
+            }
+
+            if (retries >= MAX_RETRIES) {
+                clearInterval(scanInterval);
+                if (bestCandidate) {
+                    console.log(`[Preview] Timeout. Fallback to best candidate: ${bestCandidate.port} (${bestCandidate.serviceType})`);
+                    finish(bestCandidate.port);
+                } else {
+                    // Fail
+                    if (!res.headersSent) res.status(500).json({ error: 'Timeout: Service started but no accessible ports detected.' });
+                    try { child.kill(); } catch (e) { }
+                }
+            }
+        }, 1000);
+
+        function finish(finalPort) {
+            const url = `http://localhost:${finalPort}`;
+            runningPreviews[folderName] = { proc: child, port: finalPort, url, lastAccess: Date.now() };
+            if (!res.headersSent) res.json({ type: 'server', url });
+        }
+
+        child.on('exit', (code) => {
+            clearInterval(scanInterval);
+            if (code !== 0 && code !== null && !res.headersSent) {
+                res.status(500).json({ error: `Process exited with code ${code}` });
+            }
+        });
+
+    } catch (err) {
+        console.error(`[Preview] Failed: ${err.message}`);
+        if (!res.headersSent) res.json({ type: 'static', url: `/artifacts/${folderName}/index.html`, warning: err.message });
+    }
+});
 
 
 

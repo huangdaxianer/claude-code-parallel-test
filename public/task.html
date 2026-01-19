@@ -1663,7 +1663,30 @@
 
                     <!-- Preview Tab Content -->
                     <div id="tab-content-preview" class="tab-content">
-                        <iframe id="preview-iframe" style="width:100%; height:100%; border:none; background:#fff;"
+                        <div id="preview-status-bar" style="
+                            padding: 0.5rem 1rem;
+                            background: #f8fafc;
+                            border-bottom: 1px solid #e2e8f0;
+                            display: flex; /* Visible by default */
+                            align-items: center;
+                            justify-content: space-between;
+                            font-size: 0.85rem;
+                            color: #64748b;
+                        ">
+                            <div style="display:flex; align-items:center; gap:0.5rem;">
+                                <span id="preview-status-dot" class="status-dot status-pending"
+                                    style="background:#cbd5e1"></span>
+                                <span id="preview-status-text">Ready</span>
+                            </div>
+                            <div class="preview-actions" style="display:flex; gap:0.5rem;">
+                                <code id="preview-url-display"
+                                    style="background:#e2e8f0; padding:2px 6px; borderRadius:4px; font-size:0.8rem">-</code>
+                                <button onclick="reloadPreview()" title="Reload"
+                                    style="border:none; background:none; cursor:pointer;">🔄</button>
+                            </div>
+                        </div>
+                        <iframe id="preview-iframe"
+                            style="width:100%; height:calc(100% - 37px); border:none; background:#fff;"
                             allow="accelerometer; camera; encrypted-media; display-capture; geolocation; gyroscope; microphone; midi; clipboard-read; clipboard-write; web-share; serial; xr-spatial-tracking"
                             allowfullscreen allowpaymentrequest></iframe>
                     </div>
