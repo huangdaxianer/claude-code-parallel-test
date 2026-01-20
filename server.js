@@ -18,9 +18,9 @@ const server = app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });
 server.timeout = 300000; // 5 minutes timeout for large uploads
-const PROMPT_FILE = path.join(__dirname, 'prompt.txt');
+
 const SCRIPT_FILE = path.join(__dirname, 'batch_claude_parallel.sh');
-const TASKS_DIR = path.join(__dirname, 'tasks');
+const TASKS_DIR = path.join(__dirname, '../tasks');
 const UPLOAD_DIR = path.join(TASKS_DIR, 'temp_uploads');
 
 // Ensure directories exist
@@ -209,32 +209,77 @@ app.post('/api/upload', upload.any(), (req, res) => {
 
 
 
-// 保存任务 并 启动执行
+
+// --- Queue Management ---
+let isTaskRunning = false;
+
+// Function to process the queue
+async function processQueue() {
+    if (isTaskRunning) return;
+
+    // Fetch next pending task
+    try {
+        const nextTask = db.prepare("SELECT * FROM task_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1").get();
+
+        if (!nextTask) return; // No tasks pending
+
+        isTaskRunning = true;
+
+        // Update status to running
+        db.prepare("UPDATE task_queue SET status = 'running', started_at = CURRENT_TIMESTAMP WHERE id = ?").run(nextTask.id);
+
+        console.log(`[Queue] Starting task: ${nextTask.task_id}`);
+
+        await executeTask(nextTask.task_id);
+
+        // Mark as completed
+        db.prepare("UPDATE task_queue SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?").run(nextTask.id);
+
+        console.log(`[Queue] Task completed: ${nextTask.task_id}`);
+    } catch (e) {
+        console.error('[Queue] Error processing task:', e);
+        // If we have a nextTask reference (hard to get here without scope), we should mark it failed.
+        // For simplicity, we just reset the running flag so retry or next task can happen.
+    } finally {
+        isTaskRunning = false;
+        // Trigger next check immediately
+        setTimeout(processQueue, 100);
+    }
+}
+
+// Function to actually execute the task script
+function executeTask(taskId) {
+    return new Promise((resolve, reject) => {
+        const SCRIPT_FILE = path.join(__dirname, 'batch_claude_parallel.sh');
+
+        // Explicitly set LANG environment variable to ensure proper encoding for child process
+        const child = spawn('bash', [SCRIPT_FILE, taskId], {
+            env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' }
+        });
+
+        child.stdout.on('data', (data) => console.log(`[Task ${taskId} STDOUT] ${data}`));
+        child.stderr.on('data', (data) => console.error(`[Task ${taskId} STDERR] ${data}`));
+
+        child.on('error', (err) => {
+            console.error(`[Task ${taskId} ERROR] Failed to spawn process:`, err);
+            reject(err);
+        });
+
+        child.on('exit', (code, signal) => {
+            console.log(`[Task ${taskId} EXIT] Process exited with code ${code} and signal ${signal}`);
+            if (code === 0) resolve();
+            else reject(new Error(`Process exited with code ${code}`));
+        });
+    });
+}
+
 app.post('/api/tasks', (req, res) => {
     const task = req.body.task;
     if (!task || !task.taskId) {
         return res.status(400).json({ error: 'Invalid task format' });
     }
 
-    // 1. 立即加入数据库记录
-    try {
-        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir) VALUES (?, ?, ?, ?)');
-        insertTask.run(task.taskId, task.title, task.prompt, task.baseDir);
-
-        const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_name, status) VALUES (?, ?, ?)');
-        const models = Array.isArray(task.models) ? task.models : [];
-        const insertManyRuns = db.transaction((taskId, modelList) => {
-            for (const m of modelList) {
-                insertRun.run(taskId, m, 'pending');
-            }
-        });
-        insertManyRuns(task.taskId, models);
-    } catch (e) {
-        console.error('Error saving task to DB:', e);
-        return res.status(500).json({ error: 'Failed to save task' });
-    }
-
-    // 2. 预定义变量
+    // 0. Base setup
     let finalBaseDir = task.baseDir;
     const taskDir = path.join(TASKS_DIR, task.taskId);
 
@@ -244,7 +289,7 @@ app.post('/api/tasks', (req, res) => {
         let targetPath = path.join(taskDir, 'source');
 
         if (task.srcModelName) {
-            // 如果仅想基于特定的 output 文件夹继续（如 tasks/7L6WXV/strawberry/）
+            // 如果仅想基于特定的 output 文件夹继续
             // 我们将其内容复制到 tasks/NewID/source/strawberry/ 中
             // 注意：新的任务脚本通常期望 source 文件夹下就是文件根目录。
             // 之前的 copyFiles(srcTaskDir, targetPath) 是把 tasks/ID/* 复制到 tasks/NewID/source/*
@@ -321,28 +366,40 @@ app.post('/api/tasks', (req, res) => {
         }
     }
 
-    // 3. (Refactored) Invoke script with Task ID. Content is fetched from DB.
-    console.log(`[ID: ${task.taskId}] Spawning task with script: ${SCRIPT_FILE} and ID: ${task.taskId}`);
-    // Explicitly set LANG environment variable to ensure proper encoding for child process
-    const child = spawn('bash', [SCRIPT_FILE, task.taskId], {
-        env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' }
-    });
+    // 1. (Delayed) 写入数据库记录 - Now saving the UPDATED baseDir
+    try {
+        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir) VALUES (?, ?, ?, ?)');
+        insertTask.run(task.taskId, task.title, task.prompt, task.baseDir);
 
-    child.stdout.on('data', (data) => console.log(`[Task ${task.taskId} STDOUT] ${data}`));
-    child.stderr.on('data', (data) => console.error(`[Task ${task.taskId} STDERR] ${data}`));
+        const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_name, status) VALUES (?, ?, ?)');
+        const models = Array.isArray(task.models) ? task.models : [];
+        const insertManyRuns = db.transaction((taskId, modelList) => {
+            for (const m of modelList) {
+                insertRun.run(taskId, m, 'pending');
+            }
+        });
+        insertManyRuns(task.taskId, models);
+    } catch (e) {
+        console.error('Error saving task to DB:', e);
+        return res.status(500).json({ error: 'Failed to save task' });
+    }
 
-    child.on('error', (err) => {
-        console.error(`[Task ${task.taskId} ERROR] Failed to spawn process:`, err);
-    });
+    // 3. (Refactored) Push to Task Queue instead of spawning immediately
+    try {
+        db.prepare("INSERT INTO task_queue (task_id, status) VALUES (?, 'pending')").run(task.taskId);
+        console.log(`[ID: ${task.taskId}] Added to execution queue`);
 
-    child.on('exit', (code, signal) => {
-        console.log(`[Task ${task.taskId} EXIT] Process exited with code ${code} and signal ${signal}`);
-        // Cleanup not needed as prompt file is no longer used
-    });
+        // Trigger queue processor (fire and forget)
+        processQueue();
 
-    child.on('close', (code) => {
-        console.log(`[Task ${task.taskId} CLOSE] Stream closed with code ${code}`);
-    });
+    } catch (e) {
+        console.error('Error adding to task queue:', e);
+        return res.status(500).json({ error: 'Failed to queue task' });
+    }
+
+    /* 
+    // OLD SPAWN LOGIC REMOVED
+    */
 
     // 4. 异步生成 AI 标题，并在生成后更新数据库
     generateTitle(task.prompt).then(aiTitle => {
@@ -481,6 +538,37 @@ async function detectStartCommand(projectPath) {
     throw new Error('Unable to determine start command');
 }
 
+// Helper: Detect project type
+async function detectProjectType(projectPath) {
+    if (fs.existsSync(path.join(projectPath, 'package.json'))) return 'node';
+    if (fs.existsSync(path.join(projectPath, 'pom.xml'))) return 'java';
+
+    // Check subfolders frequently used in our monorepos for Java
+    if (fs.existsSync(path.join(projectPath, 'backend', 'pom.xml'))) return 'java';
+    // Check subfolders for Node (e.g. monorepo root might just have folders)
+    if (fs.existsSync(path.join(projectPath, 'server', 'package.json'))) return 'node';
+    if (fs.existsSync(path.join(projectPath, 'web', 'package.json'))) return 'node';
+    if (fs.existsSync(path.join(projectPath, 'frontend', 'package.json'))) return 'node';
+
+    return 'unknown';
+}
+
+// API: Get Project Type
+app.get('/api/project/type/:taskId/:modelName', async (req, res) => {
+    const { taskId, modelName } = req.params;
+    const projectPath = path.join(TASKS_DIR, taskId, modelName);
+
+    if (!fs.existsSync(projectPath)) {
+        return res.json({ type: 'unknown', previewable: false });
+    }
+
+    const type = await detectProjectType(projectPath);
+    // Currently only node projects are supported for preview
+    const previewable = (type === 'node');
+
+    res.json({ type, previewable });
+});
+
 // Preview API
 app.post('/api/preview/start', async (req, res) => {
     const { taskId, modelName } = req.body;
@@ -489,35 +577,90 @@ app.post('/api/preview/start', async (req, res) => {
     const folderName = `${taskId}/${modelName}`;
     const projectPath = path.join(TASKS_DIR, taskId, modelName);
 
+    // 0. Enforce Single Active Preview Policy: Kill others
+    const runningKeys = Object.keys(runningPreviews);
+    for (const key of runningKeys) {
+        if (key !== folderName) {
+            const info = runningPreviews[key];
+            console.log(`[Preview] Switching context: Stopping ${key} (PID ${info.proc.pid})`);
+
+            // Attempt to kill process tree to avoid zombies
+            // We don't await this because we want to start the new one immediately
+            // and the port allocator will find a new random port anyway.
+            (async () => {
+                try {
+                    const children = await getChildPids(info.proc.pid);
+                    children.forEach(pid => {
+                        try { process.kill(pid, 'SIGTERM'); } catch (e) { }
+                    });
+                    info.proc.kill('SIGTERM');
+                } catch (e) {
+                    console.error(`[Preview] Error killing ${key}:`, e);
+                }
+            })();
+
+            // Mark as dying so we don't accidentally return it
+            delete runningPreviews[key];
+        }
+    }
+
     // 1. Check if folder exists
     if (!fs.existsSync(projectPath) || !fs.statSync(projectPath).isDirectory()) {
         return res.json({ type: 'static', url: `/artifacts/${folderName}/index.html` });
     }
 
-    // 2. Check if already running
+    // 2. Check if already running or starting
     if (runningPreviews[folderName]) {
         const info = runningPreviews[folderName];
-        try {
-            // Check if process exists
-            process.kill(info.proc.pid, 0);
-            runningPreviews[folderName].lastAccess = Date.now();
-            return res.json({ type: 'server', url: runningPreviews[folderName].url });
-        } catch (e) {
-            delete runningPreviews[folderName]; // Process dead
+        if (info.status === 'ready') {
+            try {
+                // Check if process exists
+                process.kill(info.proc.pid, 0);
+                runningPreviews[folderName].lastAccess = Date.now();
+                return res.json({ type: 'server', url: runningPreviews[folderName].url });
+            } catch (e) {
+                delete runningPreviews[folderName]; // Process dead
+            }
+        } else if (info.status === 'starting') {
+            // If currently starting, client should assume it's in progress.
+            // We can't easily "join" the existing response stream here in this simple architecture,
+            // but the client will be polling the status endpoint anyway.
+            // We'll let this request wait or return "pending".
+            // For simplicity, let's just proceed to try starting (race condition handling needed?
+            // Ideally we shouldn't start two at once.
+            // Let's block duplicate starts.
+            return res.status(409).json({ error: 'Preview is already starting' });
         }
     }
 
+    // Initialize status tracking
+    runningPreviews[folderName] = {
+        status: 'starting',
+        logs: [{ msg: 'Initializing preview environment...', ts: Date.now() }],
+        startTime: Date.now()
+    };
+
+    const addLog = (msg) => {
+        if (runningPreviews[folderName]) {
+            runningPreviews[folderName].logs.push({ msg, ts: Date.now() });
+        }
+    };
+
     try {
         const allocatedPort = await findFreePort();
+        addLog(`Allocated internal port: ${allocatedPort}`);
 
         // Install deps if needed
         if (fs.existsSync(path.join(projectPath, 'package.json')) && !fs.existsSync(path.join(projectPath, 'node_modules'))) {
+            addLog('Installing dependencies (npm install)...');
             await new Promise((resolve, reject) => {
                 exec('npm install', { cwd: projectPath }, (err) => err ? reject(err) : resolve());
             });
+            addLog('Dependencies installed.');
         }
 
         const { cmd, args } = await detectStartCommand(projectPath);
+        addLog(`Starting process: ${cmd} ${args.join(' ')}`);
         console.log(`[Preview] Starting ${folderName} using ${cmd} ${args.join(' ')} (Allocated: ${allocatedPort})`);
 
         const child = spawn(cmd, args, {
@@ -525,6 +668,9 @@ app.post('/api/preview/start', async (req, res) => {
             env: { ...process.env, PORT: allocatedPort, HOST: '0.0.0.0' },
             detached: false
         });
+
+        // Store proc temporarily even if not ready, for cleanup on error
+        runningPreviews[folderName].proc = child;
 
         child.stdout.on('data', d => console.log(`[P ${folderName}] ${d}`.trim()));
         child.stderr.on('data', d => console.error(`[P ${folderName} ERR] ${d}`.trim()));
@@ -534,16 +680,21 @@ app.post('/api/preview/start', async (req, res) => {
         let retries = 0;
         let bestCandidate = null;
 
+        addLog('Scanning for service ports...');
+
         const scanInterval = setInterval(async () => {
             retries++;
 
             // 1. Find PIDs
-            const pids = [child.pid, ...(await getChildPids(child.pid))];
+            const childPids = await getChildPids(child.pid);
+            const pids = [child.pid, ...childPids];
 
             // 2. Find Ports
             const ports = await getListeningPorts(pids);
 
             if (ports.length > 0) {
+                addLog(`Detected ports: ${ports.join(', ')}. Probing...`);
+
                 // 3. Probe Ports
                 const results = await Promise.all(ports.map(probePort));
                 // Sort: Frontend (HTML) > Backend (JSON) > Unknown
@@ -551,56 +702,104 @@ app.post('/api/preview/start', async (req, res) => {
 
                 const best = results[0];
                 if (best && best.score > 0) {
-                    // Check if we found the allocated port too?
-                    // We prefer any port that serves HTML.
-
                     if (best.serviceType === 'frontend') {
                         // Found HTML! Resolve immediately.
+                        addLog(`Success! Frontend found at port ${best.port}`);
                         console.log(`[Preview] Found Frontend at port ${best.port}`);
                         clearInterval(scanInterval);
                         finish(best.port);
                         return;
                     }
 
-                    // Keep track of best candidate (e.g. backend) in case we timeout
+                    // Keep track of best candidate
                     if (!bestCandidate || best.score > bestCandidate.score) {
                         bestCandidate = best;
+                        addLog(`Found candidate service: ${best.serviceType} at port ${best.port}. Continuing scan for frontend...`);
                     }
                 }
+            } else {
+                if (retries % 3 === 0) addLog(`Waiting for ports... (Active PIDs: ${pids.length})`);
             }
 
             if (retries >= MAX_RETRIES) {
                 clearInterval(scanInterval);
                 if (bestCandidate) {
-                    console.log(`[Preview] Timeout. Fallback to best candidate: ${bestCandidate.port} (${bestCandidate.serviceType})`);
-                    finish(bestCandidate.port);
+                    // Check if still valid before finishing
+                    if (runningPreviews[folderName]) {
+                        addLog(`Timeout. Falling back to ${bestCandidate.serviceType} at ${bestCandidate.port}`);
+                        console.log(`[Preview] Timeout. Fallback to best candidate: ${bestCandidate.port} (${bestCandidate.serviceType})`);
+                        finish(bestCandidate.port);
+                    }
                 } else {
-                    // Fail
-                    if (!res.headersSent) res.status(500).json({ error: 'Timeout: Service started but no accessible ports detected.' });
-                    try { child.kill(); } catch (e) { }
+                    if (runningPreviews[folderName]) {
+                        addLog('Timeout. No usable ports found.');
+                        // Fail
+                        runningPreviews[folderName].status = 'error';
+                        if (!res.headersSent) res.status(500).json({ error: 'Timeout: Service started but no accessible ports detected.' });
+                        try { child.kill(); } catch (e) { }
+                        delete runningPreviews[folderName];
+                    }
                 }
             }
         }, 1000);
 
         function finish(finalPort) {
+            // Guard clause: If preview was deleted (e.g. by context switch), abort
+            if (!runningPreviews[folderName]) return;
+
             const url = `http://localhost:${finalPort}`;
-            runningPreviews[folderName] = { proc: child, port: finalPort, url, lastAccess: Date.now() };
+            // Update existing entry
+            Object.assign(runningPreviews[folderName], {
+                status: 'ready',
+                port: finalPort,
+                url,
+                lastAccess: Date.now()
+            });
             if (!res.headersSent) res.json({ type: 'server', url });
         }
 
         child.on('exit', (code) => {
+            console.log(`[Preview ${folderName}] Child process ${child.pid} exited with code ${code}`);
+            addLog(`Process exited with code ${code}`);
             clearInterval(scanInterval);
-            if (code !== 0 && code !== null && !res.headersSent) {
-                res.status(500).json({ error: `Process exited with code ${code}` });
+
+            // Only update status if the entry still exists (it might have been deleted by context switch)
+            if (runningPreviews[folderName]) {
+                if (code !== 0 && code !== null) {
+                    runningPreviews[folderName].status = 'error';
+                    if (!res.headersSent) res.status(500).json({ error: `Process exited with code ${code}` });
+                    // Clean up after error response
+                    setTimeout(() => { if (runningPreviews[folderName]) delete runningPreviews[folderName]; }, 5000);
+                } else {
+                    delete runningPreviews[folderName];
+                }
             }
         });
 
     } catch (err) {
         console.error(`[Preview] Failed: ${err.message}`);
+        addLog(`Error: ${err.message}`);
+        if (runningPreviews[folderName]) runningPreviews[folderName].status = 'error';
+
         if (!res.headersSent) res.json({ type: 'static', url: `/artifacts/${folderName}/index.html`, warning: err.message });
     }
 });
 
+// New: Get preview status and logs
+app.get('/api/preview/status/:taskId/:modelName', (req, res) => {
+    const { taskId, modelName } = req.params;
+    const folderName = `${taskId}/${modelName}`;
+
+    const previewInfo = runningPreviews[folderName];
+
+    if (previewInfo) {
+        // Return a copy to prevent external modification of internal state
+        const { proc, ...infoToSend } = previewInfo; // Exclude 'proc'
+        res.json(infoToSend);
+    } else {
+        res.status(404).json({ status: 'not_running', logs: [{ msg: 'Preview not running.', ts: Date.now() }] });
+    }
+});
 
 
 // 获取任务详情：从数据库读取
@@ -647,6 +846,7 @@ app.get('/api/task_details/:taskId', (req, res) => {
                     folderName: path.join(taskId, run.model_name),
                     modelName: run.model_name,
                     status: run.status,
+                    previewable: !!run.previewable, // Convert 0/1 to boolean
                     generatedFiles,
                     stats: {
                         duration: run.duration,
@@ -871,6 +1071,69 @@ app.delete('/api/tasks/:taskId', (req, res) => {
 
 
 // Legacy calculateLogStats removed as it is now handled by ingest.js or migrate.js
+
+// Batch Tasks Upload Endpoint
+app.post('/api/batch_tasks', upload.single('file'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No CSV file uploaded' });
+    }
+
+    const tasksCreated = [];
+    const fs = require('fs');
+    const crypto = require('crypto');
+
+    try {
+        const content = fs.readFileSync(req.file.path, 'utf8');
+        // Split by newlines, trim, and filter empty lines
+        const lines = content.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+        const baseModels = ["potato", "tomato", "strawberry", "watermelon", "banana", "avocado", "cherry", "pineapple"];
+
+        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir) VALUES (?, ?, ?, ?)');
+        const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_name, status) VALUES (?, ?, ?)');
+        const insertQueue = db.prepare("INSERT INTO task_queue (task_id, status) VALUES (?, 'pending')");
+
+        // Use transaction for consistency
+        const processBatch = db.transaction((lines) => {
+            lines.forEach((prompt, index) => {
+                const taskId = crypto.randomBytes(4).toString('hex').toUpperCase(); // 8 chars
+                const title = `Batch Task ${index + 1}`; // Temporary title
+
+                // 1. Create Task
+                insertTask.run(taskId, title, prompt, null); // Base dir null for pure batch prompt
+
+                // 2. Create Runs
+                baseModels.forEach(m => insertRun.run(taskId, m, 'pending'));
+
+                // 3. Add to Queue
+                insertQueue.run(taskId);
+
+                tasksCreated.push(taskId);
+
+                // Async Title Generation
+                generateTitle(prompt).then(aiTitle => {
+                    try {
+                        db.prepare('UPDATE tasks SET title = ? WHERE task_id = ?').run(aiTitle, taskId);
+                    } catch (e) { }
+                });
+            });
+        });
+
+        processBatch(lines);
+
+        // Trigger queue
+        processQueue();
+
+        res.json({ success: true, count: lines.length, tasks: tasksCreated });
+
+    } catch (e) {
+        console.error('Batch upload error:', e);
+        res.status(500).json({ error: 'Failed to process batch file' });
+    } finally {
+        // Cleanup uploaded file
+        try { fs.unlinkSync(req.file.path); } catch (e) { }
+    }
+});
 
 // Multer error handling middleware (must be after routes)
 app.use((err, req, res, next) => {

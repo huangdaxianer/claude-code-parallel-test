@@ -26,6 +26,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "multer": "^2.0.2",
+    "playwright": "^1.57.0",
     "sqlite3": "^5.1.7"
   }
 }

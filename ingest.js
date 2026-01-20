@@ -290,6 +290,37 @@ rl.on('line', (line) => {
     }
 });
 
+// Helper: Detect project type (Duplicated from server.js for standalone execution)
+function detectProjectType(projectPath) {
+    if (!fs.existsSync(projectPath)) return 'unknown';
+    if (fs.existsSync(path.join(projectPath, 'package.json'))) return 'node';
+    if (fs.existsSync(path.join(projectPath, 'pom.xml'))) return 'java';
+
+    // Check subfolders
+    if (fs.existsSync(path.join(projectPath, 'backend', 'pom.xml'))) return 'java';
+    if (fs.existsSync(path.join(projectPath, 'server', 'package.json'))) return 'node';
+    if (fs.existsSync(path.join(projectPath, 'web', 'package.json'))) return 'node';
+    if (fs.existsSync(path.join(projectPath, 'frontend', 'package.json'))) return 'node';
+
+    return 'unknown';
+}
+
 rl.on('close', () => {
     flush();
+
+    // Check if project is previewable (only if completed successfully)
+    if (stats.status === 'completed') {
+        const TASKS_DIR = path.join(__dirname, '../tasks');
+        const projectPath = path.join(TASKS_DIR, taskId, modelName);
+
+        try {
+            const type = detectProjectType(projectPath);
+            const isPreviewable = (type === 'node') ? 1 : 0;
+
+            db.prepare('UPDATE model_runs SET previewable = ? WHERE id = ?').run(isPreviewable, runId);
+            // console.log(`[Ingest] Project type: ${type}, Previewable: ${isPreviewable}`);
+        } catch (e) {
+            console.error('[Ingest] Failed to update previewable status:', e);
+        }
+    }
 });

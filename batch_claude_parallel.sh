@@ -2,7 +2,7 @@
 
 # 获取脚本所在目录并定义任务目录
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-TASKS_DIR="$SCRIPT_DIR/tasks"
+TASKS_DIR="$SCRIPT_DIR/../tasks"
 mkdir -p "$TASKS_DIR"
 
 # Set Locale to UTF-8 to support Chinese prompts

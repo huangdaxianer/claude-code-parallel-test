@@ -523,12 +523,16 @@ function renderModelList() {
     modelListEl.appendChild(statsBtn);
 
     // 2. Compare Button
-    // 2. Compare Button
-    const compareBtn = document.createElement('div');
-    compareBtn.className = `compare-btn ${isCompareMode ? 'active' : ''}`;
-    compareBtn.innerHTML = `<span>📊</span> 产物对比`;
-    compareBtn.onclick = toggleCompareMode;
-    modelListEl.appendChild(compareBtn);
+    // Only show if at least one successful run is previewable
+    const canCompare = currentRuns.some(r => r.previewable);
+
+    if (canCompare) {
+        const compareBtn = document.createElement('div');
+        compareBtn.className = `compare-btn ${isCompareMode ? 'active' : ''}`;
+        compareBtn.innerHTML = `<span>📊</span> 产物对比`;
+        compareBtn.onclick = toggleCompareMode;
+        modelListEl.appendChild(compareBtn);
+    }
 
     currentRuns.forEach(run => {
         const isSelected = !isCompareMode && !isStatsMode && run.folderName === activeFolder;
@@ -1002,16 +1006,17 @@ function renderMainContent() {
 
     // 2. Render Files
     const newFiles = activeRun.generatedFiles || [];
-    const htmlFile = newFiles.find(f => f.endsWith('.html'));
-    const packageJson = newFiles.find(f => f === 'package.json');
-    const hasPreview = htmlFile || packageJson;
+    // const htmlFile = newFiles.find(f => f.endsWith('.html'));
+    // const packageJson = newFiles.find(f => f === 'package.json');
+    // const hasPreview = htmlFile || packageJson;
 
     const previewTabBtn = document.querySelector('.tab[data-tab="preview"]');
     if (previewTabBtn) {
-        if (hasPreview) {
+        if (activeRun.previewable) {
             previewTabBtn.style.display = 'block';
         } else {
             previewTabBtn.style.display = 'none';
+            // If we were viewing preview, switch back to files
             if (activeTab === 'preview') switchTab('files');
         }
     }
@@ -1339,19 +1344,25 @@ async function loadPreview(taskId, modelName, iframe, container) {
     const statusDot = document.getElementById('preview-status-dot');
     const statusText = document.getElementById('preview-status-text');
     const urlDisplay = document.getElementById('preview-url-display');
+    const progressDiv = document.getElementById('preview-progress');
 
     if (statusBar) {
         statusBar.style.display = 'flex';
         statusDot.className = 'status-dot status-pending';
-        statusText.textContent = 'Connecting to preview server...';
+        statusText.textContent = 'Initializing...';
         urlDisplay.textContent = '-';
+    }
+
+    if (progressDiv) {
+        progressDiv.style.display = 'block';
+        progressDiv.innerHTML = '<div style="color:#aaa">Waiting for server...</div>';
     }
 
     // Create new overlay
     const overlay = document.createElement('div');
     overlay.className = 'preview-loading-overlay';
     // Fix lint: border-radius
-    overlay.style.cssText = 'position:absolute; inset:0; background:white; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; top:37px;';
+    overlay.style.cssText = 'position:absolute; inset:0; background:white; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; top:187px;'; // Adusted top: 37 + 150
     overlay.innerHTML = '<div class="loading-spinner"></div><p style="margin-top:1rem; color:#64748b; font-size:0.9rem">Starting environment...</p>';
 
     // Ensure container is relative
@@ -1360,6 +1371,35 @@ async function loadPreview(taskId, modelName, iframe, container) {
     }
     container.appendChild(overlay);
 
+    let pollInterval;
+
+    // Poller function
+    const startPolling = () => {
+        pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/preview/status/${taskId}/${modelName}`);
+                if (res.ok) {
+                    const info = await res.json();
+                    if (info.logs && progressDiv) {
+                        progressDiv.innerHTML = info.logs.map(l =>
+                            `<div style="margin-bottom:4px"><span style="color:#999; margin-right:8px">[${new Date(l.ts).toLocaleTimeString()}]</span>${l.msg}</div>`
+                        ).join('');
+                        progressDiv.scrollTop = progressDiv.scrollHeight;
+                    }
+                    if (info.status === 'ready' && info.url) {
+                        // Double check if main request handler might handle this too. 
+                        // But polling is faster visually.
+                        if (urlDisplay) urlDisplay.textContent = info.url;
+                    }
+                }
+            } catch (e) {
+                console.warn('Preview status poll failed', e);
+            }
+        }, 500);
+    };
+
+    startPolling();
+
     try {
         const res = await fetch('/api/preview/start', {
             method: 'POST',
@@ -1367,6 +1407,8 @@ async function loadPreview(taskId, modelName, iframe, container) {
             body: JSON.stringify({ taskId, modelName })
         });
         const data = await res.json();
+
+        clearInterval(pollInterval);
 
         if (data.url) {
             const currentSrc = iframe.getAttribute('data-src');
@@ -1377,6 +1419,7 @@ async function loadPreview(taskId, modelName, iframe, container) {
                 iframe.style.display = 'block';
             }
             overlay.remove();
+            if (progressDiv) progressDiv.style.display = 'none'; // Hide progress on success
 
             // Update Status Bar Success
             if (statusBar) {
@@ -1389,6 +1432,7 @@ async function loadPreview(taskId, modelName, iframe, container) {
             throw new Error(data.error || 'Unknown response');
         }
     } catch (e) {
+        clearInterval(pollInterval);
         overlay.innerHTML = `<p style="color:#ef4444; padding:1rem; text-align:center">Preview failed:<br>${e.message}</p>`;
 
         // Update Status Bar Error
@@ -1405,9 +1449,52 @@ window.reloadPreview = function () {
     // Find active iframe and reload
     const iframe = document.getElementById('preview-iframe');
     const container = document.getElementById('tab-content-preview');
+    // We used currentTaskId global + activeRun in previous context, but strictly we need params
+    // Let's rely on data-run-id which is reliable
     const runId = iframe.getAttribute('data-run-id');
     if (runId) {
         const [taskId, modelName] = runId.split('/');
         loadPreview(taskId, modelName, iframe, container);
     }
 };
+// Global Batch Upload Helper
+window.uploadBatchTasks = async function () {
+    const fileInput = document.getElementById('batch-file-input');
+    const file = fileInput.files[0];
+
+    if (!file) {
+        alert('Please select a CSV file first.');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const btn = document.querySelector('button[onclick="uploadBatchTasks()"]');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span>⏳</span> Uploading...';
+    btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/batch_tasks', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            alert(`Batch started! Added ${data.count} tasks to queue.`);
+            closeNewTaskModal();
+            loadTasks(); // Refresh list to show new pending tasks
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (e) {
+        alert('Upload failed: ' + e.message);
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        fileInput.value = '';
+    }
+}

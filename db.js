@@ -2,7 +2,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const TASKS_DIR = path.join(__dirname, 'tasks');
+const TASKS_DIR = path.join(__dirname, '../tasks');
 const DB_PATH = path.join(TASKS_DIR, 'tasks.db');
 
 // Ensure tasks directory exists
@@ -52,6 +52,17 @@ db.exec(`
 
     CREATE INDEX IF NOT EXISTS idx_log_run_id ON log_entries(run_id);
     CREATE INDEX IF NOT EXISTS idx_model_runs_task_id ON model_runs(task_id);
+    CREATE TABLE IF NOT EXISTS task_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT UNIQUE,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        started_at DATETIME,
+        completed_at DATETIME,
+        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_queue_status ON task_queue(status);
 `);
 
 // Migration: Add new columns to log_entries if they don't exist
@@ -60,6 +71,7 @@ try { db.exec("ALTER TABLE log_entries ADD COLUMN tool_name TEXT"); } catch (e) 
 try { db.exec("ALTER TABLE log_entries ADD COLUMN tool_use_id TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE log_entries ADD COLUMN preview_text TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE log_entries ADD COLUMN status_class TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE model_runs ADD COLUMN previewable INTEGER DEFAULT 0"); } catch (e) { }
 
 // Now safe to create index
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_log_tool_use_id ON log_entries(tool_use_id)"); } catch (e) { }

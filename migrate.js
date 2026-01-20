@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('./db');
 
-const TASKS_DIR = path.join(__dirname, 'tasks');
+const TASKS_DIR = path.join(__dirname, '../tasks');
 const HISTORY_FILE = path.join(TASKS_DIR, 'history.json');
 
 function calculateLogStats(logContent) {
