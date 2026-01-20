@@ -1,6 +1,7 @@
 const readline = require('readline');
 const db = require('./db');
 const path = require('path');
+const fs = require('fs');
 
 const taskId = process.argv[2];
 const modelName = process.argv[3];
@@ -293,8 +294,16 @@ rl.on('line', (line) => {
 // Helper: Detect project type (Duplicated from server.js for standalone execution)
 function detectProjectType(projectPath) {
     if (!fs.existsSync(projectPath)) return 'unknown';
+
+    // Check for Node
     if (fs.existsSync(path.join(projectPath, 'package.json'))) return 'node';
+
+    // Check for Java
     if (fs.existsSync(path.join(projectPath, 'pom.xml'))) return 'java';
+
+    // Check for simple HTML
+    const files = fs.readdirSync(projectPath);
+    if (files.some(f => f.endsWith('.html'))) return 'html';
 
     // Check subfolders
     if (fs.existsSync(path.join(projectPath, 'backend', 'pom.xml'))) return 'java';
@@ -315,7 +324,7 @@ rl.on('close', () => {
 
         try {
             const type = detectProjectType(projectPath);
-            const isPreviewable = (type === 'node') ? 1 : 0;
+            const isPreviewable = (type === 'node' || type === 'html') ? 1 : 0;
 
             db.prepare('UPDATE model_runs SET previewable = ? WHERE id = ?').run(isPreviewable, runId);
             // console.log(`[Ingest] Project type: ${type}, Previewable: ${isPreviewable}`);

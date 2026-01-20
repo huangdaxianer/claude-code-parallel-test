@@ -1,4 +1,5 @@
 require('dotenv').config();
+console.log("Starting server at " + new Date().toISOString());
 const express = require('express');
 const bodyParser = require('body-parser');
 const fs = require('fs');
@@ -550,6 +551,14 @@ async function detectProjectType(projectPath) {
     if (fs.existsSync(path.join(projectPath, 'web', 'package.json'))) return 'node';
     if (fs.existsSync(path.join(projectPath, 'frontend', 'package.json'))) return 'node';
 
+    // Check for simple HTML
+    try {
+        const files = fs.readdirSync(projectPath);
+        if (files.some(f => f.endsWith('.html'))) return 'html';
+    } catch (e) {
+        // ignore error if read fails
+    }
+
     return 'unknown';
 }
 
@@ -564,7 +573,7 @@ app.get('/api/project/type/:taskId/:modelName', async (req, res) => {
 
     const type = await detectProjectType(projectPath);
     // Currently only node projects are supported for preview
-    const previewable = (type === 'node');
+    const previewable = (type === 'node' || type === 'html');
 
     res.json({ type, previewable });
 });
@@ -607,6 +616,23 @@ app.post('/api/preview/start', async (req, res) => {
     // 1. Check if folder exists
     if (!fs.existsSync(projectPath) || !fs.statSync(projectPath).isDirectory()) {
         return res.json({ type: 'static', url: `/artifacts/${folderName}/index.html` });
+    }
+
+    // 1.5 Check Project Type: If static HTML, serve directly!
+    const projectType = await detectProjectType(projectPath);
+    if (projectType === 'html') {
+        console.log(`[Preview] Detected static HTML project for ${folderName}. Serving directly.`);
+        // Find the "best" html file (index.html or the first one found)
+        let mainFile = 'index.html';
+        try {
+            const files = fs.readdirSync(projectPath);
+            const htmlFiles = files.filter(f => f.endsWith('.html'));
+            if (htmlFiles.length > 0) {
+                if (htmlFiles.includes('index.html')) mainFile = 'index.html';
+                else mainFile = htmlFiles[0];
+            }
+        } catch (e) { }
+        return res.json({ type: 'static', url: `/artifacts/${folderName}/${mainFile}` });
     }
 
     // 2. Check if already running or starting
@@ -1031,7 +1057,24 @@ app.get('/api/download_zip', (req, res) => {
 
     } catch (e) {
         console.error('[ZIP Exception]', e);
-        if (!res.headersSent) res.status(500).send({ error: 'Internal Server Error during zip operation' });
+
+        if (fs.existsSync(taskDir)) {
+            try {
+                fs.rmSync(taskDir, { recursive: true, force: true });
+            } catch (e) {
+                console.error('Error deleting task directory:', e);
+            }
+        }
+        if (fs.existsSync(specificPromptFile)) {
+            try {
+                fs.unlinkSync(specificPromptFile);
+            } catch (e) {
+                console.error('Error deleting prompt file:', e);
+            }
+        }
+
+
+        res.json({ success: true });
     }
 });
 
@@ -1040,15 +1083,17 @@ app.delete('/api/tasks/:taskId', (req, res) => {
     const { taskId } = req.params;
 
     try {
+        // Delete from all tables
         db.prepare('DELETE FROM tasks WHERE task_id = ?').run(taskId);
+        db.prepare('DELETE FROM model_runs WHERE task_id = ?').run(taskId);
+        db.prepare('DELETE FROM task_queue WHERE task_id = ?').run(taskId);
     } catch (e) {
         console.error('Error deleting task from DB:', e);
         return res.status(500).json({ error: 'Failed to delete task from database' });
     }
 
-    // 2. 删除目录和 prompt 文件
+    // 2. 删除目录
     const taskDir = path.join(TASKS_DIR, taskId);
-    const specificPromptFile = path.join(TASKS_DIR, `prompt_${taskId}.txt`);
 
     if (fs.existsSync(taskDir)) {
         try {
@@ -1057,18 +1102,9 @@ app.delete('/api/tasks/:taskId', (req, res) => {
             console.error('Error deleting task directory:', e);
         }
     }
-    if (fs.existsSync(specificPromptFile)) {
-        try {
-            fs.unlinkSync(specificPromptFile);
-        } catch (e) {
-            console.error('Error deleting prompt file:', e);
-        }
-    }
-
 
     res.json({ success: true });
 });
-
 
 // Legacy calculateLogStats removed as it is now handled by ingest.js or migrate.js
 
@@ -1153,3 +1189,12 @@ app.use((err, req, res, next) => {
 });
 
 
+
+// Start queue processing on server start
+processQueue();
+
+// Error handling to ensure queue resilience
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    if (!isTaskRunning) setTimeout(processQueue, 1000);
+});
