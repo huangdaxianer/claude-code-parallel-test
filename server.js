@@ -10,6 +10,7 @@ const https = require('https');
 const multer = require('multer');
 const db = require('./db');
 const net = require('net');
+const archiver = require('archiver');
 
 
 const app = express();
@@ -961,7 +962,6 @@ app.get('/api/log_event_content/:eventId', (req, res) => {
     }
 });
 
-const archiver = require('archiver');
 
 // ... (existing code)
 
@@ -1178,6 +1178,41 @@ app.delete('/api/tasks/:taskId', (req, res) => {
     }
 
     res.json({ success: true });
+});
+
+// 下载任务轨迹 (打包任务目录)
+app.get('/api/tasks/:taskId/download', (req, res) => {
+    const { taskId } = req.params;
+    const taskDir = path.join(TASKS_DIR, taskId);
+
+    if (!fs.existsSync(taskDir)) {
+        return res.status(404).json({ error: 'Task directory not found' });
+    }
+
+    // Set headers
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="task_${taskId}.zip"`);
+
+    const archive = archiver('zip', {
+        zlib: { level: 9 } // Maximum compression
+    });
+
+    // Handle archive errors
+    archive.on('error', (err) => {
+        console.error('[Download] Archive error:', err);
+        // We can't really send a 500 here if headers were already sent,
+        // but express handles piped errors decently.
+        res.status(500).send({ error: err.message });
+    });
+
+    // Pipe archive data to the response
+    archive.pipe(res);
+
+    // Append files from task directory
+    archive.directory(taskDir, false);
+
+    // Finalize the archive
+    archive.finalize();
 });
 
 // Legacy calculateLogStats removed as it is now handled by ingest.js or migrate.js

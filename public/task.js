@@ -84,6 +84,13 @@ function init() {
         }
     });
 
+    // Setup Download Menu Action
+    document.getElementById('download-task-menu-item').addEventListener('click', () => {
+        if (activeMenuTaskId) {
+            window.location.href = `/api/tasks/${activeMenuTaskId}/download`;
+        }
+    });
+
     // Handle Browser Back/Forward
     window.addEventListener('popstate', (event) => {
         const params = new URLSearchParams(window.location.search);
