@@ -246,57 +246,66 @@ let lastFlush = Date.now();
 rl.on('line', (line) => {
     if (!line.trim()) return;
     try {
-        const parts = line.replace(/}\s*{/g, '}\n{').split('\n');
+        // Match anything between { and } that looks like a JSON object
+        const jsonMatch = line.match(/\{.*\}/);
+        if (!jsonMatch) {
+            if (line.trim()) {
+                console.error(`[Ingest Non-JSON] ${line.slice(0, 200)}`);
+            }
+            return;
+        }
+
+        const parts = jsonMatch[0].replace(/}\s*{/g, '}\n{').split('\n');
 
         parts.forEach(part => {
             if (!part.trim()) return;
-            if (!part.startsWith('{')) {
-                console.error(`[Claude Output] ${part}`);
-                return;
-            }
-            const obj = JSON.parse(part);
-            lineNumber++;
+            try {
+                const obj = JSON.parse(part);
+                lineNumber++;
 
-            // 1. Update Stats
-            if (obj.type === 'result') {
-                stats.status = 'completed';
-                if (obj.duration_ms) stats.duration = (obj.duration_ms / 1000).toFixed(1);
-                else if (obj.duration) stats.duration = (obj.duration / 1000).toFixed(1);
-                if (obj.usage) {
-                    stats.inputTokens = obj.usage.input_tokens || 0;
-                    stats.outputTokens = obj.usage.output_tokens || 0;
-                    stats.cacheReadTokens = obj.usage.cache_read_input_tokens || 0;
-                }
-                process.stderr.write(`[Ingest] Received full result for ${modelName}\n`);
-            }
-            if (obj.type === 'user') stats.turns++;
-            if (obj.type === 'tool_use') {
-                const name = obj.name;
-                if (stats.toolCounts.hasOwnProperty(name)) stats.toolCounts[name]++;
-            }
-            if (obj.type === 'assistant' && obj.message && Array.isArray(obj.message.content)) {
-                obj.message.content.forEach(block => {
-                    if (block.type === 'tool_use') {
-                        const name = block.name;
-                        if (stats.toolCounts.hasOwnProperty(name)) stats.toolCounts[name]++;
+                // 1. Update Stats
+                if (obj.type === 'result') {
+                    stats.status = 'completed';
+                    if (obj.duration_ms) stats.duration = (obj.duration_ms / 1000).toFixed(1);
+                    else if (obj.duration) stats.duration = (obj.duration / 1000).toFixed(1);
+                    if (obj.usage) {
+                        stats.inputTokens = obj.usage.input_tokens || 0;
+                        stats.outputTokens = obj.usage.output_tokens || 0;
+                        stats.cacheReadTokens = obj.usage.cache_read_input_tokens || 0;
                     }
-                });
-            }
+                    process.stderr.write(`[Ingest] Received full result for ${modelName}\n`);
+                }
+                if (obj.type === 'user') stats.turns++;
+                if (obj.type === 'tool_use') {
+                    const name = obj.name;
+                    if (stats.toolCounts.hasOwnProperty(name)) stats.toolCounts[name]++;
+                }
+                if (obj.type === 'assistant' && obj.message && Array.isArray(obj.message.content)) {
+                    obj.message.content.forEach(block => {
+                        if (block.type === 'tool_use') {
+                            const name = block.name;
+                            if (stats.toolCounts.hasOwnProperty(name)) stats.toolCounts[name]++;
+                        }
+                    });
+                }
 
-            // 2. Structured Log Entry
-            const entries = getLogEntries(obj, part);
-            entries.forEach(entry => {
-                insertLog.run(
-                    runId,
-                    lineNumber,
-                    entry.skip ? 'HIDDEN_' + entry.type : entry.type,
-                    entry.toolName || null,
-                    entry.toolUseId || null,
-                    entry.previewText || '',
-                    entry.typeClass || (entry.skip ? 'type-tool' : 'type-content'),
-                    entry.content
-                );
-            });
+                // 2. Structured Log Entry
+                const entries = getLogEntries(obj, part);
+                entries.forEach(entry => {
+                    insertLog.run(
+                        runId,
+                        lineNumber,
+                        entry.skip ? 'HIDDEN_' + entry.type : entry.type,
+                        entry.toolName || null,
+                        entry.toolUseId || null,
+                        entry.previewText || '',
+                        entry.typeClass || (entry.skip ? 'type-tool' : 'type-content'),
+                        entry.content
+                    );
+                });
+            } catch (e) {
+                console.error(`[Ingest Error] Failed to parse/process part: ${part.slice(0, 100)}`, e);
+            }
         });
 
         if (Date.now() - lastFlush > 500) {
@@ -304,10 +313,8 @@ rl.on('line', (line) => {
             lastFlush = Date.now();
         }
     } catch (e) {
-        // Log non-JSON output or parse errors to stderr so they appear in task logs
-        if (line.trim()) {
-            console.error(`[Ingest Warning] Non-JSON input: ${line.slice(0, 100)}${line.length > 100 ? '...' : ''}`);
-        }
+        // Log general errors (like DB lock) to stderr
+        console.error(`[Ingest Fatal] Error in rl.on('line'):`, e);
     }
 });
 
