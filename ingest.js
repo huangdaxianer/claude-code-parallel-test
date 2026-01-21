@@ -16,6 +16,18 @@ const rl = readline.createInterface({
     terminal: false
 });
 
+// Global Error Handling
+process.on('uncaughtException', (err) => {
+    console.error(`[Ingest Fatal Error] Uncaught Exception: ${err.message}`);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error(`[Ingest Fatal Error] Unhandled Rejection at: ${promise}, reason: ${reason}`);
+});
+
+process.stderr.write(`[Ingest] Started for Task: ${taskId}, Model: ${modelName}\n`);
+
 // Get run_id
 const run = db.prepare('SELECT id FROM model_runs WHERE task_id = ? AND model_name = ?').get(taskId, modelName);
 if (!run) {
@@ -237,7 +249,11 @@ rl.on('line', (line) => {
         const parts = line.replace(/}\s*{/g, '}\n{').split('\n');
 
         parts.forEach(part => {
-            if (!part.startsWith('{')) return;
+            if (!part.trim()) return;
+            if (!part.startsWith('{')) {
+                console.error(`[Claude Output] ${part}`);
+                return;
+            }
             const obj = JSON.parse(part);
             lineNumber++;
 
@@ -251,6 +267,7 @@ rl.on('line', (line) => {
                     stats.outputTokens = obj.usage.output_tokens || 0;
                     stats.cacheReadTokens = obj.usage.cache_read_input_tokens || 0;
                 }
+                process.stderr.write(`[Ingest] Received full result for ${modelName}\n`);
             }
             if (obj.type === 'user') stats.turns++;
             if (obj.type === 'tool_use') {
@@ -287,7 +304,10 @@ rl.on('line', (line) => {
             lastFlush = Date.now();
         }
     } catch (e) {
-        // Silence parse errors
+        // Log non-JSON output or parse errors to stderr so they appear in task logs
+        if (line.trim()) {
+            console.error(`[Ingest Warning] Non-JSON input: ${line.slice(0, 100)}${line.length > 100 ? '...' : ''}`);
+        }
     }
 });
 

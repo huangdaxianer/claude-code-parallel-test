@@ -107,7 +107,16 @@ process_task() {
                  CMD_PREFIX="$CMD_PREFIX $ENV_VARS"
             fi
 
-            # Use stdin for prompt to avoid encoding issues
+            # Set Pipefail to capture first command failure
+            set -o pipefail
+
+            # Execute and capture exit code
+            # We don't background here so we can wait and check exit code
+            echo "[Task $task_id] [$model_name] Environment check:"
+            echo "  - CLAUDE_BIN: $CLAUDE_BIN"
+            echo "  - CMD_PREFIX: $CMD_PREFIX"
+            echo "  - PWD: $(pwd)"
+            
             if ! cat "$task_root/prompt.txt" | $CMD_PREFIX "$CLAUDE_BIN" \
                 --model "$model_name" \
                 --allowedTools 'Read(./**),Edit(./**),Bash(*)' \
@@ -115,13 +124,17 @@ process_task() {
                 --dangerously-skip-permissions \
                 --output-format stream-json --verbose 2>&1 | \
                 tee "../${model_name}.txt" | \
-                node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name" &
+                node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
             then
-                echo "[错误] 启动失败。权限或路径错误。" > "../${model_name}.txt"
-                exit 1
+                EXIT_CODE=$?
+                echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
+                # Specifically log if exit code is 127 (command not found) or similar
+                if [ $EXIT_CODE -eq 127 ]; then
+                    echo "  -> Error: Command not found. Check CLAUDE_BIN path."
+                fi
+            else
+                echo "[Task $task_id] [$model_name] 完成"
             fi
-            
-            wait $!
             
             if [ "$USE_ISOLATION" = true ]; then
                 sudo -n -u claude-user chmod -R a+rX "$folder_path" 2>/dev/null || true
