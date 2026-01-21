@@ -11,6 +11,7 @@ if (!fs.existsSync(TASKS_DIR)) {
 }
 
 const db = new Database(DB_PATH);
+db.pragma('journal_mode = WAL');
 
 // Initialize Tables
 db.exec(`
