@@ -212,6 +212,7 @@ app.post('/api/upload', upload.any(), (req, res) => {
 
 
 // --- Queue Management ---
+const activeTaskProcesses = {}; // Map<taskId, ChildProcess>
 let isTaskRunning = false;
 
 // Function to process the queue
@@ -258,6 +259,9 @@ function executeTask(taskId) {
             env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' }
         });
 
+        // Track process
+        activeTaskProcesses[taskId] = child;
+
         child.stdout.on('data', (data) => console.log(`[Task ${taskId} STDOUT] ${data}`));
         child.stderr.on('data', (data) => console.error(`[Task ${taskId} STDERR] ${data}`));
 
@@ -268,6 +272,7 @@ function executeTask(taskId) {
 
         child.on('exit', (code, signal) => {
             console.log(`[Task ${taskId} EXIT] Process exited with code ${code} and signal ${signal}`);
+            delete activeTaskProcesses[taskId]; // Cleanup
             if (code === 0) resolve();
             else reject(new Error(`Process exited with code ${code}`));
         });
@@ -1075,6 +1080,75 @@ app.get('/api/download_zip', (req, res) => {
 
 
         res.json({ success: true });
+    }
+});
+
+// 停止任务
+app.post('/api/tasks/:taskId/stop', async (req, res) => {
+    const { taskId } = req.params;
+    console.log(`[Control] Stopping task ${taskId}`);
+
+    // 1. Kill Process if active
+    if (activeTaskProcesses[taskId]) {
+        try {
+            const child = activeTaskProcesses[taskId];
+            // Kill entire process group
+            process.kill(-child.pid, 'SIGTERM');
+        } catch (e) {
+            // If group kill fails (maybe not detached), try normal kill
+            try { activeTaskProcesses[taskId].kill('SIGTERM'); } catch (e2) { }
+        }
+        delete activeTaskProcesses[taskId];
+    } else {
+        // Fallback: try to find loose processes via pkill (optional, skip for now to avoid side effects)
+    }
+
+    // 2. Update DB status
+    try {
+        db.prepare("UPDATE task_queue SET status = 'stopped', completed_at = CURRENT_TIMESTAMP WHERE task_id = ?").run(taskId);
+        db.prepare("UPDATE model_runs SET status = 'stopped' WHERE task_id = ? AND status = 'running'").run(taskId); // Only stop running models
+    } catch (e) {
+        console.error('Error updating DB for stop:', e);
+        return res.status(500).json({ error: 'Failed to update task status' });
+    }
+
+    // 3. Reset queue runner if this was the running task
+    // We don't verify if *this* was the running task, but resetting flag is safe if we killed it.
+    // However, executeTask promise rejection handles isTaskRunning=false. 
+    // If we kill it, exit code != 0, executeTask rejects, processQueue finally block runs.
+
+    res.json({ success: true });
+});
+
+// 启动任务 (重试/恢复)
+app.post('/api/tasks/:taskId/start', (req, res) => {
+    const { taskId } = req.params;
+    console.log(`[Control] Starting task ${taskId}`);
+
+    try {
+        // Check if already running
+        const current = db.prepare("SELECT status FROM task_queue WHERE task_id = ?").get(taskId);
+        if (current && current.status === 'running') {
+            return res.status(400).json({ error: 'Task is already running' });
+        }
+
+        // Reset to pending
+        db.prepare("UPDATE task_queue SET status = 'pending', started_at = NULL, completed_at = NULL WHERE task_id = ?").run(taskId);
+
+        // Reset model runs too? Maybe not, allow resume? 
+        // For simplicity, let's reset pending models or stopped models to pending.
+        // Actually the bash script runs all models. It's safer to just set them all to pending or let the script handle it.
+        // The script logic (batch_claude_parallel.sh) might skip completed ones if we implemented that? 
+        // Assuming the script is idempotent-ish or we just restart.
+        db.prepare("UPDATE model_runs SET status = 'pending' WHERE task_id = ? AND status != 'completed'").run(taskId);
+
+        // Trigger Queue
+        processQueue();
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error starting task:', e);
+        res.status(500).json({ error: 'Failed to start task' });
     }
 });
 

@@ -733,10 +733,27 @@ function renderStatisticsView() {
     currentRuns.forEach(run => {
         const stats = calculateRunStats(run);
 
+        // Define Actions
+        let actionButtons = '';
+        if (run.status === 'pending' || run.status === 'stopped') {
+            // Task level start (but button on row looks like model level, though backend is task level)
+            // To avoid confusion, maybe only show on the first row? Or show generic Start Task button elsewhere?
+            // User requested "Status后面耗时前面加一个操作列".
+            // Since backend script runs ALL, clicking start on any row starts the whole task.
+            // Let's show it on all rows or make it clear.
+            // For now, simple approach:
+            actionButtons = `<button class="btn-xs" style="background: var(--success-color); color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;" onclick="window.controlTask('start')">Start</button>`;
+        } else if (run.status === 'running') {
+            actionButtons = `<button class="btn-xs" style="background: var(--error-color); color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;" onclick="window.controlTask('stop')">Stop</button>`;
+        } else if (run.status === 'completed' && run.previewable) {
+            actionButtons = `<button class="btn-xs" style="background: var(--info-color, #2196F3); color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;" onclick="window.previewFromStats('${run.model_name}')">Preview</button>`;
+        }
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td style="font-weight:600">${stats.modelName}</td>
             <td><span class="status-badge status-${stats.status}">${stats.status}</span></td>
+            <td>${actionButtons}</td>
             <td>${stats.duration || '-'}</td>
             <td>${stats.turns}</td>
             <td>${stats.inputTokens || '-'}</td>
@@ -750,6 +767,33 @@ function renderStatisticsView() {
         tbody.appendChild(tr);
     });
 }
+
+// Control Handlers
+// Control Handlers
+window.controlTask = async function (action) {
+    if (!activeTaskId) return;
+    if (!confirm(`Are you sure you want to ${action} this task?`)) return;
+
+    try {
+        const res = await fetch(`/api/tasks/${activeTaskId}/${action}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.error) {
+            alert(data.error);
+        } else {
+            // Refresh
+            fetchTaskDetails(activeTaskId);
+        }
+    } catch (e) {
+        alert(`Failed to ${action} task: ${e.message}`);
+    }
+};
+
+window.previewFromStats = function (modelName) {
+    // Exit stats mode
+    isStatsMode = false;
+    // Load specific model
+    loadTask(activeTaskId, modelName);
+};
 
 function renderComparisonView() { // Revised for Split View
     const runs = currentRuns || [];
@@ -766,17 +810,17 @@ function renderComparisonView() { // Revised for Split View
 
 // Global function for onchange event
 window.updateComparisonPanel = function (side) {
-    const select = document.getElementById(`select-${side}`);
+    const select = document.getElementById(`select - ${side}`);
     if (side === 'left') compareLeftRun = select.value;
     else compareRightRun = select.value;
     renderComparisonView();
 };
 
 function updateComparisonSide(side) {
-    const select = document.getElementById(`select-${side}`);
-    const statusBadge = document.getElementById(`status-${side}`);
-    const iframe = document.getElementById(`iframe-${side}`);
-    const emptyState = document.getElementById(`empty-${side}`);
+    const select = document.getElementById(`select - ${side}`);
+    const statusBadge = document.getElementById(`status - ${side}`);
+    const iframe = document.getElementById(`iframe - ${side}`);
+    const emptyState = document.getElementById(`empty - ${side}`);
 
     // a. Sync Options (Preserve selection if list hasn't effectively changed)
     syncSelectOptions(select, currentRuns);
@@ -803,7 +847,7 @@ function updateComparisonSide(side) {
 
     // Status
     statusBadge.textContent = run.status;
-    statusBadge.className = `status-badge status-${run.status || 'pending'}`;
+    statusBadge.className = `status - badge status - ${run.status || 'pending'}`;
     statusBadge.style.display = 'inline-block';
 
     // Iframe Logic
@@ -849,7 +893,8 @@ function syncSelectOptions(select, runs) {
         if (run.status === 'running') statusSymbol = '🔄';
         else if (run.status === 'completed') statusSymbol = '✅';
 
-        option.textContent = `${getModelDisplayName(run.modelName)} (${statusSymbol})`;
+        option.textContent = `${getModelDisplayName(run.modelName)
+            } (${statusSymbol})`;
         select.appendChild(option);
     });
 
@@ -913,9 +958,9 @@ function renderMainContent() {
                             const safePreview = event.preview_text.length > 200 ? event.preview_text.slice(0, 200) + '...' : event.preview_text;
 
                             summary.innerHTML = `
-                                <span class="json-type-badge ${event.status_class || 'type-tool'}">${event.type}</span>
-                                <span class="json-preview-text" title="${escapeHtml(event.preview_text)}">${escapeHtml(safePreview)}</span>
-                            `;
+        <span class="json-type-badge ${event.status_class || 'type-tool'}">${event.type}</span>
+        <span class="json-preview-text" title="${escapeHtml(event.preview_text)}">${escapeHtml(safePreview)}</span>
+    `;
 
                             const body = document.createElement('div');
                             body.className = 'json-body';
