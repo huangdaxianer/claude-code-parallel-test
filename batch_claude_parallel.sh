@@ -102,9 +102,10 @@ process_task() {
             
             local CMD_PREFIX=""
             if [ "$USE_ISOLATION" = true ]; then
-                 CMD_PREFIX="sudo -n -H -u claude-user"
-                 local ENV_VARS="ANTHROPIC_AUTH_TOKEN='$ANTHROPIC_AUTH_TOKEN' ANTHROPIC_BASE_URL='$ANTHROPIC_BASE_URL' CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='$CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'"
-                 CMD_PREFIX="$CMD_PREFIX $ENV_VARS"
+                 CMD_PREFIX="sudo -n -H -u claude-user env"
+                 CMD_PREFIX="$CMD_PREFIX ANTHROPIC_AUTH_TOKEN=$ANTHROPIC_AUTH_TOKEN"
+                 CMD_PREFIX="$CMD_PREFIX ANTHROPIC_BASE_URL=$ANTHROPIC_BASE_URL"
+                 CMD_PREFIX="$CMD_PREFIX CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=$CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
             fi
 
             # Set Pipefail to capture first command failure
