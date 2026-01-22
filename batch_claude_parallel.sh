@@ -118,7 +118,16 @@ process_task() {
             echo "  - CMD_PREFIX: $CMD_PREFIX"
             echo "  - PWD: $(pwd)"
             
-            if ! cat "$task_root/prompt.txt" | $CMD_PREFIX "$CLAUDE_BIN" \
+            # Build firejail prefix if available
+            local FIREJAIL_PREFIX=""
+            if command -v firejail &> /dev/null; then
+                FIREJAIL_PREFIX="firejail --quiet --private=$(pwd) --"
+                echo "  - FIREJAIL: enabled (restricting to $(pwd))"
+            else
+                echo "  - FIREJAIL: not installed, running without sandbox"
+            fi
+            
+            if ! cat "$task_root/prompt.txt" | $CMD_PREFIX $FIREJAIL_PREFIX "$CLAUDE_BIN" \
                 --model "$model_name" \
                 --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
                 --disallowedTools 'EnterPlanMode,ExitPlanMode' \
