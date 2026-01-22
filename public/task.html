@@ -1226,10 +1226,33 @@
             border-color: #10b981;
             background: #ecfdf5;
             color: #059669;
+            flex: 1; /* 确保在 has-file 状态下也占据剩余空间 */
         }
 
         .upload-folder-btn.has-file:hover {
-            background: #d1fae5;
+            background: #fef2f2;
+            border-color: #ef4444;
+            color: #b91c1c;
+        }
+
+        .upload-folder-btn.has-file:hover .folder-name {
+            color: #b91c1c;
+        }
+
+        .upload-folder-btn.has-file:hover .upload-folder-icon {
+            filter: grayscale(1) sepia(1) hue-rotate(-50deg) saturate(5); /* 将图标变红 */
+        }
+
+        .upload-folder-btn .delete-text {
+            display: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-left: auto;
+            padding-right: 0.5rem;
+        }
+
+        .upload-folder-btn.has-file:hover .delete-text {
+            display: block;
         }
 
         .upload-folder-btn .upload-folder-icon {
@@ -2142,6 +2165,7 @@
                                 <span class="upload-folder-icon">📁</span>
                                 <span class="upload-folder-text">上传本地项目开发</span>
                                 <span class="folder-name"></span>
+                                <span class="delete-text">删除</span>
                                 <svg class="upload-progress-ring" width="24" height="24" id="upload-progress-ring">
                                     <circle class="progress-ring__track" stroke="#e2e8f0" stroke-width="2"
                                         fill="transparent" r="10" cx="12" cy="12" />

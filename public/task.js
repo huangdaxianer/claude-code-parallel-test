@@ -300,6 +300,10 @@ function openNewTaskModal() {
     const uploadButtonsRow = document.querySelector('.upload-buttons-row');
     if (uploadButtonsRow) uploadButtonsRow.style.display = 'flex';
     
+    // 确保 CSV 按钮也显示
+    const csvBtn = document.getElementById('browse-csv-btn');
+    if (csvBtn) csvBtn.style.display = 'flex';
+    
     document.getElementById('csv-file-input').value = '';
     document.getElementById('browse-csv-btn').classList.remove('has-file');
     
@@ -320,8 +324,12 @@ function openIncrementalTaskModal() {
 
     // Update UI pre-fill
     const browseBtn = document.getElementById('browse-folder-btn');
+    const csvBtn = document.getElementById('browse-csv-btn');
     browseBtn.classList.add('has-file');
     browseBtn.querySelector('.folder-name').textContent = `Base: ${incrementalSrcModelName || 'All'} (${currentTaskId})`;
+
+    // 隐藏批量上传按钮
+    if (csvBtn) csvBtn.style.display = 'none';
 
     // Clear prompt and update button style
     document.getElementById('task-prompt').value = '';
@@ -337,14 +345,18 @@ function closeNewTaskModal() {
 function triggerFolderBrowse() {
     const browseBtn = document.getElementById('browse-folder-btn');
     if (selectedFolderPath && browseBtn.classList.contains('has-file')) {
-        if (confirm('Clear selected folder?')) {
-            selectedFolderPath = '';
-            incrementalSrcTaskId = null; // Reset incremental state on clear
-            incrementalSrcModelName = null;
-            browseBtn.classList.remove('has-file');
-            browseBtn.querySelector('.folder-name').textContent = '';
-            document.getElementById('folder-input').value = '';
-        }
+        // 直接删除，不再确认
+        selectedFolderPath = '';
+        incrementalSrcTaskId = null; // Reset incremental state on clear
+        incrementalSrcModelName = null;
+        browseBtn.classList.remove('has-file');
+        browseBtn.querySelector('.folder-name').textContent = '';
+        document.getElementById('folder-input').value = '';
+        
+        // 恢复上传批量任务按钮显示
+        const csvBtn = document.getElementById('browse-csv-btn');
+        if (csvBtn) csvBtn.style.display = 'flex';
+        
         return;
     }
     document.getElementById('folder-input').click();
@@ -355,6 +367,7 @@ async function handleFolderUpload(e) {
     if (!files || files.length === 0) return;
 
     const browseBtn = document.getElementById('browse-folder-btn');
+    const csvBtn = document.getElementById('browse-csv-btn');
     const iconSpan = browseBtn.querySelector('.upload-folder-icon');
 
     const totalFiles = files.length;
@@ -428,6 +441,9 @@ async function handleFolderUpload(e) {
             browseBtn.classList.add('has-file');
             browseBtn.querySelector('.folder-name').textContent = folderName;
             iconSpan.textContent = '📁';
+            
+            // 隐藏批量上传按钮
+            if (csvBtn) csvBtn.style.display = 'none';
         } else {
             console.error(`[Upload] Upload failed according to data payload:`, data);
             alert('Upload failed: ' + (data.error || 'Unknown error'));
