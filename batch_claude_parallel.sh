@@ -118,42 +118,69 @@ process_task() {
             echo "  - CMD_PREFIX: $CMD_PREFIX"
             echo "  - PWD: $(pwd)"
             
-            # Build firejail prefix if available
-            local FIREJAIL_PREFIX=""
+            # Build firejail wrapper if available
+            local USE_FIREJAIL=false
+            local MODEL_DIR=""
+            local PROJECT_ROOT=""
+            
             if command -v firejail &> /dev/null; then
-                # Strategy: blacklist the /tasks parent directory but allow current task
+                USE_FIREJAIL=true
+                # Strategy: bind mount task model dir to /workspace and blacklist project root
+                # This ensures Claude can ONLY access /workspace (which is the task model dir)
+                MODEL_DIR="$(pwd)"  # e.g., /root/project/tasks/TASKID/model
                 local TASK_DIR="$(dirname $(pwd))"  # e.g., /root/project/tasks/TASKID
                 local TASKS_ROOT="$(dirname $TASK_DIR)"  # e.g., /root/project/tasks
-                local PROJECT_ROOT="$(dirname $TASKS_ROOT)"  # e.g., /root/project
+                PROJECT_ROOT="$(dirname $TASKS_ROOT)"  # e.g., /root/project
                 
-                # Blacklist project root (which contains server code, etc.) but allow tasks dir
-                # Then blacklist tasks root but allow current task dir
-                FIREJAIL_PREFIX="firejail --quiet --noprofile"
-                FIREJAIL_PREFIX="$FIREJAIL_PREFIX --blacklist=$PROJECT_ROOT --noblacklist=$TASKS_ROOT"
-                FIREJAIL_PREFIX="$FIREJAIL_PREFIX --blacklist=$TASKS_ROOT --noblacklist=$TASK_DIR"
-                FIREJAIL_PREFIX="$FIREJAIL_PREFIX --"
-                echo "  - FIREJAIL: enabled (restricting to $TASK_DIR)"
+                # Create /workspace directory if it doesn't exist
+                mkdir -p /workspace 2>/dev/null || true
+                
+                echo "  - FIREJAIL: enabled (bind $MODEL_DIR -> /workspace, blacklist $PROJECT_ROOT)"
             else
                 echo "  - FIREJAIL: not installed, running without sandbox"
             fi
             
-            if ! cat "$task_root/prompt.txt" | $CMD_PREFIX $FIREJAIL_PREFIX "$CLAUDE_BIN" \
-                --model "$model_name" \
-                --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
-                --disallowedTools 'EnterPlanMode,ExitPlanMode' \
-                --dangerously-skip-permissions \
-                --output-format stream-json --verbose 2>&1 | \
-                tee "../${model_name}.txt" | \
-                node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
-            then
-                EXIT_CODE=$?
-                echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
-                # Specifically log if exit code is 127 (command not found) or similar
-                if [ $EXIT_CODE -eq 127 ]; then
-                    echo "  -> Error: Command not found. Check CLAUDE_BIN path."
+            if [ "$USE_FIREJAIL" = true ]; then
+                # Run Claude inside firejail with isolation
+                # - bind: Mount model dir to /workspace so Claude works in isolated /workspace
+                # - blacklist: Block access to project root (server code, other tasks, etc.)
+                # - read-write: Ensure /workspace is writable
+                # Note: Claude's stdin comes from cat, stdout goes to tee/ingest outside firejail
+                if ! cat "$task_root/prompt.txt" | $CMD_PREFIX firejail --quiet --noprofile \
+                    --bind="$MODEL_DIR",/workspace \
+                    --blacklist="$PROJECT_ROOT" \
+                    --read-write=/workspace \
+                    -- bash -c "cd /workspace && $CLAUDE_BIN --model $model_name --allowedTools 'Read(./**),Edit(./**),Bash(./**)' --disallowedTools 'EnterPlanMode,ExitPlanMode' --dangerously-skip-permissions --output-format stream-json --verbose" 2>&1 | \
+                    tee "$task_root/${model_name}.txt" | \
+                    node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
+                then
+                    EXIT_CODE=$?
+                    echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
+                    if [ $EXIT_CODE -eq 127 ]; then
+                        echo "  -> Error: Command not found. Check CLAUDE_BIN path."
+                    fi
+                else
+                    echo "[Task $task_id] [$model_name] 完成"
                 fi
             else
-                echo "[Task $task_id] [$model_name] 完成"
+                # Run Claude without firejail (original behavior)
+                if ! cat "$task_root/prompt.txt" | $CMD_PREFIX "$CLAUDE_BIN" \
+                    --model "$model_name" \
+                    --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
+                    --disallowedTools 'EnterPlanMode,ExitPlanMode' \
+                    --dangerously-skip-permissions \
+                    --output-format stream-json --verbose 2>&1 | \
+                    tee "$task_root/${model_name}.txt" | \
+                    node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
+                then
+                    EXIT_CODE=$?
+                    echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
+                    if [ $EXIT_CODE -eq 127 ]; then
+                        echo "  -> Error: Command not found. Check CLAUDE_BIN path."
+                    fi
+                else
+                    echo "[Task $task_id] [$model_name] 完成"
+                fi
             fi
             
             if [ "$USE_ISOLATION" = true ]; then
