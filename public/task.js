@@ -989,19 +989,27 @@ function renderStatisticsView() {
         }
 
         const tr = document.createElement('tr');
+        const isPending = run.status === 'pending';
+        
+        const formatVal = (val, fallback = '-') => {
+            if (isPending) return '';
+            if (val === null || val === undefined) return fallback;
+            return val;
+        };
+
         tr.innerHTML = `
             <td style="font-weight:600">${stats.modelName}</td>
             <td><span class="status-badge status-${stats.status}">${translateStatus(stats.status)}</span></td>
             <td>${actionButtons}</td>
-            <td>${stats.duration || '-'}</td>
-            <td>${stats.turns}</td>
-            <td>${stats.inputTokens || '-'}</td>
-            <td>${stats.outputTokens || '-'}</td>
-            <td>${stats.cacheReadTokens || '-'}</td>
-            <td>${stats.toolCounts.TodoWrite}</td>
-            <td>${stats.toolCounts.Read}</td>
-            <td>${stats.toolCounts.Write}</td>
-            <td>${stats.toolCounts.Bash}</td>
+            <td>${formatVal(stats.duration)}</td>
+            <td>${formatVal(stats.turns, '0')}</td>
+            <td>${formatVal(stats.inputTokens)}</td>
+            <td>${formatVal(stats.outputTokens)}</td>
+            <td>${formatVal(stats.cacheReadTokens)}</td>
+            <td>${formatVal(stats.toolCounts.TodoWrite, '0')}</td>
+            <td>${formatVal(stats.toolCounts.Read, '0')}</td>
+            <td>${formatVal(stats.toolCounts.Write, '0')}</td>
+            <td>${formatVal(stats.toolCounts.Bash, '0')}</td>
         `;
         tbody.appendChild(tr);
     });
