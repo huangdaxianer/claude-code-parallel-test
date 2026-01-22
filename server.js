@@ -4,7 +4,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const fs = require('fs');
 const path = require('path');
-const { exec, spawn } = require('child_process');
+const { exec, spawn, execSync } = require('child_process');
 const cors = require('cors');
 const https = require('https');
 const multer = require('multer');
@@ -246,13 +246,6 @@ app.post('/api/upload', upload.any(), (req, res) => {
         filesToProcess.forEach((file, index) => {
             // Use the explicit path sent from the client
             const relPath = filePaths[index] || file.originalname;
-
-            // The path starts with the folder name, e.g. "my-project/src/index.js"
-            // Since targetBase is already .../TIMESTAMP_my-project, we should join 
-            // relative to the PARENT of targetBase to avoid double nesting, 
-            // OR join relative to targetBase but strip the first component.
-
-            // Let's join relative to targetBase's parent directory
             const parentDir = path.dirname(targetBase);
             const fullPath = path.join(parentDir, `${uploadId}_${relPath}`);
             const dir = path.dirname(fullPath);
@@ -275,10 +268,6 @@ app.post('/api/upload', upload.any(), (req, res) => {
 });
 
 
-
-
-
-// --- Queue Management ---
 const activeTaskProcesses = {}; // Map<taskId, ChildProcess>
 let isTaskRunning = false;
 
@@ -307,8 +296,6 @@ async function processQueue() {
         console.log(`[Queue] Task completed: ${nextTask.task_id}`);
     } catch (e) {
         console.error('[Queue] Error processing task:', e);
-        // If we have a nextTask reference (hard to get here without scope), we should mark it failed.
-        // For simplicity, we just reset the running flag so retry or next task can happen.
     } finally {
         isTaskRunning = false;
         // Trigger next check immediately
@@ -320,10 +307,9 @@ async function processQueue() {
 function executeTask(taskId) {
     return new Promise((resolve, reject) => {
         const SCRIPT_FILE = path.join(__dirname, 'batch_claude_parallel.sh');
-
-        // Explicitly set LANG environment variable to ensure proper encoding for child process
         const child = spawn('bash', [SCRIPT_FILE, taskId], {
-            env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' }
+            env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' },
+            detached: true
         });
 
         // Track process
@@ -362,19 +348,6 @@ app.post('/api/tasks', (req, res) => {
         let targetPath = path.join(taskDir, 'source');
 
         if (task.srcModelName) {
-            // 如果仅想基于特定的 output 文件夹继续
-            // 我们将其内容复制到 tasks/NewID/source/strawberry/ 中
-            // 注意：新的任务脚本通常期望 source 文件夹下就是文件根目录。
-            // 之前的 copyFiles(srcTaskDir, targetPath) 是把 tasks/ID/* 复制到 tasks/NewID/source/*
-
-            // 如果用户选了 strawberry 文件夹，我们应该把 tasks/ID/strawberry/* 复制到 tasks/NewID/source/* 
-            // 这样新任务就以 strawberry 的产物作为根目录开始。
-            // 否则，如果还是复制到 tasks/NewID/source/strawberry/，那么新任务脚本可能找不到文件（取决于它去哪找）。
-            // 通常项目上传是上传一个文件夹，比如 'my-project'，然后脚本在 'source/my-project' 下面找？
-            // 之前的上传逻辑是：上传到 `TASK/source/FolderName`。
-
-            // 所以如果我们选了 strawberry，应该把内容复制到 `TASK/source/strawberry`，然后 baseDir 指向 `TASK/source`。
-
             srcTaskDir = path.join(srcTaskDir, task.srcModelName);
             targetPath = path.join(targetPath, task.srcModelName);
         }
@@ -1150,39 +1123,121 @@ app.get('/api/download_zip', (req, res) => {
     }
 });
 
-// 停止任务
+// 停止任务（支持按模型停止）
 app.post('/api/tasks/:taskId/stop', async (req, res) => {
     const { taskId } = req.params;
-    console.log(`[Control] Stopping task ${taskId}`);
-
-    // 1. Kill Process if active
-    if (activeTaskProcesses[taskId]) {
+    const { modelName } = req.body || {};
+    
+    if (modelName) {
+        // 按模型停止
+        console.log(`[Control] Stopping model ${modelName} for task ${taskId}`);
+        
+        // 1. Kill specific model's claude process
+        const modelDir = path.join(TASKS_DIR, taskId, modelName);
         try {
-            const child = activeTaskProcesses[taskId];
-            // Kill entire process group
-            process.kill(-child.pid, 'SIGTERM');
+            // 使用多种方式尝试杀掉 claude 进程
+            // 方法1: 使用 pkill 匹配目录路径
+            try {
+                execSync(`pkill -9 -f "${modelDir}" 2>/dev/null || true`, { timeout: 5000 });
+            } catch (e) { /* ignore */ }
+            
+            // 方法2: 使用 ps + grep + kill 更精确地查找并杀掉
+            try {
+                const pids = execSync(`ps aux | grep -E "claude.*${taskId}.*${modelName}" | grep -v grep | awk '{print $2}'`, { timeout: 5000 }).toString().trim();
+                if (pids) {
+                    pids.split('\n').forEach(pid => {
+                        if (pid) {
+                            try { execSync(`kill -9 ${pid} 2>/dev/null || true`); } catch (e) { /* ignore */ }
+                        }
+                    });
+                }
+            } catch (e) { /* ignore */ }
+            
+            // 方法3: 杀掉 ingest 进程
+            try {
+                execSync(`pkill -9 -f "ingest.js ${taskId} ${modelName}" 2>/dev/null || true`, { timeout: 5000 });
+            } catch (e) { /* ignore */ }
+            
+            console.log(`[Control] Kill commands executed for model ${modelName}`);
         } catch (e) {
-            // If group kill fails (maybe not detached), try normal kill
-            try { activeTaskProcesses[taskId].kill('SIGTERM'); } catch (e2) { }
+            console.log(`[Control] pkill for model ${modelName} completed (may have found no processes)`);
         }
-        delete activeTaskProcesses[taskId];
+        
+        // 2. Update only this model's status in DB
+        try {
+            db.prepare("UPDATE model_runs SET status = 'stopped' WHERE task_id = ? AND model_name = ? AND status = 'running'").run(taskId, modelName);
+            
+            // Check if all models are now stopped/completed - if so, mark task as completed
+            const remainingRunning = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'running'").get(taskId);
+            if (remainingRunning.count === 0) {
+                // All models done, check if any completed successfully
+                const anyCompleted = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'completed'").get(taskId);
+                if (anyCompleted.count > 0) {
+                    db.prepare("UPDATE task_queue SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE task_id = ?").run(taskId);
+                } else {
+                    db.prepare("UPDATE task_queue SET status = 'stopped', completed_at = CURRENT_TIMESTAMP WHERE task_id = ?").run(taskId);
+                }
+                isTaskRunning = false;
+            }
+        } catch (e) {
+            console.error('Error updating DB for model stop:', e);
+            return res.status(500).json({ error: 'Failed to update model status' });
+        }
     } else {
-        // Fallback: try to find loose processes via pkill (optional, skip for now to avoid side effects)
-    }
+        // 停止整个任务（原逻辑）
+        console.log(`[Control] Stopping entire task ${taskId}`);
 
-    // 2. Update DB status
-    try {
-        db.prepare("UPDATE task_queue SET status = 'stopped', completed_at = CURRENT_TIMESTAMP WHERE task_id = ?").run(taskId);
-        db.prepare("UPDATE model_runs SET status = 'stopped' WHERE task_id = ? AND status = 'running'").run(taskId); // Only stop running models
-    } catch (e) {
-        console.error('Error updating DB for stop:', e);
-        return res.status(500).json({ error: 'Failed to update task status' });
-    }
+        // 1. Kill Process if active
+        if (activeTaskProcesses[taskId]) {
+            try {
+                const child = activeTaskProcesses[taskId];
+                const pid = child.pid;
+                console.log(`[Control] Killing process group for PID ${pid}`);
+                
+                // Kill entire process group (negative PID kills the group)
+                try {
+                    process.kill(-pid, 'SIGTERM');
+                } catch (e) {
+                    console.log(`[Control] SIGTERM to group failed, trying SIGKILL`);
+                    try { process.kill(-pid, 'SIGKILL'); } catch (e2) { }
+                }
+                
+                // Also try to kill any claude processes for this task directory
+                const taskDir = path.join(TASKS_DIR, taskId);
+                try {
+                    execSync(`pkill -f "claude.*${taskDir}" 2>/dev/null || true`, { timeout: 5000 });
+                } catch (e) {
+                    // Ignore errors from pkill
+                }
+                
+            } catch (e) {
+                console.error('[Control] Error killing process:', e);
+                try { activeTaskProcesses[taskId].kill('SIGKILL'); } catch (e2) { }
+            }
+            delete activeTaskProcesses[taskId];
+        } else {
+            // Fallback: try to find and kill any loose claude processes for this task
+            const taskDir = path.join(TASKS_DIR, taskId);
+            try {
+                execSync(`pkill -f "claude.*${taskDir}" 2>/dev/null || true`, { timeout: 5000 });
+                console.log(`[Control] Attempted to kill loose processes for ${taskId}`);
+            } catch (e) {
+                // Ignore errors
+            }
+        }
 
-    // 3. Reset queue runner if this was the running task
-    // We don't verify if *this* was the running task, but resetting flag is safe if we killed it.
-    // However, executeTask promise rejection handles isTaskRunning=false. 
-    // If we kill it, exit code != 0, executeTask rejects, processQueue finally block runs.
+        // 2. Update DB status
+        try {
+            db.prepare("UPDATE task_queue SET status = 'stopped', completed_at = CURRENT_TIMESTAMP WHERE task_id = ?").run(taskId);
+            db.prepare("UPDATE model_runs SET status = 'stopped' WHERE task_id = ? AND status = 'running'").run(taskId);
+        } catch (e) {
+            console.error('Error updating DB for stop:', e);
+            return res.status(500).json({ error: 'Failed to update task status' });
+        }
+
+        // 3. Reset queue runner flag
+        isTaskRunning = false;
+    }
 
     res.json({ success: true });
 });
@@ -1201,12 +1256,6 @@ app.post('/api/tasks/:taskId/start', (req, res) => {
 
         // Reset to pending
         db.prepare("UPDATE task_queue SET status = 'pending', started_at = NULL, completed_at = NULL WHERE task_id = ?").run(taskId);
-
-        // Reset model runs too? Maybe not, allow resume? 
-        // For simplicity, let's reset pending models or stopped models to pending.
-        // Actually the bash script runs all models. It's safer to just set them all to pending or let the script handle it.
-        // The script logic (batch_claude_parallel.sh) might skip completed ones if we implemented that? 
-        // Assuming the script is idempotent-ish or we just restart.
         db.prepare("UPDATE model_runs SET status = 'pending' WHERE task_id = ? AND status != 'completed'").run(taskId);
 
         // Trigger Queue

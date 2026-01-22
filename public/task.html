@@ -54,7 +54,7 @@
             grid-column: 2;
             display: flex;
             align-items: center;
-            padding: 0 1.5rem;
+            padding: 0 60px 0 1.5rem; /* 右侧留出空间给用户按钮 */
             gap: 2rem;
             background: #ffffff;
             border-bottom: 1px solid #e2e8f0;
@@ -275,15 +275,90 @@
             flex: 1;
             height: 100%;
             align-items: center;
-            /* Ensure vertical centering */
             scrollbar-width: none;
             padding-top: 0;
-            /* Reset any padding */
             padding-bottom: 0;
+            padding-right: 50px; /* 为用户按钮留出空间 */
         }
 
         .model-list::-webkit-scrollbar {
             display: none;
+        }
+
+        /* User Dropdown Styles */
+        .user-dropdown-container {
+            position: fixed;
+            top: 12px;
+            right: 16px;
+            z-index: 200;
+        }
+
+        .user-dropdown-trigger {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 1px solid #e2e8f0;
+            background: #fff;
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .user-dropdown-trigger:hover {
+            background: #f8fafc;
+            border-color: #cbd5e1;
+            transform: scale(1.05);
+        }
+
+        .user-dropdown-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 8px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            min-width: 140px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-8px);
+            transition: all 0.2s ease;
+        }
+
+        .user-dropdown-container:hover .user-dropdown-menu {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .user-dropdown-username {
+            padding: 12px 16px;
+            font-size: 0.85rem;
+            color: #334155;
+            border-bottom: 1px solid #f1f5f9;
+            font-weight: 500;
+        }
+
+        .user-dropdown-logout {
+            width: 100%;
+            padding: 10px 16px;
+            background: none;
+            border: none;
+            text-align: left;
+            font-size: 0.85rem;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .user-dropdown-logout:hover {
+            background: #fef2f2;
+            color: #ef4444;
         }
 
         .model-tab {
@@ -343,6 +418,15 @@
             width: 8px;
             height: 8px;
             background: #ef4444;
+            border-radius: 50%;
+        }
+
+        .model-tab.status-stopped::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #f97316;
             border-radius: 50%;
         }
 
@@ -441,24 +525,46 @@
         .stats-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.85rem;
+            font-size: 0.95rem;
             text-align: left;
         }
 
         .stats-table th {
             background: #f1f5f9;
-            padding: 1rem;
+            padding: 1.2rem 1rem;
             font-weight: 600;
             color: #475569;
             border-bottom: 2px solid #e2e8f0;
             white-space: nowrap;
         }
 
+        /* 状态、操作列居中 */
+        .stats-table th:nth-child(2),
+        .stats-table th:nth-child(3) {
+            text-align: center;
+        }
+
+        /* 数据列（第4列及以后）右对齐 */
+        .stats-table th:nth-child(n+4) {
+            text-align: right;
+        }
+
         .stats-table td {
-            padding: 1rem;
+            padding: 1.2rem 1rem;
             color: #1e293b;
             border-bottom: 1px solid #f1f5f9;
-            vertical-align: top;
+            vertical-align: middle;
+        }
+
+        /* 状态、操作列居中 */
+        .stats-table td:nth-child(2),
+        .stats-table td:nth-child(3) {
+            text-align: center;
+        }
+
+        /* 数据列（第4列及以后）右对齐 */
+        .stats-table td:nth-child(n+4) {
+            text-align: right;
         }
 
         .stats-table tr:hover {
@@ -498,6 +604,10 @@
 
         .status-badge.status-error {
             background-color: #ef4444;
+        }
+
+        .status-badge.status-stopped {
+            background-color: #f97316;
         }
 
         /* Comparison View */
@@ -592,22 +702,45 @@
         .stats-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
         }
 
         .stats-table th {
             background: #f8fafc;
-            padding: 1rem;
+            padding: 1.2rem 1rem;
             text-align: left;
             font-weight: 600;
             color: #475569;
             border-bottom: 1px solid #e2e8f0;
         }
 
+        /* 状态、操作列居中 */
+        .stats-table th:nth-child(2),
+        .stats-table th:nth-child(3) {
+            text-align: center;
+        }
+
+        /* 数据列（第4列及以后）右对齐 */
+        .stats-table th:nth-child(n+4) {
+            text-align: right;
+        }
+
         .stats-table td {
-            padding: 1rem;
+            padding: 1.2rem 1rem;
             border-bottom: 1px solid #f1f5f9;
             color: #1e293b;
+            vertical-align: middle;
+        }
+
+        /* 状态、操作列居中 */
+        .stats-table td:nth-child(2),
+        .stats-table td:nth-child(3) {
+            text-align: center;
+        }
+
+        /* 数据列（第4列及以后）右对齐 */
+        .stats-table td:nth-child(n+4) {
+            text-align: right;
         }
 
         .stats-table tr:last-child td {
@@ -1157,6 +1290,15 @@
             transform: translateY(-2px);
         }
 
+        /* 空 prompt 时按钮变灰 */
+        .btn-primary.btn-empty-prompt {
+            background: #94a3b8;
+        }
+
+        .btn-primary.btn-empty-prompt:hover {
+            background: #64748b;
+        }
+
         /* Empty State */
         .empty-state {
             display: flex;
@@ -1241,6 +1383,11 @@
         }
 
         /* green */
+        .status-stopped {
+            background-color: #f97316;
+        }
+
+        /* orange */
 
         @keyframes spin {
 
@@ -1536,34 +1683,15 @@
             </div>
         </div>
         
-        <!-- User Info Bar -->
-        <div id="user-info-bar" style="
-            position: fixed;
-            top: 0;
-            right: 0;
-            padding: 0.75rem 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            z-index: 100;
-            background: transparent;
-        ">
-            <span id="current-username" style="font-size: 0.85rem; color: #64748b;">
-                👤 <span id="username-display"></span>
-            </span>
-            <button onclick="logout()" style="
-                background: none;
-                border: 1px solid #e2e8f0;
-                border-radius: 6px;
-                padding: 0.4rem 0.8rem;
-                font-size: 0.8rem;
-                color: #64748b;
-                cursor: pointer;
-                transition: all 0.2s;
-            " onmouseover="this.style.borderColor='#ef4444'; this.style.color='#ef4444';" 
-               onmouseout="this.style.borderColor='#e2e8f0'; this.style.color='#64748b';">
-                退出登录
-            </button>
+        <!-- User Info Bar - Dropdown Style -->
+        <div id="user-info-bar" class="user-dropdown-container">
+            <button class="user-dropdown-trigger" id="user-dropdown-trigger">👤</button>
+            <div class="user-dropdown-menu" id="user-dropdown-menu">
+                <div class="user-dropdown-username">
+                    <span id="username-display"></span>
+                </div>
+                <button class="user-dropdown-logout" onclick="logout()">退出登录</button>
+            </div>
         </div>
 
         <!-- Sidebar -->
@@ -1805,9 +1933,6 @@
                                     </svg>
                                     <span class="folder-name"></span>
                                 </button>
-                                <button type="button" id="random-prompt-btn" class="icon-btn" title="Random Prompt">
-                                    <span class="icon">🎲</span>
-                                </button>
                             </div>
                             <input type="file" id="folder-input" webkitdirectory directory style="display:none">
                         </div>
@@ -1834,7 +1959,7 @@
                             </div>
                         </div>
 
-                        <button id="add-task-btn" class="btn-primary" style="margin-top:1rem;">Start Task</button>
+                        <button id="add-task-btn" class="btn-primary btn-empty-prompt" style="margin-top:1rem;">启动任务</button>
 
                         <div style="margin-top: 1.5rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;">
                             <h3 style="font-size:0.9rem; margin-bottom:0.5rem; color:#64748b;">Batch Tasks (CSV)</h3>

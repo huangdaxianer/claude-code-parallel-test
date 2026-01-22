@@ -83,7 +83,9 @@ function init() {
     document.getElementById('add-task-btn').addEventListener('click', startNewTask);
     document.getElementById('folder-input').addEventListener('change', handleFolderUpload);
     document.getElementById('browse-folder-btn').addEventListener('click', triggerFolderBrowse);
-    document.getElementById('random-prompt-btn').addEventListener('click', fillRandomPrompt);
+    
+    // 监听 prompt 输入框变化，更新按钮样式
+    document.getElementById('task-prompt').addEventListener('input', updateStartButtonStyle);
 
     // Initial Task Load
     if (currentTaskId) {
@@ -281,10 +283,13 @@ let incrementalSrcModelName = null; // Track specific model subfolder
 function openNewTaskModal() {
     // Standard open: Reset incremental state
     incrementalSrcTaskId = null;
-    document.getElementById('random-prompt-btn').style.display = 'inline-flex';
     document.getElementById('browse-folder-btn').classList.remove('has-file');
     document.getElementById('browse-folder-btn').querySelector('.folder-name').textContent = '';
     selectedFolderPath = '';
+    
+    // 重置 prompt 并更新按钮样式
+    document.getElementById('task-prompt').value = '';
+    updateStartButtonStyle();
 
     document.getElementById('new-task-modal').classList.add('show');
 }
@@ -302,11 +307,9 @@ function openIncrementalTaskModal() {
     browseBtn.classList.add('has-file');
     browseBtn.querySelector('.folder-name').textContent = `Base: ${incrementalSrcModelName || 'All'} (${currentTaskId})`;
 
-    // Hide random prompt button
-    document.getElementById('random-prompt-btn').style.display = 'none';
-
-    // Clear prompt
+    // Clear prompt and update button style
     document.getElementById('task-prompt').value = '';
+    updateStartButtonStyle();
 
     document.getElementById('new-task-modal').classList.add('show');
 }
@@ -325,7 +328,6 @@ function triggerFolderBrowse() {
             browseBtn.classList.remove('has-file');
             browseBtn.querySelector('.folder-name').textContent = '';
             document.getElementById('folder-input').value = '';
-            document.getElementById('random-prompt-btn').style.display = 'inline-flex'; // Show random button again
         }
         return;
     }
@@ -424,7 +426,7 @@ async function handleFolderUpload(e) {
     }
 }
 
-function fillRandomPrompt() {
+function getRandomPrompt() {
     const samplePrompts = [
         '生成一个可在浏览器运行的打砖块小游戏，包含关卡、分数、音效和重新开始按钮。',
         '生成一个 Minecraft 风格的 2D 沙盒小游戏，支持挖掘方块、放置方块和保存地图。',
@@ -432,19 +434,39 @@ function fillRandomPrompt() {
         '生成一个带登录注册的迷你博客网站（纯前端，假数据即可）。',
         '生成一个网页版五子棋小游戏，支持人机对战。'
     ];
-    document.getElementById('task-prompt').value = samplePrompts[Math.floor(Math.random() * samplePrompts.length)];
+    return samplePrompts[Math.floor(Math.random() * samplePrompts.length)];
+}
+
+function fillRandomPrompt() {
+    document.getElementById('task-prompt').value = getRandomPrompt();
+    updateStartButtonStyle();
+}
+
+function updateStartButtonStyle() {
+    const prompt = document.getElementById('task-prompt').value.trim();
+    const btn = document.getElementById('add-task-btn');
+    if (prompt) {
+        btn.classList.remove('btn-empty-prompt');
+    } else {
+        btn.classList.add('btn-empty-prompt');
+    }
 }
 
 async function startNewTask() {
-    const prompt = document.getElementById('task-prompt').value.trim();
-    if (!prompt) return alert('Please enter a prompt');
+    let prompt = document.getElementById('task-prompt').value.trim();
+    
+    // 如果没有输入 prompt，自动选择一个随机 prompt
+    if (!prompt) {
+        prompt = getRandomPrompt();
+        document.getElementById('task-prompt').value = prompt;
+    }
 
     const selectedModels = Array.from(document.querySelectorAll('input[name="model"]:checked')).map(cb => cb.value);
     if (selectedModels.length === 0) return alert('Select at least one model');
 
     const btn = document.getElementById('add-task-btn');
     btn.disabled = true;
-    btn.textContent = 'Starting...';
+    btn.textContent = '启动中...';
 
     try {
         const newTaskId = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -483,7 +505,8 @@ async function startNewTask() {
         alert('Error starting task: ' + e.message);
     } finally {
         btn.disabled = false;
-        btn.textContent = 'Start Task';
+        btn.textContent = '启动任务';
+        updateStartButtonStyle();
     }
 }
 
@@ -779,31 +802,39 @@ function calculateRunStats(run) {
 function renderStatisticsView() {
     const tbody = document.getElementById('stats-table-body');
     tbody.innerHTML = '';
-    console.log('[Debug] Rendering Stats View for runs:', currentRuns.length);
+
+    // 状态翻译函数
+    const translateStatus = (status) => {
+        const map = {
+            'pending': '等待',
+            'running': '运行中',
+            'completed': '完成',
+            'stopped': '中止'
+        };
+        return map[status] || status;
+    };
 
     currentRuns.forEach(run => {
         const stats = calculateRunStats(run);
 
-        // Define Actions
+        // Define Actions - 使用 data 属性代替 onclick，所有按钮都带 data-model
         let actionButtons = '';
-        if (run.status === 'pending' || run.status === 'stopped') {
-            // Task level start (but button on row looks like model level, though backend is task level)
-            // To avoid confusion, maybe only show on the first row? Or show generic Start Task button elsewhere?
-            // User requested "Status后面耗时前面加一个操作列".
-            // Since backend script runs ALL, clicking start on any row starts the whole task.
-            // Let's show it on all rows or make it clear.
-            // For now, simple approach:
-            actionButtons = `<button class="btn-xs" style="background: var(--success-color); color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;" onclick="window.controlTask('start')">Start</button>`;
+        if (run.status === 'pending') {
+            actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model="${run.modelName}" style="background: var(--success-color); color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;">启动</button>`;
+        } else if (run.status === 'stopped') {
+            // 中断状态：显示重启按钮
+            actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model="${run.modelName}" style="background: var(--success-color); color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;">重启</button>`;
         } else if (run.status === 'running') {
-            actionButtons = `<button class="btn-xs" style="background: var(--error-color); color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;" onclick="window.controlTask('stop')">Stop</button>`;
+            // 运行中：显示中止按钮
+            actionButtons = `<button class="btn-xs action-btn" data-action="stop" data-model="${run.modelName}" style="background: #f97316; color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;">中止</button>`;
         } else if (run.status === 'completed' && run.previewable) {
-            actionButtons = `<button class="btn-xs" style="background: var(--info-color, #2196F3); color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;" onclick="window.previewFromStats('${run.model_name}')">Preview</button>`;
+            actionButtons = `<button class="btn-xs action-btn" data-action="preview" data-model="${run.modelName}" style="background: var(--info-color, #2196F3); color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;">预览</button>`;
         }
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td style="font-weight:600">${stats.modelName}</td>
-            <td><span class="status-badge status-${stats.status}">${stats.status}</span></td>
+            <td><span class="status-badge status-${stats.status}">${translateStatus(stats.status)}</span></td>
             <td>${actionButtons}</td>
             <td>${stats.duration || '-'}</td>
             <td>${stats.turns}</td>
@@ -819,23 +850,60 @@ function renderStatisticsView() {
     });
 }
 
+// 事件委托：在表格上监听按钮点击
+(function setupStatsTableEventDelegation() {
+    // 等待 DOM 加载完成
+    document.addEventListener('DOMContentLoaded', () => {
+        const tbody = document.getElementById('stats-table-body');
+        if (tbody) {
+            tbody.addEventListener('click', (e) => {
+                const btn = e.target.closest('.action-btn');
+                if (!btn) return;
+                
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const action = btn.dataset.action;
+                const model = btn.dataset.model;
+                console.log('[StatsTable] Button clicked, action:', action, 'model:', model);
+                
+                if (action === 'preview') {
+                    if (model) window.previewFromStats(model);
+                } else if (action === 'start' || action === 'stop') {
+                    window.controlTask(action, model);
+                }
+            });
+            console.log('[StatsTable] Event delegation setup complete');
+        }
+    });
+})();
+
 // Control Handlers
-// Control Handlers
-window.controlTask = async function (action) {
-    if (!activeTaskId) return;
-    if (!confirm(`Are you sure you want to ${action} this task?`)) return;
+window.controlTask = async function (action, modelName) {
+    if (!currentTaskId) {
+        console.log('[controlTask] No currentTaskId');
+        return;
+    }
+    
+    console.log(`[controlTask] Action: ${action}, TaskId: ${currentTaskId}, Model: ${modelName}`);
 
     try {
-        const res = await fetch(`/api/tasks/${activeTaskId}/${action}`, { method: 'POST' });
+        const res = await fetch(`/api/tasks/${currentTaskId}/${action}`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ modelName })
+        });
         const data = await res.json();
+        console.log(`[controlTask] Response:`, data);
         if (data.error) {
             alert(data.error);
         } else {
             // Refresh
-            fetchTaskDetails(activeTaskId);
+            fetchTaskDetails(currentTaskId);
         }
     } catch (e) {
-        alert(`Failed to ${action} task: ${e.message}`);
+        console.error(`[controlTask] Error:`, e);
+        alert(`操作失败: ${e.message}`);
     }
 };
 
@@ -922,7 +990,8 @@ function updateComparisonSide(side) {
         iframe.style.display = 'none';
         iframe.dataset.src = '';
         emptyState.style.display = 'flex';
-        emptyState.innerHTML = `<p>No HTML preview available<br><span style="font-size:0.8em;color:#cbd5e1;text-transform:uppercase">${run.status}</span></p>`;
+        const statusMap = { 'pending': '等待中', 'running': '运行中', 'completed': '已完成', 'stopped': '已中止' };
+        emptyState.innerHTML = `<p>暂无预览<br><span style="font-size:0.8em;color:#cbd5e1;">${statusMap[run.status] || run.status}</span></p>`;
     }
 }
 
@@ -940,9 +1009,10 @@ function syncSelectOptions(select, runs) {
         const option = document.createElement('option');
         option.value = run.folderName;
         // Display Model Name + Status
-        let statusSymbol = '⏳';
+        let statusSymbol = '⏳'; // pending
         if (run.status === 'running') statusSymbol = '🔄';
         else if (run.status === 'completed') statusSymbol = '✅';
+        else if (run.status === 'stopped') statusSymbol = '⏹️';
 
         option.textContent = `${getModelDisplayName(run.modelName)
             } (${statusSymbol})`;
@@ -1520,7 +1590,7 @@ async function loadPreview(taskId, modelName, iframe, container) {
             // Update Status Bar Success
             if (statusBar) {
                 statusDot.className = 'status-dot status-completed';
-                statusText.textContent = 'Preview Running';
+                statusText.textContent = '预览运行中';
                 urlDisplay.textContent = data.url;
             }
 
@@ -1529,7 +1599,7 @@ async function loadPreview(taskId, modelName, iframe, container) {
         }
     } catch (e) {
         clearInterval(pollInterval);
-        overlay.innerHTML = `<p style="color:#ef4444; padding:1rem; text-align:center">Preview failed:<br>${e.message}</p>`;
+        overlay.innerHTML = `<p style="color:#ef4444; padding:1rem; text-align:center">预览加载失败:<br>${e.message}</p>`;
 
         // Update Status Bar Error
         if (statusBar) {

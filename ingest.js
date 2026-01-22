@@ -36,8 +36,14 @@ if (!run) {
 }
 const runId = run.id;
 
-// Update status to running immediately
-db.prepare('UPDATE model_runs SET status = ? WHERE id = ?').run('running', runId);
+// Check current status - don't overwrite 'stopped' status
+const currentStatus = db.prepare('SELECT status FROM model_runs WHERE id = ?').get(runId);
+const wasStoppedByUser = currentStatus && currentStatus.status === 'stopped';
+
+// Only update status to running if not manually stopped
+if (!wasStoppedByUser) {
+    db.prepare('UPDATE model_runs SET status = ? WHERE id = ?').run('running', runId);
+}
 
 const updateStats = db.prepare(`
     UPDATE model_runs SET 
@@ -84,8 +90,12 @@ let lineNumber = 0;
 
 function flush() {
     try {
+        // Re-check if manually stopped - if so, don't overwrite status
+        const currentDb = db.prepare('SELECT status FROM model_runs WHERE id = ?').get(runId);
+        const statusToWrite = (currentDb && currentDb.status === 'stopped') ? 'stopped' : stats.status;
+        
         updateStats.run(
-            stats.status,
+            statusToWrite,
             stats.duration,
             stats.turns,
             stats.inputTokens,
