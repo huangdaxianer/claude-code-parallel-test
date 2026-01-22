@@ -1272,6 +1272,131 @@
             transform-origin: 50% 50%;
         }
 
+        /* 上传按钮行 */
+        .upload-buttons-row {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .upload-buttons-row .upload-folder-btn {
+            flex: 1;
+            margin-top: 0;
+        }
+
+        /* 上传批量任务按钮 */
+        .upload-csv-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex: 1;
+            padding: 0.875rem 1rem;
+            border: 1px dashed #cbd5e1;
+            border-radius: 0.75rem;
+            background: #f8fafc;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+            color: #64748b;
+        }
+
+        .upload-csv-btn:hover {
+            border-color: #94a3b8;
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        .upload-csv-btn.has-file {
+            border-style: solid;
+            border-color: #3b82f6;
+            background: #eff6ff;
+            color: #2563eb;
+        }
+
+        .upload-csv-btn .upload-csv-icon {
+            font-size: 1.25rem;
+            flex-shrink: 0;
+        }
+
+        .upload-csv-btn .upload-csv-text {
+            text-align: left;
+        }
+
+        /* 批量任务预览区域 */
+        .batch-preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            background: #eff6ff;
+            border-radius: 0.5rem;
+        }
+
+        .batch-preview-header span {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #2563eb;
+        }
+
+        .btn-text {
+            background: none;
+            border: none;
+            color: #ef4444;
+            font-size: 0.85rem;
+            cursor: pointer;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            transition: background 0.2s;
+        }
+
+        .btn-text:hover {
+            background: #fef2f2;
+        }
+
+        .batch-preview-table-wrapper {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+        }
+
+        .batch-preview-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        .batch-preview-table th {
+            background: #f8fafc;
+            padding: 0.5rem 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            color: #64748b;
+            border-bottom: 1px solid #e2e8f0;
+            position: sticky;
+            top: 0;
+        }
+
+        .batch-preview-table td {
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid #f1f5f9;
+            color: #1e293b;
+        }
+
+        .batch-preview-table td:first-child {
+            color: #94a3b8;
+            font-weight: 500;
+        }
+
+        .batch-preview-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .batch-preview-table tr:hover {
+            background: #f8fafc;
+        }
+
         .model-selection {
             margin-top: 0.5rem;
         }
@@ -1972,25 +2097,56 @@
                 </div>
                 <div class="preview-body" style="overflow-y:auto;">
                     <div class="form-group">
-                        <div class="textarea-container">
-                            <textarea id="task-prompt" placeholder="Describe your task here..." rows="6"
-                                style="min-height:120px;"></textarea>
-                            <input type="file" id="folder-input" webkitdirectory directory style="display:none">
+                        <!-- 单任务输入区域 -->
+                        <div id="single-task-area">
+                            <div class="textarea-container">
+                                <textarea id="task-prompt" placeholder="Describe your task here..." rows="6"
+                                    style="min-height:120px;"></textarea>
+                            </div>
                         </div>
                         
-                        <!-- 上传本地项目按钮 -->
-                        <button type="button" id="browse-folder-btn" class="upload-folder-btn">
-                            <span class="upload-folder-icon">📁</span>
-                            <span class="upload-folder-text">上传本地项目开发</span>
-                            <span class="folder-name"></span>
-                            <svg class="upload-progress-ring" width="24" height="24" id="upload-progress-ring">
-                                <circle class="progress-ring__track" stroke="#e2e8f0" stroke-width="2"
-                                    fill="transparent" r="10" cx="12" cy="12" />
-                                <circle class="progress-ring__circle" stroke="#10b981" stroke-width="2"
-                                    fill="transparent" r="10" cx="12" cy="12"
-                                    style="stroke-dasharray: 63; stroke-dashoffset: 63;" />
-                            </svg>
-                        </button>
+                        <!-- 批量任务预览区域（初始隐藏） -->
+                        <div id="batch-preview-area" style="display:none;">
+                            <div class="batch-preview-table-wrapper">
+                                <table class="batch-preview-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width:40px;">#</th>
+                                            <th>任务描述</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="batch-preview-tbody"></tbody>
+                                </table>
+                            </div>
+                            <div class="batch-preview-header">
+                                <span id="batch-task-count">已加载 0 个任务</span>
+                                <button type="button" id="clear-batch-btn" class="btn-text">清除</button>
+                            </div>
+                        </div>
+                        
+                        <!-- 隐藏的文件输入 -->
+                        <input type="file" id="folder-input" webkitdirectory directory style="display:none">
+                        <input type="file" id="csv-file-input" accept=".csv" style="display:none">
+                        
+                        <!-- 上传按钮区域 -->
+                        <div class="upload-buttons-row">
+                            <button type="button" id="browse-folder-btn" class="upload-folder-btn">
+                                <span class="upload-folder-icon">📁</span>
+                                <span class="upload-folder-text">上传本地项目开发</span>
+                                <span class="folder-name"></span>
+                                <svg class="upload-progress-ring" width="24" height="24" id="upload-progress-ring">
+                                    <circle class="progress-ring__track" stroke="#e2e8f0" stroke-width="2"
+                                        fill="transparent" r="10" cx="12" cy="12" />
+                                    <circle class="progress-ring__circle" stroke="#10b981" stroke-width="2"
+                                        fill="transparent" r="10" cx="12" cy="12"
+                                        style="stroke-dasharray: 63; stroke-dashoffset: 63;" />
+                                </svg>
+                            </button>
+                            <button type="button" id="browse-csv-btn" class="upload-csv-btn">
+                                <span class="upload-csv-icon">📋</span>
+                                <span class="upload-csv-text">上传批量任务（csv）</span>
+                            </button>
+                        </div>
 
                         <div class="model-selection">
                             <h3 style="font-size:0.9rem; margin-bottom:0.5rem; color:#64748b;">Select Models</h3>
@@ -2015,20 +2171,6 @@
                         </div>
 
                         <button id="add-task-btn" class="btn-primary btn-empty-prompt" style="margin-top:1rem;">启动任务</button>
-
-                        <div style="margin-top: 1.5rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;">
-                            <h3 style="font-size:0.9rem; margin-bottom:0.5rem; color:#64748b;">Batch Tasks (CSV)</h3>
-                            <div style="display:flex; gap:0.5rem; align-items:center;">
-                                <input type="file" id="batch-file-input" accept=".csv"
-                                    style="flex:1; font-size:0.85rem; padding:0.4rem; border:1px solid #e2e8f0; border-radius:4px;">
-                                <button onclick="uploadBatchTasks()" class="action-btn"
-                                    style="background:#f1f5f9; white-space:nowrap;">
-                                    <span>🚀</span> Start Queue
-                                </button>
-                            </div>
-                            <p style="font-size:0.75rem; color:#94a3b8; margin-top:0.3rem;">Format: One prompt per line.
-                                No header.</p>
-                        </div>
                     </div>
                 </div>
             </div>

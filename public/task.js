@@ -45,6 +45,7 @@ let isStatsMode = true;
 let compareLeftRun = null;
 let compareRightRun = null;
 let activeMenuTaskId = null; // Track which task's menu is open
+let batchPrompts = []; // 批量任务的 prompts 数组
 
 // 获取 Task ID
 // 获取 Task ID (Initial)
@@ -83,6 +84,9 @@ function init() {
     document.getElementById('add-task-btn').addEventListener('click', startNewTask);
     document.getElementById('folder-input').addEventListener('change', handleFolderUpload);
     document.getElementById('browse-folder-btn').addEventListener('click', triggerFolderBrowse);
+    document.getElementById('csv-file-input').addEventListener('change', handleCsvUpload);
+    document.getElementById('browse-csv-btn').addEventListener('click', triggerCsvBrowse);
+    document.getElementById('clear-batch-btn').addEventListener('click', clearBatchTasks);
     
     // 监听 prompt 输入框变化，更新按钮样式
     document.getElementById('task-prompt').addEventListener('input', updateStartButtonStyle);
@@ -287,6 +291,13 @@ function openNewTaskModal() {
     document.getElementById('browse-folder-btn').querySelector('.folder-name').textContent = '';
     selectedFolderPath = '';
     
+    // 重置批量任务状态
+    batchPrompts = [];
+    document.getElementById('single-task-area').style.display = 'block';
+    document.getElementById('batch-preview-area').style.display = 'none';
+    document.getElementById('csv-file-input').value = '';
+    document.getElementById('browse-csv-btn').classList.remove('has-file');
+    
     // 重置 prompt 并更新按钮样式
     document.getElementById('task-prompt').value = '';
     updateStartButtonStyle();
@@ -426,6 +437,90 @@ async function handleFolderUpload(e) {
     }
 }
 
+// ========== CSV Batch Upload ==========
+function triggerCsvBrowse() {
+    document.getElementById('csv-file-input').click();
+}
+
+function handleCsvUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        const content = event.target.result;
+        // 按行分割，过滤空行
+        const lines = content.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+        
+        if (lines.length === 0) {
+            alert('CSV 文件为空或格式不正确');
+            return;
+        }
+
+        // 保存批量任务
+        batchPrompts = lines;
+        
+        // 显示批量预览区域
+        showBatchPreview();
+    };
+    reader.onerror = function() {
+        alert('读取文件失败');
+    };
+    reader.readAsText(file);
+}
+
+function showBatchPreview() {
+    // 隐藏单任务区域，显示批量预览区域
+    document.getElementById('single-task-area').style.display = 'none';
+    document.getElementById('batch-preview-area').style.display = 'block';
+    
+    // 隐藏上传按钮区域
+    document.querySelector('.upload-buttons-row').style.display = 'none';
+    
+    // 更新任务数量
+    document.getElementById('batch-task-count').textContent = `已加载 ${batchPrompts.length} 个任务`;
+    
+    // 渲染表格
+    const tbody = document.getElementById('batch-preview-tbody');
+    tbody.innerHTML = '';
+    batchPrompts.forEach((prompt, index) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${index + 1}</td>
+            <td title="${prompt.replace(/"/g, '&quot;')}">${prompt.length > 80 ? prompt.substring(0, 80) + '...' : prompt}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    // 更新按钮样式
+    document.getElementById('browse-csv-btn').classList.add('has-file');
+    updateStartButtonForBatch();
+}
+
+function clearBatchTasks() {
+    batchPrompts = [];
+    
+    // 显示单任务区域，隐藏批量预览区域
+    document.getElementById('single-task-area').style.display = 'block';
+    document.getElementById('batch-preview-area').style.display = 'none';
+    
+    // 显示上传按钮区域
+    document.querySelector('.upload-buttons-row').style.display = 'flex';
+    
+    // 重置 CSV 输入
+    document.getElementById('csv-file-input').value = '';
+    document.getElementById('browse-csv-btn').classList.remove('has-file');
+    
+    // 恢复按钮样式
+    updateStartButtonStyle();
+}
+
+function updateStartButtonForBatch() {
+    const btn = document.getElementById('add-task-btn');
+    btn.classList.remove('btn-empty-prompt');
+    btn.textContent = `启动 ${batchPrompts.length} 个任务`;
+}
+
 function getRandomPrompt() {
     const samplePrompts = [
         '生成一个可在浏览器运行的打砖块小游戏，包含关卡、分数、音效和重新开始按钮。',
@@ -453,6 +548,68 @@ function updateStartButtonStyle() {
 }
 
 async function startNewTask() {
+    const selectedModels = Array.from(document.querySelectorAll('input[name="model"]:checked')).map(cb => cb.value);
+    if (selectedModels.length === 0) return alert('请至少选择一个模型');
+
+    const btn = document.getElementById('add-task-btn');
+    btn.disabled = true;
+    
+    // 批量任务模式
+    if (batchPrompts.length > 0) {
+        btn.textContent = `启动中 (0/${batchPrompts.length})...`;
+        
+        try {
+            let successCount = 0;
+            let firstTaskId = null;
+            
+            for (let i = 0; i < batchPrompts.length; i++) {
+                const prompt = batchPrompts[i];
+                const newTaskId = Math.random().toString(36).substring(2, 8).toUpperCase();
+                
+                if (i === 0) firstTaskId = newTaskId;
+                
+                const newTask = {
+                    baseDir: selectedFolderPath,
+                    title: 'Initializing...',
+                    prompt,
+                    taskId: newTaskId,
+                    models: selectedModels,
+                    srcTaskId: incrementalSrcTaskId,
+                    srcModelName: incrementalSrcModelName,
+                    userId: currentUser.id
+                };
+
+                const res = await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ task: newTask })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    successCount++;
+                    btn.textContent = `启动中 (${successCount}/${batchPrompts.length})...`;
+                }
+            }
+            
+            alert(`成功启动 ${successCount} 个任务`);
+            closeNewTaskModal();
+            clearBatchTasks();
+            loadTasks(); // 刷新任务列表
+            if (firstTaskId) {
+                loadTask(firstTaskId);
+            }
+        } catch (e) {
+            console.error('[BatchStart] Exception:', e);
+            alert('批量启动任务失败: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '启动任务';
+        }
+        return;
+    }
+    
+    // 单任务模式
     let prompt = document.getElementById('task-prompt').value.trim();
     
     // 如果没有输入 prompt，自动选择一个随机 prompt
@@ -461,11 +618,6 @@ async function startNewTask() {
         document.getElementById('task-prompt').value = prompt;
     }
 
-    const selectedModels = Array.from(document.querySelectorAll('input[name="model"]:checked')).map(cb => cb.value);
-    if (selectedModels.length === 0) return alert('Select at least one model');
-
-    const btn = document.getElementById('add-task-btn');
-    btn.disabled = true;
     btn.textContent = '启动中...';
 
     try {
@@ -1623,44 +1775,3 @@ window.reloadPreview = function () {
         loadPreview(taskId, modelName, iframe, container);
     }
 };
-// Global Batch Upload Helper
-window.uploadBatchTasks = async function () {
-    const fileInput = document.getElementById('batch-file-input');
-    const file = fileInput.files[0];
-
-    if (!file) {
-        alert('Please select a CSV file first.');
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const btn = document.querySelector('button[onclick="uploadBatchTasks()"]');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<span>⏳</span> Uploading...';
-    btn.disabled = true;
-
-    try {
-        const res = await fetch('/api/batch_tasks', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await res.json();
-
-        if (data.success) {
-            alert(`Batch started! Added ${data.count} tasks to queue.`);
-            closeNewTaskModal();
-            loadTasks(); // Refresh list to show new pending tasks
-        } else {
-            alert(`Error: ${data.error}`);
-        }
-    } catch (e) {
-        alert('Upload failed: ' + e.message);
-    } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-        fileInput.value = '';
-    }
-}
