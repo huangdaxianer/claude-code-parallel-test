@@ -121,8 +121,11 @@ process_task() {
             # Build firejail prefix if available
             local FIREJAIL_PREFIX=""
             if command -v firejail &> /dev/null; then
-                FIREJAIL_PREFIX="firejail --quiet --private=$(pwd) --"
-                echo "  - FIREJAIL: enabled (restricting to $(pwd))"
+                # Use noprofile + whitelist to restrict access while keeping pwd writable
+                # Also whitelist the parent dir for tee output and necessary system paths
+                local TASK_DIR="$(dirname $(pwd))"
+                FIREJAIL_PREFIX="firejail --quiet --noprofile --whitelist=$TASK_DIR --"
+                echo "  - FIREJAIL: enabled (whitelisting $TASK_DIR)"
             else
                 echo "  - FIREJAIL: not installed, running without sandbox"
             fi
