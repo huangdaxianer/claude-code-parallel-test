@@ -1092,16 +1092,25 @@ window.previewFromStats = function (modelName) {
     // Exit stats mode
     isStatsMode = false;
     // Load specific model
-    loadTask(activeTaskId, modelName);
+    loadTask(currentTaskId, modelName);
 };
 
 function renderComparisonView() { // Revised for Split View
     const runs = currentRuns || [];
     if (runs.length === 0) return;
 
+    // 过滤出可预览的 runs 作为默认选择的参考
+    const previewableRuns = runs.filter(run => {
+        const htmlFile = (run.generatedFiles || []).find(f => f.endsWith('.html'));
+        const packageJson = (run.generatedFiles || []).find(f => f === 'package.json');
+        return htmlFile || packageJson || run.previewable;
+    });
+
+    if (previewableRuns.length === 0) return;
+
     // 1. Initialize Defaults if needed
-    if (!compareLeftRun && runs.length > 0) compareLeftRun = runs[0].folderName;
-    if (!compareRightRun && runs.length > 0) compareRightRun = runs.length > 1 ? runs[1].folderName : runs[0].folderName;
+    if (!compareLeftRun && previewableRuns.length > 0) compareLeftRun = previewableRuns[0].folderName;
+    if (!compareRightRun && previewableRuns.length > 0) compareRightRun = previewableRuns.length > 1 ? previewableRuns[1].folderName : previewableRuns[0].folderName;
 
     // 2. Update Both Sides
     updateComparisonSide('left');
@@ -1122,19 +1131,26 @@ function updateComparisonSide(side) {
     const iframe = document.getElementById(`iframe-${side}`);
     const emptyState = document.getElementById(`empty-${side}`);
 
-    // a. Sync Options (Preserve selection if list hasn't effectively changed)
+    // a. Sync Options
     syncSelectOptions(select, currentRuns);
+
+    // 过滤出可预览的 runs
+    const previewableRuns = currentRuns.filter(run => {
+        const htmlFile = (run.generatedFiles || []).find(f => f.endsWith('.html'));
+        const packageJson = (run.generatedFiles || []).find(f => f === 'package.json');
+        return htmlFile || packageJson || run.previewable;
+    });
 
     // b. Enforce Selection from State
     const currentTarget = (side === 'left') ? compareLeftRun : compareRightRun;
 
-    // Validate target exists
-    if (currentTarget && currentRuns.find(r => r.folderName === currentTarget)) {
+    // Validate target exists in previewable list
+    if (currentTarget && previewableRuns.find(r => r.folderName === currentTarget)) {
         select.value = currentTarget;
     } else {
-        // Fallback
-        if (currentRuns.length > 0) {
-            const fallback = currentRuns[0].folderName;
+        // Fallback to first available previewable run
+        if (previewableRuns.length > 0) {
+            const fallback = previewableRuns[0].folderName;
             select.value = fallback;
             if (side === 'left') compareLeftRun = fallback;
             else compareRightRun = fallback;
@@ -1142,8 +1158,15 @@ function updateComparisonSide(side) {
     }
 
     // c. Update Content
-    const run = currentRuns.find(r => r.folderName === select.value);
-    if (!run) return;
+    const run = previewableRuns.find(r => r.folderName === select.value);
+    if (!run) {
+        iframe.style.display = 'none';
+        iframe.dataset.src = '';
+        emptyState.style.display = 'flex';
+        emptyState.innerHTML = '<p>无可用预览</p>';
+        statusBadge.style.display = 'none';
+        return;
+    }
 
     // Status
     statusBadge.textContent = run.status;
@@ -1176,16 +1199,33 @@ function updateComparisonSide(side) {
 }
 
 function syncSelectOptions(select, runs) {
+    // 过滤出可预览的 runs
+    const previewableRuns = runs.filter(run => {
+        const htmlFile = (run.generatedFiles || []).find(f => f.endsWith('.html'));
+        const packageJson = (run.generatedFiles || []).find(f => f === 'package.json');
+        return htmlFile || packageJson || run.previewable;
+    });
+
     // Check if options need update
     const currentOptionValues = Array.from(select.options).map(o => o.value).join(',');
-    const newOptionValues = runs.map(r => r.folderName).join(',');
+    const newOptionValues = previewableRuns.map(r => r.folderName).join(',');
 
     if (currentOptionValues === newOptionValues) return; // No change needed
 
     const savedValue = select.value;
     select.innerHTML = '';
 
-    runs.forEach(run => {
+    if (previewableRuns.length === 0) {
+        const option = document.createElement('option');
+        option.value = "";
+        option.textContent = "无可用预览";
+        option.disabled = true;
+        option.selected = true;
+        select.appendChild(option);
+        return;
+    }
+
+    previewableRuns.forEach(run => {
         const option = document.createElement('option');
         option.value = run.folderName;
         // Display Model Name + Status
@@ -1201,7 +1241,7 @@ function syncSelectOptions(select, runs) {
 
     if (savedValue) {
         // Try to restore selection
-        const exists = runs.find(r => r.folderName === savedValue);
+        const exists = previewableRuns.find(r => r.folderName === savedValue);
         if (exists) select.value = savedValue;
     }
 }
