@@ -120,38 +120,50 @@ process_task() {
             
             # Build firejail wrapper if available
             local USE_FIREJAIL=false
-            local MODEL_DIR=""
-            local PROJECT_ROOT=""
+            local FIREJAIL_ARGS=""
             
             if command -v firejail &> /dev/null; then
                 USE_FIREJAIL=true
-                # Strategy: bind mount task model dir to /workspace and blacklist project root
-                # This ensures Claude can ONLY access /workspace (which is the task model dir)
-                MODEL_DIR="$(pwd)"  # e.g., /root/project/tasks/TASKID/model
+                # Strategy: blacklist other tasks and server code, keep current task accessible
                 local TASK_DIR="$(dirname $(pwd))"  # e.g., /root/project/tasks/TASKID
                 local TASKS_ROOT="$(dirname $TASK_DIR)"  # e.g., /root/project/tasks
-                PROJECT_ROOT="$(dirname $TASKS_ROOT)"  # e.g., /root/project
+                local PROJECT_ROOT="$(dirname $TASKS_ROOT)"  # e.g., /root/project
+                local CURRENT_TASK="$(basename $TASK_DIR)"
                 
-                # Create /workspace directory if it doesn't exist
-                mkdir -p /workspace 2>/dev/null || true
+                # Blacklist server code directory
+                FIREJAIL_ARGS="--blacklist=$PROJECT_ROOT/claude-code-parallel-test"
                 
-                echo "  - FIREJAIL: enabled (bind $MODEL_DIR -> /workspace, blacklist $PROJECT_ROOT)"
+                # Blacklist all other task directories (but not current task)
+                for dir in "$TASKS_ROOT"/*/; do
+                    local dir_name=$(basename "$dir")
+                    if [ "$dir_name" != "$CURRENT_TASK" ] && [ "$dir_name" != "temp_uploads" ]; then
+                        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$dir"
+                    fi
+                done
+                
+                # Blacklist sensitive directories
+                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.ssh"
+                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.gnupg"
+                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/etc/shadow"
+                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/etc/passwd"
+                
+                echo "  - FIREJAIL: enabled (blacklisting other tasks and server code)"
             else
                 echo "  - FIREJAIL: not installed, running without sandbox"
             fi
             
             if [ "$USE_FIREJAIL" = true ]; then
                 # Run Claude inside firejail with isolation
-                # - bind: Mount model dir to /workspace so Claude works in isolated /workspace
-                # - blacklist: Block access to project root (server code, other tasks, etc.)
-                # - read-write: Ensure /workspace is writable
-                # Note: firejail runs as root (before $CMD_PREFIX) so --bind works
-                # Note: Claude's stdin comes from cat, stdout goes to tee/ingest outside firejail
+                # - blacklist: Block access to server code and other task directories
+                # - Claude works in original task directory
+                # Note: firejail runs as root (before $CMD_PREFIX) so blacklist works
                 if ! cat "$task_root/prompt.txt" | firejail --quiet --noprofile \
-                    --bind="$MODEL_DIR",/workspace \
-                    --blacklist="$PROJECT_ROOT" \
-                    --read-write=/workspace \
-                    -- $CMD_PREFIX bash -c "cd /workspace && $CLAUDE_BIN --model $model_name --allowedTools 'Read(./**),Edit(./**),Bash(./**)' --disallowedTools 'EnterPlanMode,ExitPlanMode' --dangerously-skip-permissions --output-format stream-json --verbose" 2>&1 | \
+                    $FIREJAIL_ARGS \
+                    -- $CMD_PREFIX "$CLAUDE_BIN" --model "$model_name" \
+                    --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
+                    --disallowedTools 'EnterPlanMode,ExitPlanMode' \
+                    --dangerously-skip-permissions \
+                    --output-format stream-json --verbose 2>&1 | \
                     tee "$task_root/${model_name}.txt" | \
                     node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
                 then
