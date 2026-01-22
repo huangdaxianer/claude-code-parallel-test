@@ -295,6 +295,11 @@ function openNewTaskModal() {
     batchPrompts = [];
     document.getElementById('single-task-area').style.display = 'block';
     document.getElementById('batch-preview-area').style.display = 'none';
+    
+    // 显示上传按钮区域
+    const uploadButtonsRow = document.querySelector('.upload-buttons-row');
+    if (uploadButtonsRow) uploadButtonsRow.style.display = 'flex';
+    
     document.getElementById('csv-file-input').value = '';
     document.getElementById('browse-csv-btn').classList.remove('has-file');
     
