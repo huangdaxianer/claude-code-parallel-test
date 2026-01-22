@@ -118,24 +118,100 @@ process_task() {
             echo "  - CMD_PREFIX: $CMD_PREFIX"
             echo "  - PWD: $(pwd)"
             
-            if ! cat "$task_root/prompt.txt" | $CMD_PREFIX "$CLAUDE_BIN" \
-                --model "$model_name" \
-                --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
-                --disallowedTools 'EnterPlanMode,ExitPlanMode' \
-                --dangerously-skip-permissions \
-                --append-system-prompt "You are strictly forbidden from accessing, reading, or modifying any files or directories outside of the current working directory. You must not use 'cd ..' or absolute paths that lead outside the project root." \
-                --output-format stream-json --verbose 2>&1 | \
-                tee "../${model_name}.txt" | \
-                node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
-            then
-                EXIT_CODE=$?
-                echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
-                # Specifically log if exit code is 127 (command not found) or similar
-                if [ $EXIT_CODE -eq 127 ]; then
-                    echo "  -> Error: Command not found. Check CLAUDE_BIN path."
+            # Build firejail wrapper if available
+            local USE_FIREJAIL=false
+            local FIREJAIL_ARGS=""
+            
+            if command -v firejail &> /dev/null; then
+                USE_FIREJAIL=true
+                # Strategy: blacklist other tasks, other models, and server code
+                local TASK_DIR="$(dirname $(pwd))"  # e.g., /root/project/tasks/TASKID
+                local TASKS_ROOT="$(dirname $TASK_DIR)"  # e.g., /root/project/tasks
+                local PROJECT_ROOT="$(dirname $TASKS_ROOT)"  # e.g., /root/project
+                local CURRENT_TASK="$(basename $TASK_DIR)"
+                local CURRENT_MODEL="$model_name"  # e.g., strawberry, potato
+                
+                # Blacklist server code directory
+                FIREJAIL_ARGS="--blacklist=$PROJECT_ROOT/claude-code-parallel-test"
+                
+                # Blacklist all other task directories (but not current task)
+                for dir in "$TASKS_ROOT"/*/; do
+                    local dir_name=$(basename "$dir")
+                    if [ "$dir_name" != "$CURRENT_TASK" ] && [ "$dir_name" != "temp_uploads" ]; then
+                        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$dir"
+                    fi
+                done
+                
+                # Blacklist other model directories within the same task
+                # This ensures strawberry can't access potato, etc.
+                for model_dir in "$TASK_DIR"/*/; do
+                    local model_dir_name=$(basename "$model_dir")
+                    if [ "$model_dir_name" != "$CURRENT_MODEL" ]; then
+                        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$model_dir"
+                    fi
+                done
+                
+                # Also blacklist other models' log files (MODEL.txt)
+                for log_file in "$TASK_DIR"/*.txt; do
+                    local log_name=$(basename "$log_file" .txt)
+                    if [ "$log_name" != "$CURRENT_MODEL" ] && [ "$log_name" != "prompt" ] && [ "$log_name" != "title" ]; then
+                        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$log_file"
+                    fi
+                done
+                
+                # Blacklist sensitive directories
+                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.ssh"
+                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.gnupg"
+                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/etc/shadow"
+                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/etc/passwd"
+                
+                echo "  - FIREJAIL: enabled (model $CURRENT_MODEL isolated from other models)"
+            else
+                echo "  - FIREJAIL: not installed, running without sandbox"
+            fi
+            
+            if [ "$USE_FIREJAIL" = true ]; then
+                # Run Claude inside firejail with isolation
+                # - blacklist: Block access to server code and other task directories
+                # - Claude works in original task directory
+                # Note: firejail runs as root (before $CMD_PREFIX) so blacklist works
+                if ! cat "$task_root/prompt.txt" | firejail --quiet --noprofile \
+                    $FIREJAIL_ARGS \
+                    -- $CMD_PREFIX "$CLAUDE_BIN" --model "$model_name" \
+                    --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
+                    --disallowedTools 'EnterPlanMode,ExitPlanMode' \
+                    --dangerously-skip-permissions \
+                    --output-format stream-json --verbose 2>&1 | \
+                    tee "$task_root/${model_name}.txt" | \
+                    node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
+                then
+                    EXIT_CODE=$?
+                    echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
+                    if [ $EXIT_CODE -eq 127 ]; then
+                        echo "  -> Error: Command not found. Check CLAUDE_BIN path."
+                    fi
+                else
+                    echo "[Task $task_id] [$model_name] 完成"
                 fi
             else
-                echo "[Task $task_id] [$model_name] 完成"
+                # Run Claude without firejail (original behavior)
+                if ! cat "$task_root/prompt.txt" | $CMD_PREFIX "$CLAUDE_BIN" \
+                    --model "$model_name" \
+                    --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
+                    --disallowedTools 'EnterPlanMode,ExitPlanMode' \
+                    --dangerously-skip-permissions \
+                    --output-format stream-json --verbose 2>&1 | \
+                    tee "$task_root/${model_name}.txt" | \
+                    node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
+                then
+                    EXIT_CODE=$?
+                    echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
+                    if [ $EXIT_CODE -eq 127 ]; then
+                        echo "  -> Error: Command not found. Check CLAUDE_BIN path."
+                    fi
+                else
+                    echo "[Task $task_id] [$model_name] 完成"
+                fi
             fi
             
             if [ "$USE_ISOLATION" = true ]; then
