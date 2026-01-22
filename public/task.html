@@ -1901,7 +1901,6 @@
                 <div class="user-dropdown-username">
                     <span id="username-display"></span>
                 </div>
-                <a href="/task_manager.html" class="user-dropdown-logout" style="display:block; text-decoration:none; color:#64748b;">任务管理器</a>
                 <button class="user-dropdown-logout" onclick="logout()">退出登录</button>
             </div>
         </div>
@@ -1911,7 +1910,7 @@
 
             <button id="new-task-btn" class="btn-new-task">
                 <span class="icon">+</span>
-                <span class="text">New Task</span>
+                <span class="text">新建任务</span>
             </button>
 
             <div class="task-history-list" id="task-history-list">
@@ -2124,7 +2123,7 @@
         <div id="new-task-modal" class="file-preview-modal">
             <div class="preview-content" style="width: 600px; height: auto; max-height: 90vh;">
                 <div class="preview-header">
-                    <h3>New Task</h3>
+                    <h3>新建任务</h3>
                     <button class="close-btn" onclick="closeNewTaskModal()">×</button>
                 </div>
                 <div class="preview-body" style="overflow-y:auto;">
@@ -2132,7 +2131,7 @@
                         <!-- 单任务输入区域 -->
                         <div id="single-task-area">
                             <div class="textarea-container">
-                                <textarea id="task-prompt" placeholder="Describe your task here..." rows="6"
+                                <textarea id="task-prompt" placeholder="请输入任务描述..." rows="6"
                                     style="min-height:120px;"></textarea>
                             </div>
                         </div>
@@ -2182,7 +2181,7 @@
                         </div>
 
                         <div class="model-selection">
-                            <h3 style="font-size:0.9rem; margin-bottom:0.5rem; color:#64748b;">Select Models</h3>
+                            <h3 style="font-size:0.9rem; margin-bottom:0.5rem; color:#64748b;">选择模型</h3>
                             <div class="checkbox-group">
                                 <label class="checkbox-item"><input type="checkbox" name="model" value="potato"
                                         checked><span class="checkmark"></span>potato</label>

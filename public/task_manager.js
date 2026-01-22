@@ -5,6 +5,7 @@ let filteredTasks = [];
 let selectedTasks = new Set();
 let refreshInterval = null;
 let queueStatus = { maxParallelSubtasks: 5, runningSubtasks: 0, pendingSubtasks: 0 };
+let allModelNames = []; // Store all unique model names across all tasks
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -111,6 +112,9 @@ async function refreshTasks() {
         const res = await fetch('/api/admin/tasks');
         allTasks = await res.json();
         
+        // Extract all unique model names from all tasks
+        extractAllModelNames();
+        updateTableHeader();
         updateStats();
         applyFilters();
         updateLastRefresh();
@@ -119,6 +123,49 @@ async function refreshTasks() {
     } finally {
         spinner.style.display = 'none';
     }
+}
+
+// Extract all unique model names from tasks
+function extractAllModelNames() {
+    const modelSet = new Set();
+    allTasks.forEach(task => {
+        (task.runs || []).forEach(run => {
+            if (run.modelName) {
+                modelSet.add(run.modelName);
+            }
+        });
+    });
+    // Sort model names for consistent column order
+    allModelNames = Array.from(modelSet).sort();
+}
+
+// Update table header with model columns
+function updateTableHeader() {
+    const thead = document.getElementById('tasks-thead');
+    if (!thead) return;
+
+    // Build header row
+    let headerHTML = `
+        <tr>
+            <th class="checkbox-cell">
+                <input type="checkbox" class="task-checkbox" id="select-all" onchange="toggleSelectAll()">
+            </th>
+            <th class="task-cell">任务</th>
+            <th>用户</th>
+    `;
+
+    // Add model columns
+    allModelNames.forEach(modelName => {
+        headerHTML += `<th class="model-col-header">${escapeHtml(modelName)}</th>`;
+    });
+
+    headerHTML += `
+            <th>创建时间</th>
+            <th>操作</th>
+        </tr>
+    `;
+
+    thead.innerHTML = headerHTML;
 }
 
 // Update statistics - now shows subtask-level stats for running/pending
@@ -169,11 +216,12 @@ function applyFilters() {
 // Render tasks table
 function renderTasks() {
     const tbody = document.getElementById('tasks-tbody');
+    const totalCols = 4 + allModelNames.length; // checkbox + task + user + models + time + actions
 
     if (filteredTasks.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="7" class="empty-state">
+                <td colspan="${totalCols}" class="empty-state">
                     <p>没有找到任务</p>
                 </td>
             </tr>
@@ -183,22 +231,25 @@ function renderTasks() {
 
     tbody.innerHTML = filteredTasks.map(task => {
         const isChecked = selectedTasks.has(task.taskId);
-        const statusClass = `status-${task.queueStatus || 'unknown'}`;
-        const statusText = getStatusText(task.queueStatus);
         const createdAt = formatDateTime(task.createdAt);
         
-        // Model runs badges
-        const modelBadges = (task.runs || []).map(run => {
-            let badgeClass = '';
-            if (run.status === 'running') badgeClass = 'running';
-            else if (run.status === 'completed') badgeClass = 'completed';
-            else if (run.status === 'stopped') badgeClass = 'stopped';
-            return `<span class="model-badge ${badgeClass}">${run.modelName}</span>`;
+        // Create a map of modelName -> status for quick lookup
+        const modelStatusMap = {};
+        (task.runs || []).forEach(run => {
+            modelStatusMap[run.modelName] = run.status;
+        });
+
+        // Generate model status cells (dot only, no text)
+        const modelCells = allModelNames.map(modelName => {
+            const status = modelStatusMap[modelName];
+            const statusClass = getModelStatusClass(status);
+            return `<td class="model-col-cell"><span class="model-status ${statusClass}"></span></td>`;
         }).join('');
 
-        // Action buttons based on status
+        // Action buttons based on status (check if any model is running or pending)
+        const hasRunningOrPending = (task.runs || []).some(r => r.status === 'running' || r.status === 'pending');
         let actionButtons = '';
-        if (task.queueStatus === 'running') {
+        if (hasRunningOrPending) {
             actionButtons = `
                 <button class="action-btn action-btn-stop" onclick="stopTask('${task.taskId}')">中止</button>
             `;
@@ -216,19 +267,14 @@ function renderTasks() {
                            ${isChecked ? 'checked' : ''} 
                            onchange="toggleTaskSelection('${task.taskId}')">
                 </td>
-                <td>
+                <td class="task-cell">
                     <div class="task-title" title="${escapeHtml(task.title || 'Untitled')}">${escapeHtml(task.title || 'Untitled')}</div>
                     <div class="task-id">${task.taskId}</div>
                 </td>
                 <td>
                     <span class="user-badge">${escapeHtml(task.username)}</span>
                 </td>
-                <td>
-                    <span class="status-badge ${statusClass}">${statusText}</span>
-                </td>
-                <td>
-                    <div class="model-runs">${modelBadges || '-'}</div>
-                </td>
+                ${modelCells}
                 <td>
                     <span class="timestamp">${createdAt}</span>
                 </td>
@@ -242,6 +288,22 @@ function renderTasks() {
     }).join('');
 
     updateBatchActions();
+}
+
+// Get model status CSS class
+function getModelStatusClass(status) {
+    switch (status) {
+        case 'running':
+            return 'running';
+        case 'pending':
+            return 'pending';
+        case 'completed':
+            return 'completed';
+        case 'stopped':
+            return 'stopped';
+        default:
+            return 'not-started';
+    }
 }
 
 // Status text mapping

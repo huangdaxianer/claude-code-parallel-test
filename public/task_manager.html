@@ -26,28 +26,6 @@
             padding: 2rem;
         }
 
-        /* Header */
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid #e2e8f0;
-        }
-
-        .header h1 {
-            font-size: 1.75rem;
-            font-weight: 800;
-            color: #0f172a;
-        }
-
-        .header-actions {
-            display: flex;
-            gap: 1rem;
-            align-items: center;
-        }
-
         .btn {
             padding: 0.5rem 1rem;
             border-radius: 0.5rem;
@@ -254,13 +232,21 @@
         }
 
         /* Task Title */
+        .task-cell {
+            width: 120px;
+            min-width: 120px;
+            max-width: 120px;
+        }
+
         .task-title {
             font-weight: 600;
             color: #0f172a;
-            max-width: 250px;
+            width: 120px;
+            max-width: 120px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            display: block;
         }
 
         .task-id {
@@ -283,34 +269,90 @@
             color: #334155;
         }
 
-        /* Model Runs */
-        .model-runs {
+        /* Model Status Cell - Dot only */
+        .model-status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .model-status.running {
+            background: #3b82f6;
+        }
+
+        .model-status.completed {
+            background: #22c55e;
+        }
+
+        .model-status.stopped {
+            background: #f97316;
+        }
+
+        .model-status.pending {
+            background: #fbbf24;
+        }
+
+        .model-status.not-started {
+            background: #cbd5e1;
+        }
+
+        /* Legend */
+        .legend {
             display: flex;
-            gap: 0.25rem;
-            flex-wrap: wrap;
+            align-items: center;
+            gap: 1rem;
+            margin-left: auto;
+            padding: 0.5rem 1rem;
+            background: #f8fafc;
+            border-radius: 0.5rem;
+            border: 1px solid #e2e8f0;
         }
 
-        .model-badge {
-            font-size: 0.7rem;
-            padding: 0.15rem 0.4rem;
-            border-radius: 4px;
-            background: #f1f5f9;
-            color: #64748b;
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.8rem;
+            color: #475569;
         }
 
-        .model-badge.running {
-            background: #dbeafe;
-            color: #1e40af;
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
         }
 
-        .model-badge.completed {
-            background: #dcfce7;
-            color: #166534;
+        .legend-dot.running {
+            background: #3b82f6;
         }
 
-        .model-badge.stopped {
-            background: #ffedd5;
-            color: #9a3412;
+        .legend-dot.completed {
+            background: #22c55e;
+        }
+
+        .legend-dot.stopped {
+            background: #f97316;
+        }
+
+        .legend-dot.pending {
+            background: #fbbf24;
+        }
+
+        .legend-dot.not-started {
+            background: #cbd5e1;
+        }
+
+        /* Model column header */
+        .model-col-header {
+            font-size: 0.8rem;
+            min-width: 70px;
+            text-align: left;
+        }
+
+        .model-col-cell {
+            text-align: left;
         }
 
         /* Action Buttons */
@@ -441,16 +483,6 @@
             line-height: 1.6;
         }
 
-        /* Refresh indicator */
-        .refresh-indicator {
-            font-size: 0.85rem;
-            color: #94a3b8;
-        }
-
-        .refresh-indicator.active {
-            color: #3b82f6;
-        }
-
         /* Loading */
         .loading-spinner {
             width: 20px;
@@ -518,22 +550,9 @@
 
 <body>
     <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <h1>Task Manager</h1>
-            <div class="header-actions">
-                <span class="refresh-indicator" id="refresh-indicator">
-                    <span class="loading-spinner" style="display:none" id="loading-spinner"></span>
-                    <span id="last-refresh">自动刷新: 3s</span>
-                </span>
-                <button class="btn" onclick="refreshTasks()">
-                    🔄 刷新
-                </button>
-                <a href="/task.html" class="btn btn-primary">
-                    ← 返回任务页
-                </a>
-            </div>
-        </header>
+        <!-- Hidden elements for JS compatibility -->
+        <span id="loading-spinner" style="display:none"></span>
+        <span id="last-refresh" style="display:none"></span>
 
         <!-- Stats Cards -->
         <div class="stats-cards">
@@ -587,6 +606,29 @@
                 <label>搜索:</label>
                 <input type="text" class="filter-input" id="filter-search" placeholder="搜索任务标题或 Prompt..." oninput="applyFilters()">
             </div>
+            <!-- Legend -->
+            <div class="legend">
+                <div class="legend-item">
+                    <span class="legend-dot running"></span>
+                    <span>运行中</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot pending"></span>
+                    <span>排队中</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot completed"></span>
+                    <span>已完成</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot stopped"></span>
+                    <span>已中止</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot not-started"></span>
+                    <span>未启动</span>
+                </div>
+            </div>
         </div>
 
         <!-- Batch Actions -->
@@ -598,24 +640,23 @@
         </div>
 
         <!-- Table -->
-        <div class="table-container">
+        <div class="table-container" style="overflow-x: auto;">
             <table class="tasks-table">
-                <thead>
+                <thead id="tasks-thead">
                     <tr>
                         <th class="checkbox-cell">
                             <input type="checkbox" class="task-checkbox" id="select-all" onchange="toggleSelectAll()">
                         </th>
                         <th>任务</th>
                         <th>用户</th>
-                        <th style="min-width: 100px;">状态</th>
-                        <th>模型运行</th>
+                        <!-- Model columns will be inserted here dynamically -->
                         <th>创建时间</th>
                         <th>操作</th>
                     </tr>
                 </thead>
                 <tbody id="tasks-tbody">
                     <tr>
-                        <td colspan="7" class="empty-state">
+                        <td colspan="10" class="empty-state">
                             <div class="loading-spinner"></div>
                             <p>加载中...</p>
                         </td>

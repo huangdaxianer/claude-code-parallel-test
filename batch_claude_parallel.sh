@@ -271,6 +271,39 @@ elif [ -n "$INPUT_ARG" ] && [ -n "$MODEL_ARG" ]; then
     TASK_ID="$INPUT_ARG"
     MODEL_NAME="$MODEL_ARG"
     echo "[Batch] Running single model: $MODEL_NAME for task: $TASK_ID"
+    
+    # Ensure prompt.txt and title.txt exist (fetch from DB if needed)
+    TASK_ROOT="$TASKS_DIR/${TASK_ID}"
+    mkdir -p "$TASK_ROOT"
+    
+    if [ ! -f "$TASK_ROOT/prompt.txt" ]; then
+        echo "[Batch] Creating prompt.txt from database..."
+        node -e "
+            const Database = require('better-sqlite3');
+            const fs = require('fs');
+            const path = require('path');
+            const dbPath = path.join('$TASKS_DIR', 'tasks.db');
+            try {
+                const db = new Database(dbPath, { readonly: true });
+                const task = db.prepare('SELECT title, prompt FROM tasks WHERE task_id = ?').get('$TASK_ID');
+                if (!task) {
+                    console.error('Task not found in database');
+                    process.exit(1);
+                }
+                fs.writeFileSync('$TASK_ROOT/prompt.txt', task.prompt || '');
+                fs.writeFileSync('$TASK_ROOT/title.txt', task.title || '');
+                console.log('Created prompt.txt and title.txt');
+            } catch (e) {
+                console.error('Error:', e.message);
+                process.exit(1);
+            }
+        "
+        if [ $? -ne 0 ]; then
+            echo "[Batch] Failed to create prompt.txt"
+            exit 1
+        fi
+    fi
+    
     run_single_model "$TASK_ID" "$MODEL_NAME"
 elif [ -n "$INPUT_ARG" ]; then
     # DB Mode: Input is Task ID (legacy - runs all pending models in parallel)

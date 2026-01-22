@@ -622,12 +622,14 @@ app.post('/api/tasks', (req, res) => {
 
     // 1. (Delayed) 写入数据库记录 - Now saving the UPDATED baseDir and user_id
     console.log(`[Task Create] taskId=${task.taskId}, userId=${task.userId}, typeof userId=${typeof task.userId}`);
+    console.log(`[Task Create] Models received: ${JSON.stringify(task.models)}`);
     try {
         const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir, user_id) VALUES (?, ?, ?, ?, ?)');
         insertTask.run(task.taskId, task.title, task.prompt, task.baseDir, task.userId || null);
 
         const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_name, status) VALUES (?, ?, ?)');
         const models = Array.isArray(task.models) ? task.models : [];
+        console.log(`[Task Create] Inserting ${models.length} model runs: ${models.join(', ')}`);
         const insertManyRuns = db.transaction((taskId, modelList) => {
             for (const m of modelList) {
                 insertRun.run(taskId, m, 'pending');
