@@ -727,16 +727,15 @@
             border-bottom: 1px solid #e2e8f0;
         }
 
-        /* 状态列左对齐，操作列居中 */
-        .stats-table th:nth-child(2) {
+        /* 模型名称、状态、操作列左对齐 */
+        .stats-table th:nth-child(1),
+        .stats-table th:nth-child(2),
+        .stats-table th:nth-child(3) {
             text-align: left;
         }
-        .stats-table th:nth-child(8) {
-            text-align: center;
-        }
 
-        /* 数据列（除状态和操作外）右对齐 */
-        .stats-table th:nth-child(n+3):not(:nth-child(8)) {
+        /* 数据列（第4列及以后）右对齐 */
+        .stats-table th:nth-child(n+4) {
             text-align: right;
         }
 
@@ -747,16 +746,15 @@
             vertical-align: middle;
         }
 
-        /* 状态列左对齐，操作列居中 */
-        .stats-table td:nth-child(2) {
+        /* 模型名称、状态、操作列左对齐 */
+        .stats-table td:nth-child(1),
+        .stats-table td:nth-child(2),
+        .stats-table td:nth-child(3) {
             text-align: left;
         }
-        .stats-table td:nth-child(8) {
-            text-align: center;
-        }
 
-        /* 数据列（除状态和操作外）右对齐 */
-        .stats-table td:nth-child(n+3):not(:nth-child(8)) {
+        /* 数据列（第4列及以后）右对齐 */
+        .stats-table td:nth-child(n+4) {
             text-align: right;
         }
 
@@ -1961,16 +1959,16 @@
                             <tr>
                                 <th>模型名称</th>
                                 <th>状态</th>
+                                <th>操作</th>
                                 <th>耗时 (s)</th>
                                 <th>轮次</th>
-                                <th>Input</th>
-                                <th>Output</th>
-                                <th>Cache Read</th>
-                                <th>操作</th>
                                 <th>TodoWrite</th>
                                 <th>Read</th>
                                 <th>Write</th>
                                 <th>Bash</th>
+                                <th>Input</th>
+                                <th>Output</th>
+                                <th>Cache Read</th>
                             </tr>
                         </thead>
                         <tbody id="stats-table-body">

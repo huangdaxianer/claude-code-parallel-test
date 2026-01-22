@@ -1016,16 +1016,16 @@ function renderStatisticsView() {
         tr.innerHTML = `
             <td style="font-weight:600">${stats.modelName}</td>
             <td><span class="status-badge status-${stats.status}">${translateStatus(stats.status)}</span></td>
+            <td>${actionButtons}</td>
             <td>${formatVal(stats.duration)}</td>
             <td>${formatVal(stats.turns, '0')}</td>
-            <td>${formatVal(stats.inputTokens)}</td>
-            <td>${formatVal(stats.outputTokens)}</td>
-            <td>${formatVal(stats.cacheReadTokens)}</td>
-            <td>${actionButtons}</td>
             <td>${formatVal(stats.toolCounts.TodoWrite, '0')}</td>
             <td>${formatVal(stats.toolCounts.Read, '0')}</td>
             <td>${formatVal(stats.toolCounts.Write, '0')}</td>
             <td>${formatVal(stats.toolCounts.Bash, '0')}</td>
+            <td>${formatVal(stats.inputTokens)}</td>
+            <td>${formatVal(stats.outputTokens)}</td>
+            <td>${formatVal(stats.cacheReadTokens)}</td>
         `;
         tbody.appendChild(tr);
     });
