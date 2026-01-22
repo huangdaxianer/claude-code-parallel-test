@@ -96,24 +96,90 @@ app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static('public'));
 app.use('/artifacts', express.static(TASKS_DIR)); // Allow serving task files for preview
 
-// Redirect root to task.html
+// Redirect root to login.html
 app.get('/', (req, res) => {
-    res.redirect('/task.html');
+    res.redirect('/login.html');
 });
 
+// ========== User Authentication API ==========
 
-
-// 获取所有任务 (从数据库读取)
-app.get('/api/tasks', (req, res) => {
+// Login / Register User
+app.post('/api/login', (req, res) => {
+    const { username } = req.body;
+    
+    if (!username || typeof username !== 'string') {
+        return res.status(400).json({ error: 'Username is required' });
+    }
+    
+    const trimmedUsername = username.trim();
+    
+    // Validate username format
+    if (!/^[a-zA-Z0-9_]+$/.test(trimmedUsername)) {
+        return res.status(400).json({ error: 'Username can only contain letters, numbers and underscores' });
+    }
+    
+    if (trimmedUsername.length < 2 || trimmedUsername.length > 50) {
+        return res.status(400).json({ error: 'Username must be between 2 and 50 characters' });
+    }
+    
     try {
-        const tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at DESC').all();
-        // Convert camelCase if needed, but here we use taskId etc.
-        // Actually, let's keep it consistent with what the front-end expects
+        // Check if user exists
+        let user = db.prepare('SELECT id, username FROM users WHERE username = ?').get(trimmedUsername);
+        
+        if (!user) {
+            // Create new user
+            const result = db.prepare('INSERT INTO users (username) VALUES (?)').run(trimmedUsername);
+            // Convert BigInt to Number to ensure JSON serialization works
+            user = { id: Number(result.lastInsertRowid), username: trimmedUsername };
+            console.log(`[Auth] New user created: ${trimmedUsername} (ID: ${user.id})`);
+        } else {
+            console.log(`[Auth] User logged in: ${trimmedUsername} (ID: ${user.id})`);
+        }
+        
+        return res.json({ success: true, user });
+    } catch (e) {
+        console.error('Login error:', e);
+        return res.status(500).json({ error: 'Login failed' });
+    }
+});
+
+// Get current user info
+app.get('/api/user/:userId', (req, res) => {
+    const { userId } = req.params;
+    try {
+        const user = db.prepare('SELECT id, username, created_at FROM users WHERE id = ?').get(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        return res.json({ user });
+    } catch (e) {
+        console.error('Error fetching user:', e);
+        return res.status(500).json({ error: 'Failed to fetch user' });
+    }
+});
+
+// ========== Task API (with user filtering) ==========
+
+// 获取所有任务 (从数据库读取，支持用户过滤)
+app.get('/api/tasks', (req, res) => {
+    const { userId } = req.query;
+    
+    try {
+        let tasks;
+        if (userId) {
+            // Filter tasks by user
+            tasks = db.prepare('SELECT * FROM tasks WHERE user_id = ? ORDER BY created_at DESC').all(userId);
+        } else {
+            // Return all tasks (for backward compatibility, though frontend should always pass userId)
+            tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at DESC').all();
+        }
+        
         return res.json(tasks.map(t => ({
             taskId: t.task_id,
             title: t.title,
             prompt: t.prompt,
             baseDir: t.base_dir,
+            userId: t.user_id,
             createdAt: t.created_at
         })));
     } catch (e) {
@@ -373,10 +439,11 @@ app.post('/api/tasks', (req, res) => {
         }
     }
 
-    // 1. (Delayed) 写入数据库记录 - Now saving the UPDATED baseDir
+    // 1. (Delayed) 写入数据库记录 - Now saving the UPDATED baseDir and user_id
+    console.log(`[Task Create] taskId=${task.taskId}, userId=${task.userId}, typeof userId=${typeof task.userId}`);
     try {
-        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir) VALUES (?, ?, ?, ?)');
-        insertTask.run(task.taskId, task.title, task.prompt, task.baseDir);
+        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir, user_id) VALUES (?, ?, ?, ?, ?)');
+        insertTask.run(task.taskId, task.title, task.prompt, task.baseDir, task.userId || null);
 
         const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_name, status) VALUES (?, ?, ?)');
         const models = Array.isArray(task.models) ? task.models : [];

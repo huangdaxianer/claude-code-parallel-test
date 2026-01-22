@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #fafafa;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-container {
+            background: white;
+            padding: 2.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            width: 100%;
+            max-width: 340px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            transition: all 0.2s;
+            outline: none;
+            background: #fff;
+        }
+
+        .form-group input:focus {
+            border-color: #000;
+        }
+
+        .form-group input::placeholder {
+            color: #999;
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 0.875rem;
+            margin-top: 1rem;
+            background: #000;
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-login:hover {
+            background: #222;
+        }
+
+        .btn-login:active {
+            background: #000;
+        }
+
+        .btn-login:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            background: #fef2f2;
+            color: #dc2626;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div id="error-message" class="error-message"></div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <input 
+                    type="text" 
+                    id="username" 
+                    name="username" 
+                    placeholder="输入你的用户名"
+                    autocomplete="off"
+                    required
+                >
+            </div>
+
+            <button type="submit" class="btn-login" id="login-btn">
+                开始
+            </button>
+        </form>
+    </div>
+
+    <script>
+        // Check if already logged in
+        const savedUser = localStorage.getItem('claude_user');
+        if (savedUser) {
+            window.location.href = '/task.html';
+        }
+
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value.trim();
+            const errorEl = document.getElementById('error-message');
+            const btn = document.getElementById('login-btn');
+            
+            if (!username) {
+                errorEl.textContent = '请输入用户名';
+                errorEl.classList.add('show');
+                return;
+            }
+
+            // Basic validation: alphanumeric and underscore only
+            if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+                errorEl.textContent = '用户名只能包含字母、数字和下划线';
+                errorEl.classList.add('show');
+                return;
+            }
+
+            errorEl.classList.remove('show');
+            btn.disabled = true;
+            btn.textContent = '...';
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+
+                const data = await res.json();
+                console.log('[Login] Response:', data);
+
+                if (data.success && data.user && data.user.id) {
+                    // Store user info in localStorage
+                    const userInfo = {
+                        id: data.user.id,
+                        username: data.user.username
+                    };
+                    console.log('[Login] Storing user info:', userInfo);
+                    localStorage.setItem('claude_user', JSON.stringify(userInfo));
+                    
+                    // Redirect to task page
+                    window.location.href = '/task.html';
+                } else {
+                    console.error('[Login] Invalid response:', data);
+                    errorEl.textContent = data.error || '登录失败';
+                    errorEl.classList.add('show');
+                }
+            } catch (err) {
+                console.error('[Login] Error:', err);
+                errorEl.textContent = '网络错误，请重试';
+                errorEl.classList.add('show');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '开始';
+            }
+        });
+    </script>
+</body>
+</html>

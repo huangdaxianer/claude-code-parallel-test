@@ -15,12 +15,20 @@ db.pragma('journal_mode = WAL');
 
 // Initialize Tables
 db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS tasks (
         task_id TEXT PRIMARY KEY,
         title TEXT,
         prompt TEXT,
         base_dir TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        user_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id)
     );
 
     CREATE TABLE IF NOT EXISTS model_runs (
@@ -74,7 +82,30 @@ try { db.exec("ALTER TABLE log_entries ADD COLUMN preview_text TEXT"); } catch (
 try { db.exec("ALTER TABLE log_entries ADD COLUMN status_class TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE model_runs ADD COLUMN previewable INTEGER DEFAULT 0"); } catch (e) { }
 
+// Migration: Add user_id column to tasks if it doesn't exist
+try { db.exec("ALTER TABLE tasks ADD COLUMN user_id INTEGER"); } catch (e) { }
+
 // Now safe to create index
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_log_tool_use_id ON log_entries(tool_use_id)"); } catch (e) { }
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)"); } catch (e) { }
+
+// Create default user 'huangpenghao' and migrate existing tasks
+try {
+    const existingUser = db.prepare("SELECT id FROM users WHERE username = ?").get('huangpenghao');
+    if (!existingUser) {
+        db.prepare("INSERT INTO users (username) VALUES (?)").run('huangpenghao');
+        console.log('[DB] Created default user: huangpenghao');
+    }
+    // Migrate existing tasks without user_id to huangpenghao
+    const defaultUser = db.prepare("SELECT id FROM users WHERE username = ?").get('huangpenghao');
+    if (defaultUser) {
+        const result = db.prepare("UPDATE tasks SET user_id = ? WHERE user_id IS NULL").run(defaultUser.id);
+        if (result.changes > 0) {
+            console.log(`[DB] Migrated ${result.changes} existing tasks to user huangpenghao`);
+        }
+    }
+} catch (e) {
+    console.error('[DB] Migration error:', e.message);
+}
 
 module.exports = db;

@@ -5,6 +5,36 @@ const previewModal = document.getElementById('preview-modal');
 const previewFilename = document.getElementById('preview-filename');
 const previewBody = document.getElementById('preview-body');
 
+// ========== User Authentication ==========
+// Check if user is logged in
+const savedUserStr = localStorage.getItem('claude_user');
+let currentUser = null;
+
+console.log('[Auth] savedUserStr:', savedUserStr);
+
+if (!savedUserStr) {
+    // Not logged in, redirect to login page
+    window.location.href = '/login.html';
+} else {
+    try {
+        currentUser = JSON.parse(savedUserStr);
+        console.log('[Auth] Parsed currentUser:', currentUser);
+        if (!currentUser || !currentUser.id) {
+            throw new Error('Invalid user data');
+        }
+    } catch (e) {
+        console.error('[Auth] Parse error:', e);
+        localStorage.removeItem('claude_user');
+        window.location.href = '/login.html';
+    }
+}
+
+// Logout function
+window.logout = function() {
+    localStorage.removeItem('claude_user');
+    window.location.href = '/login.html';
+};
+
 // State
 let currentRuns = [];
 // 我们使用 folderName 作为唯一标识符，因为它比索引更稳定
@@ -33,6 +63,12 @@ function getModelDisplayName(modelName) {
 init();
 
 function init() {
+    // Display current user
+    const usernameDisplay = document.getElementById('username-display');
+    if (usernameDisplay && currentUser) {
+        usernameDisplay.textContent = currentUser.username;
+    }
+
     // Initialize Sidebar History
     fetchTaskHistory();
 
@@ -141,7 +177,8 @@ function loadTask(id, pushState = true) {
 // Sidebar & History Logic
 async function fetchTaskHistory() {
     try {
-        const res = await fetch('/api/tasks');
+        // Pass userId to filter tasks by current user
+        const res = await fetch(`/api/tasks?userId=${currentUser.id}`);
         const tasks = await res.json();
         const listEl = document.getElementById('task-history-list');
         listEl.innerHTML = '';
@@ -418,8 +455,12 @@ async function startNewTask() {
             taskId: newTaskId,
             models: selectedModels,
             srcTaskId: incrementalSrcTaskId, // Send source task ID to server
-            srcModelName: incrementalSrcModelName // Send source model name
+            srcModelName: incrementalSrcModelName, // Send source model name
+            userId: currentUser.id // Associate task with current user
         };
+
+        console.log('[StartTask] Creating task with:', newTask);
+        console.log('[StartTask] currentUser:', currentUser);
 
         const res = await fetch('/api/tasks', {
             method: 'POST',
@@ -428,15 +469,18 @@ async function startNewTask() {
         });
         const data = await res.json();
 
+        console.log('[StartTask] Response:', data);
+
         if (data.success) {
             closeNewTaskModal();
             loadTask(newTaskId); // No reload, just SPA transition
         } else {
-            alert('Failed to start task');
+            alert('Failed to start task: ' + (data.error || 'Unknown error'));
         }
     } catch (e) {
-        console.error(e);
-        alert('Error starting task');
+        console.error('[StartTask] Exception:', e);
+        console.error('[StartTask] Stack:', e.stack);
+        alert('Error starting task: ' + e.message);
     } finally {
         btn.disabled = false;
         btn.textContent = 'Start Task';

@@ -1535,6 +1535,36 @@
                 <h1>Web Coding</h1>
             </div>
         </div>
+        
+        <!-- User Info Bar -->
+        <div id="user-info-bar" style="
+            position: fixed;
+            top: 0;
+            right: 0;
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            z-index: 100;
+            background: transparent;
+        ">
+            <span id="current-username" style="font-size: 0.85rem; color: #64748b;">
+                👤 <span id="username-display"></span>
+            </span>
+            <button onclick="logout()" style="
+                background: none;
+                border: 1px solid #e2e8f0;
+                border-radius: 6px;
+                padding: 0.4rem 0.8rem;
+                font-size: 0.8rem;
+                color: #64748b;
+                cursor: pointer;
+                transition: all 0.2s;
+            " onmouseover="this.style.borderColor='#ef4444'; this.style.color='#ef4444';" 
+               onmouseout="this.style.borderColor='#e2e8f0'; this.style.color='#64748b';">
+                退出登录
+            </button>
+        </div>
 
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
