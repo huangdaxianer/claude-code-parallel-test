@@ -977,15 +977,15 @@ function renderStatisticsView() {
         // Define Actions - 使用 data 属性代替 onclick，所有按钮都带 data-model
         let actionButtons = '';
         if (run.status === 'pending') {
-            actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model="${run.modelName}" style="background: var(--success-color); color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;">启动</button>`;
+            actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model="${run.modelName}" style="background: #dcfce7; color: #166534; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">启动</button>`;
         } else if (run.status === 'stopped') {
             // 中断状态：显示重启按钮
-            actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model="${run.modelName}" style="background: var(--success-color); color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;">重启</button>`;
+            actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model="${run.modelName}" style="background: #dcfce7; color: #166534; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">重启</button>`;
         } else if (run.status === 'running') {
             // 运行中：显示中止按钮
-            actionButtons = `<button class="btn-xs action-btn" data-action="stop" data-model="${run.modelName}" style="background: #f97316; color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;">中止</button>`;
+            actionButtons = `<button class="btn-xs action-btn" data-action="stop" data-model="${run.modelName}" style="background: #ffedd5; color: #9a3412; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">中止</button>`;
         } else if (run.status === 'completed' && run.previewable) {
-            actionButtons = `<button class="btn-xs action-btn" data-action="preview" data-model="${run.modelName}" style="background: var(--info-color, #2196F3); color: white; border:none; padding: 2px 8px; border-radius: 4px; cursor: pointer;">预览</button>`;
+            actionButtons = `<button class="btn-xs action-btn" data-action="preview" data-model="${run.modelName}" style="background: #dbeafe; color: #1e40af; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">预览</button>`;
         }
 
         const tr = document.createElement('tr');
