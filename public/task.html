@@ -1190,29 +1190,84 @@
             width: 100%;
         }
 
-        .action-buttons {
-            position: absolute;
-            bottom: 1rem;
-            left: 1rem;
+        /* 上传本地项目按钮样式 */
+        .upload-folder-btn {
             display: flex;
-            gap: 0.5rem;
-            z-index: 10;
+            align-items: center;
+            gap: 0.75rem;
+            width: 100%;
+            padding: 0.875rem 1rem;
+            margin-top: 0.75rem;
+            border: 1px dashed #cbd5e1;
+            border-radius: 0.75rem;
+            background: #f8fafc;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+            color: #64748b;
         }
 
-        .progress-ring {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) rotate(-90deg);
-            pointer-events: none;
+        .upload-folder-btn:hover {
+            border-color: #94a3b8;
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        .upload-folder-btn.has-file {
+            border-style: solid;
+            border-color: #10b981;
+            background: #ecfdf5;
+            color: #059669;
+        }
+
+        .upload-folder-btn.has-file:hover {
+            background: #d1fae5;
+        }
+
+        .upload-folder-btn .upload-folder-icon {
+            font-size: 1.25rem;
+            flex-shrink: 0;
+        }
+
+        .upload-folder-btn .upload-folder-text {
+            flex: 1;
+            text-align: left;
+        }
+
+        .upload-folder-btn.has-file .upload-folder-text {
             display: none;
         }
 
-        .progress-ring.show {
+        .upload-folder-btn .folder-name {
+            display: none;
+            flex: 1;
+            text-align: left;
+            font-weight: 600;
+            color: #059669;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .upload-folder-btn.has-file .folder-name {
             display: block;
         }
 
-        .progress-ring__circle {
+        .upload-folder-btn .upload-progress-ring {
+            display: none;
+            flex-shrink: 0;
+            transform: rotate(-90deg);
+        }
+
+        .upload-folder-btn.uploading .upload-progress-ring {
+            display: block;
+        }
+
+        .upload-folder-btn.uploading .upload-folder-icon {
+            display: none;
+        }
+
+        .upload-progress-ring .progress-ring__circle {
             transition: stroke-dashoffset 0.1s;
             transform-origin: 50% 50%;
         }
@@ -1920,22 +1975,22 @@
                         <div class="textarea-container">
                             <textarea id="task-prompt" placeholder="Describe your task here..." rows="6"
                                 style="min-height:120px;"></textarea>
-                            <div class="action-buttons">
-                                <button type="button" id="browse-folder-btn" class="icon-btn"
-                                    title="Upload Project Folder" style="position: relative;">
-                                    <span class="icon">📁</span>
-                                    <svg class="progress-ring" width="32" height="32" id="upload-progress-ring">
-                                        <circle class="progress-ring__track" stroke="#e2e8f0" stroke-width="2"
-                                            fill="transparent" r="14" cx="16" cy="16" />
-                                        <circle class="progress-ring__circle" stroke="#10b981" stroke-width="2"
-                                            fill="transparent" r="14" cx="16" cy="16"
-                                            style="stroke-dasharray: 88; stroke-dashoffset: 88;" />
-                                    </svg>
-                                    <span class="folder-name"></span>
-                                </button>
-                            </div>
                             <input type="file" id="folder-input" webkitdirectory directory style="display:none">
                         </div>
+                        
+                        <!-- 上传本地项目按钮 -->
+                        <button type="button" id="browse-folder-btn" class="upload-folder-btn">
+                            <span class="upload-folder-icon">📁</span>
+                            <span class="upload-folder-text">上传本地项目开发</span>
+                            <span class="folder-name"></span>
+                            <svg class="upload-progress-ring" width="24" height="24" id="upload-progress-ring">
+                                <circle class="progress-ring__track" stroke="#e2e8f0" stroke-width="2"
+                                    fill="transparent" r="10" cx="12" cy="12" />
+                                <circle class="progress-ring__circle" stroke="#10b981" stroke-width="2"
+                                    fill="transparent" r="10" cx="12" cy="12"
+                                    style="stroke-dasharray: 63; stroke-dashoffset: 63;" />
+                            </svg>
+                        </button>
 
                         <div class="model-selection">
                             <h3 style="font-size:0.9rem; margin-bottom:0.5rem; color:#64748b;">Select Models</h3>

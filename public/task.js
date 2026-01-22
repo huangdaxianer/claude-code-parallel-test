@@ -339,7 +339,7 @@ async function handleFolderUpload(e) {
     if (!files || files.length === 0) return;
 
     const browseBtn = document.getElementById('browse-folder-btn');
-    const iconSpan = browseBtn.querySelector('.icon');
+    const iconSpan = browseBtn.querySelector('.upload-folder-icon');
 
     const totalFiles = files.length;
     let totalSize = 0;
@@ -352,6 +352,7 @@ async function handleFolderUpload(e) {
 
     try {
         browseBtn.disabled = true;
+        browseBtn.classList.add('uploading');
         iconSpan.textContent = '⏳';
 
         const formData = new FormData();
@@ -371,9 +372,8 @@ async function handleFolderUpload(e) {
         const xhr = new XMLHttpRequest();
         const progressRing = document.getElementById('upload-progress-ring');
         const circle = progressRing.querySelector('.progress-ring__circle');
-        const circumference = 14 * 2 * Math.PI; // r=14
+        const circumference = 10 * 2 * Math.PI; // r=10 (updated)
 
-        progressRing.classList.add('show');
         circle.style.strokeDashoffset = circumference;
 
         const uploadPromise = new Promise((resolve, reject) => {
@@ -421,7 +421,7 @@ async function handleFolderUpload(e) {
         alert('Upload error: ' + err.message);
     } finally {
         browseBtn.disabled = false;
-        document.getElementById('upload-progress-ring').classList.remove('show');
+        browseBtn.classList.remove('uploading');
         if (!selectedFolderPath) iconSpan.textContent = '📁';
     }
 }
