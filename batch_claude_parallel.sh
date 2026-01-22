@@ -267,7 +267,7 @@ else
         try {
             const db = new Database(dbPath, { readonly: true });
             const task = db.prepare('SELECT title, prompt, base_dir FROM tasks WHERE task_id = ?').get('$TASK_ID');
-            const runs = db.prepare('SELECT model_name FROM model_runs WHERE task_id = ?').all('$TASK_ID');
+            const runs = db.prepare("SELECT model_name FROM model_runs WHERE task_id = ? AND status = 'pending'").all('$TASK_ID');
             
             if (!task) {
                 console.error('Task not found');

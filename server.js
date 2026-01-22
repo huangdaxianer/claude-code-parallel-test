@@ -290,8 +290,14 @@ async function processQueue() {
 
         await executeTask(nextTask.task_id);
 
-        // Mark as completed
-        db.prepare("UPDATE task_queue SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?").run(nextTask.id);
+        // Mark as completed only if no more models are pending for this task
+        const pendingModels = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'pending'").get(nextTask.task_id);
+        if (pendingModels.count === 0) {
+            db.prepare("UPDATE task_queue SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?").run(nextTask.id);
+        } else {
+            // If models were added/restarted during execution, set back to pending
+            db.prepare("UPDATE task_queue SET status = 'pending', started_at = NULL WHERE id = ?").run(nextTask.id);
+        }
 
         console.log(`[Queue] Task completed: ${nextTask.task_id}`);
     } catch (e) {
@@ -1245,18 +1251,37 @@ app.post('/api/tasks/:taskId/stop', async (req, res) => {
 // 启动任务 (重试/恢复)
 app.post('/api/tasks/:taskId/start', (req, res) => {
     const { taskId } = req.params;
-    console.log(`[Control] Starting task ${taskId}`);
+    const { modelName } = req.body || {};
+    console.log(`[Control] Starting task ${taskId}${modelName ? ` (model: ${modelName})` : ''}`);
 
     try {
-        // Check if already running
-        const current = db.prepare("SELECT status FROM task_queue WHERE task_id = ?").get(taskId);
-        if (current && current.status === 'running') {
-            return res.status(400).json({ error: 'Task is already running' });
-        }
+        if (modelName) {
+            // 1. 重启单个模型
+            // 先检查该模型是否已经在运行
+            const run = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_name = ?").get(taskId, modelName);
+            if (run && run.status === 'running') {
+                return res.status(400).json({ error: 'Model is already running' });
+            }
 
-        // Reset to pending
-        db.prepare("UPDATE task_queue SET status = 'pending', started_at = NULL, completed_at = NULL WHERE task_id = ?").run(taskId);
-        db.prepare("UPDATE model_runs SET status = 'pending' WHERE task_id = ? AND status != 'completed'").run(taskId);
+            db.prepare("UPDATE model_runs SET status = 'pending' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+            
+            // 2. 将任务设为 pending 以便 processQueue 拾取（如果当前不是 running）
+            const current = db.prepare("SELECT status FROM task_queue WHERE task_id = ?").get(taskId);
+            if (current && current.status !== 'running') {
+                db.prepare("UPDATE task_queue SET status = 'pending', started_at = NULL, completed_at = NULL WHERE task_id = ?").run(taskId);
+            }
+        } else {
+            // 3. 重启整个任务（原逻辑）
+            // Check if already running
+            const current = db.prepare("SELECT status FROM task_queue WHERE task_id = ?").get(taskId);
+            if (current && current.status === 'running') {
+                return res.status(400).json({ error: 'Task is already running' });
+            }
+
+            // Reset to pending
+            db.prepare("UPDATE task_queue SET status = 'pending', started_at = NULL, completed_at = NULL WHERE task_id = ?").run(taskId);
+            db.prepare("UPDATE model_runs SET status = 'pending' WHERE task_id = ? AND status != 'completed'").run(taskId);
+        }
 
         // Trigger Queue
         processQueue();
