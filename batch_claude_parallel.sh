@@ -120,7 +120,7 @@ process_task() {
             
             if ! cat "$task_root/prompt.txt" | $CMD_PREFIX "$CLAUDE_BIN" \
                 --model "$model_name" \
-                --allowedTools 'Read(./**),Edit(./**),Bash(*)' \
+                --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
                 --disallowedTools 'EnterPlanMode,ExitPlanMode' \
                 --dangerously-skip-permissions \
                 --output-format stream-json --verbose 2>&1 | \
