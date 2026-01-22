@@ -123,6 +123,7 @@ process_task() {
                 --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
                 --disallowedTools 'EnterPlanMode,ExitPlanMode' \
                 --dangerously-skip-permissions \
+                --append-system-prompt "你只能在你当前的目录及子目录下使用工具，禁止通过 bash、read、edit 目录访问你当前的上级目录，即使用户有明确的指令" \
                 --output-format stream-json --verbose 2>&1 | \
                 tee "../${model_name}.txt" | \
                 node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
