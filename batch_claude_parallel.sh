@@ -145,12 +145,13 @@ process_task() {
                 # - bind: Mount model dir to /workspace so Claude works in isolated /workspace
                 # - blacklist: Block access to project root (server code, other tasks, etc.)
                 # - read-write: Ensure /workspace is writable
+                # Note: firejail runs as root (before $CMD_PREFIX) so --bind works
                 # Note: Claude's stdin comes from cat, stdout goes to tee/ingest outside firejail
-                if ! cat "$task_root/prompt.txt" | $CMD_PREFIX firejail --quiet --noprofile \
+                if ! cat "$task_root/prompt.txt" | firejail --quiet --noprofile \
                     --bind="$MODEL_DIR",/workspace \
                     --blacklist="$PROJECT_ROOT" \
                     --read-write=/workspace \
-                    -- bash -c "cd /workspace && $CLAUDE_BIN --model $model_name --allowedTools 'Read(./**),Edit(./**),Bash(./**)' --disallowedTools 'EnterPlanMode,ExitPlanMode' --dangerously-skip-permissions --output-format stream-json --verbose" 2>&1 | \
+                    -- $CMD_PREFIX bash -c "cd /workspace && $CLAUDE_BIN --model $model_name --allowedTools 'Read(./**),Edit(./**),Bash(./**)' --disallowedTools 'EnterPlanMode,ExitPlanMode' --dangerously-skip-permissions --output-format stream-json --verbose" 2>&1 | \
                     tee "$task_root/${model_name}.txt" | \
                     node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
                 then
