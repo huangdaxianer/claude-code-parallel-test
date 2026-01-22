@@ -1252,7 +1252,7 @@ app.post('/api/tasks/:taskId/stop', async (req, res) => {
 app.post('/api/tasks/:taskId/start', (req, res) => {
     const { taskId } = req.params;
     const { modelName } = req.body || {};
-    console.log(`[Control] Starting task ${taskId}${modelName ? ` (model: ${modelName})` : ''}`);
+    console.log(`[Control] Starting task ${taskId}, req.body:`, JSON.stringify(req.body), `modelName: "${modelName}"`);
 
     try {
         if (modelName) {
@@ -1275,7 +1275,13 @@ app.post('/api/tasks/:taskId/start', (req, res) => {
             // Check if already running
             const current = db.prepare("SELECT status FROM task_queue WHERE task_id = ?").get(taskId);
             if (current && current.status === 'running') {
-                return res.status(400).json({ error: 'Task is already running' });
+                // 双重检查：是否真的有模型在运行？
+                const runningModels = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'running'").get(taskId);
+                if (runningModels.count > 0) {
+                    return res.status(400).json({ error: 'Task is already running' });
+                }
+                // 如果没有模型在运行，但状态是 running，说明状态不一致，自动修复
+                console.log(`[Control] Auto-fixing inconsistent state for task ${taskId}: task_queue is 'running' but no models are running`);
             }
 
             // Reset to pending
