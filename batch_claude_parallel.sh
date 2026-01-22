@@ -121,11 +121,18 @@ process_task() {
             # Build firejail prefix if available
             local FIREJAIL_PREFIX=""
             if command -v firejail &> /dev/null; then
-                # Use noprofile + whitelist to restrict access while keeping pwd writable
-                # Also whitelist the parent dir for tee output and necessary system paths
-                local TASK_DIR="$(dirname $(pwd))"
-                FIREJAIL_PREFIX="firejail --quiet --noprofile --whitelist=$TASK_DIR --"
-                echo "  - FIREJAIL: enabled (whitelisting $TASK_DIR)"
+                # Strategy: blacklist the /tasks parent directory but allow current task
+                local TASK_DIR="$(dirname $(pwd))"  # e.g., /root/project/tasks/TASKID
+                local TASKS_ROOT="$(dirname $TASK_DIR)"  # e.g., /root/project/tasks
+                local PROJECT_ROOT="$(dirname $TASKS_ROOT)"  # e.g., /root/project
+                
+                # Blacklist project root (which contains server code, etc.) but allow tasks dir
+                # Then blacklist tasks root but allow current task dir
+                FIREJAIL_PREFIX="firejail --quiet --noprofile"
+                FIREJAIL_PREFIX="$FIREJAIL_PREFIX --blacklist=$PROJECT_ROOT --noblacklist=$TASKS_ROOT"
+                FIREJAIL_PREFIX="$FIREJAIL_PREFIX --blacklist=$TASKS_ROOT --noblacklist=$TASK_DIR"
+                FIREJAIL_PREFIX="$FIREJAIL_PREFIX --"
+                echo "  - FIREJAIL: enabled (restricting to $TASK_DIR)"
             else
                 echo "  - FIREJAIL: not installed, running without sandbox"
             fi
@@ -135,7 +142,6 @@ process_task() {
                 --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
                 --disallowedTools 'EnterPlanMode,ExitPlanMode' \
                 --dangerously-skip-permissions \
-                --append-system-prompt "You are strictly forbidden from accessing, reading, or modifying any files or directories outside of the current working directory. You must not use 'cd ..' or absolute paths that lead outside the project root." \
                 --output-format stream-json --verbose 2>&1 | \
                 tee "../${model_name}.txt" | \
                 node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
