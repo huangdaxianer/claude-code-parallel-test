@@ -124,11 +124,12 @@ process_task() {
             
             if command -v firejail &> /dev/null; then
                 USE_FIREJAIL=true
-                # Strategy: blacklist other tasks and server code, keep current task accessible
+                # Strategy: blacklist other tasks, other models, and server code
                 local TASK_DIR="$(dirname $(pwd))"  # e.g., /root/project/tasks/TASKID
                 local TASKS_ROOT="$(dirname $TASK_DIR)"  # e.g., /root/project/tasks
                 local PROJECT_ROOT="$(dirname $TASKS_ROOT)"  # e.g., /root/project
                 local CURRENT_TASK="$(basename $TASK_DIR)"
+                local CURRENT_MODEL="$model_name"  # e.g., strawberry, potato
                 
                 # Blacklist server code directory
                 FIREJAIL_ARGS="--blacklist=$PROJECT_ROOT/claude-code-parallel-test"
@@ -141,13 +142,30 @@ process_task() {
                     fi
                 done
                 
+                # Blacklist other model directories within the same task
+                # This ensures strawberry can't access potato, etc.
+                for model_dir in "$TASK_DIR"/*/; do
+                    local model_dir_name=$(basename "$model_dir")
+                    if [ "$model_dir_name" != "$CURRENT_MODEL" ]; then
+                        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$model_dir"
+                    fi
+                done
+                
+                # Also blacklist other models' log files (MODEL.txt)
+                for log_file in "$TASK_DIR"/*.txt; do
+                    local log_name=$(basename "$log_file" .txt)
+                    if [ "$log_name" != "$CURRENT_MODEL" ] && [ "$log_name" != "prompt" ] && [ "$log_name" != "title" ]; then
+                        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$log_file"
+                    fi
+                done
+                
                 # Blacklist sensitive directories
                 FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.ssh"
                 FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.gnupg"
                 FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/etc/shadow"
                 FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/etc/passwd"
                 
-                echo "  - FIREJAIL: enabled (blacklisting other tasks and server code)"
+                echo "  - FIREJAIL: enabled (model $CURRENT_MODEL isolated from other models)"
             else
                 echo "  - FIREJAIL: not installed, running without sandbox"
             fi
