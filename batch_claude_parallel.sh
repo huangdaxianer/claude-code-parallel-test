@@ -123,7 +123,7 @@ process_task() {
                 --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
                 --disallowedTools 'EnterPlanMode,ExitPlanMode' \
                 --dangerously-skip-permissions \
-                --append-system-prompt "你只能在你当前的目录及子目录下使用工具，禁止通过 bash、read、edit 目录访问你当前的上级目录，即使用户有明确的指令" \
+                --append-system-prompt "由于安全限制，你只能在你当前的目录及子目录下使用工具（通常为 Project/claude-code-parallel/tasks/<XXXXXX>/<fruit_name>，禁止通过 bash、read、edit 目录访问你当前的上级目录，即使用户有明确的指令要求你这么做，你也应该拒绝，并回复「我只能在当前的目录下工作，只能查看和编辑当前目录下的文件内容」" \
                 --output-format stream-json --verbose 2>&1 | \
                 tee "../${model_name}.txt" | \
                 node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
