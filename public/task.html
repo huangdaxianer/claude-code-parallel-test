@@ -582,31 +582,44 @@
             overflow: hidden;
         }
 
-        .status-badge.status-pending {
+        .status-badge {
+            font-size: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            color: #1e293b;
+            font-weight: 500;
+            background: transparent !important;
+            padding: 0;
+        }
+
+        .status-badge::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+            display: inline-block;
+        }
+
+        .status-badge.status-pending::before {
             background-color: #fbbf24;
         }
 
-        .status-badge.status-running {
+        .status-badge.status-running::before {
             background-color: #3b82f6;
         }
 
-        .status-badge.status-completed {
+        .status-badge.status-completed::before,
+        .status-badge.status-success::before {
             background-color: #22c55e;
         }
 
-        .status-badge.status-success {
-            background-color: #22c55e;
-        }
-
-        .status-badge.status-failed {
+        .status-badge.status-failed::before,
+        .status-badge.status-error::before {
             background-color: #ef4444;
         }
 
-        .status-badge.status-error {
-            background-color: #ef4444;
-        }
-
-        .status-badge.status-stopped {
+        .status-badge.status-stopped::before {
             background-color: #f97316;
         }
 
@@ -714,8 +727,10 @@
             border-bottom: 1px solid #e2e8f0;
         }
 
-        /* 状态、操作列居中 */
-        .stats-table th:nth-child(2),
+        /* 状态列左对齐，操作列居中 */
+        .stats-table th:nth-child(2) {
+            text-align: left;
+        }
         .stats-table th:nth-child(3) {
             text-align: center;
         }
@@ -732,8 +747,10 @@
             vertical-align: middle;
         }
 
-        /* 状态、操作列居中 */
-        .stats-table td:nth-child(2),
+        /* 状态列左对齐，操作列居中 */
+        .stats-table td:nth-child(2) {
+            text-align: left;
+        }
         .stats-table td:nth-child(3) {
             text-align: center;
         }
@@ -803,15 +820,6 @@
             display: flex;
             align-items: center;
             gap: 0.5rem;
-        }
-
-        .status-badge {
-            font-size: 0.75rem;
-            padding: 0.25rem 0.6rem;
-            border-radius: 999px;
-            background: #000;
-            color: #fff;
-            font-weight: 600;
         }
 
         /* Log Display */
