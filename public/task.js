@@ -1000,12 +1000,12 @@ function renderStatisticsView() {
         tr.innerHTML = `
             <td style="font-weight:600">${stats.modelName}</td>
             <td><span class="status-badge status-${stats.status}">${translateStatus(stats.status)}</span></td>
-            <td>${actionButtons}</td>
             <td>${formatVal(stats.duration)}</td>
             <td>${formatVal(stats.turns, '0')}</td>
             <td>${formatVal(stats.inputTokens)}</td>
             <td>${formatVal(stats.outputTokens)}</td>
             <td>${formatVal(stats.cacheReadTokens)}</td>
+            <td>${actionButtons}</td>
             <td>${formatVal(stats.toolCounts.TodoWrite, '0')}</td>
             <td>${formatVal(stats.toolCounts.Read, '0')}</td>
             <td>${formatVal(stats.toolCounts.Write, '0')}</td>
@@ -1094,17 +1094,17 @@ function renderComparisonView() { // Revised for Split View
 
 // Global function for onchange event
 window.updateComparisonPanel = function (side) {
-    const select = document.getElementById(`select - ${side}`);
+    const select = document.getElementById(`select-${side}`);
     if (side === 'left') compareLeftRun = select.value;
     else compareRightRun = select.value;
     renderComparisonView();
 };
 
 function updateComparisonSide(side) {
-    const select = document.getElementById(`select - ${side}`);
-    const statusBadge = document.getElementById(`status - ${side}`);
-    const iframe = document.getElementById(`iframe - ${side}`);
-    const emptyState = document.getElementById(`empty - ${side}`);
+    const select = document.getElementById(`select-${side}`);
+    const statusBadge = document.getElementById(`status-${side}`);
+    const iframe = document.getElementById(`iframe-${side}`);
+    const emptyState = document.getElementById(`empty-${side}`);
 
     // a. Sync Options (Preserve selection if list hasn't effectively changed)
     syncSelectOptions(select, currentRuns);
@@ -1131,10 +1131,9 @@ function updateComparisonSide(side) {
 
     // Status
     statusBadge.textContent = run.status;
-    statusBadge.className = `status - badge status - ${run.status || 'pending'}`;
+    statusBadge.className = `status-badge status-${run.status || 'pending'}`;
     statusBadge.style.display = 'inline-block';
 
-    // Iframe Logic
     // Iframe Logic
     const htmlFile = (run.generatedFiles || []).find(f => f.endsWith('.html'));
     const packageJson = (run.generatedFiles || []).find(f => f === 'package.json');
