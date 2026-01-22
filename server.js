@@ -1446,6 +1446,96 @@ app.use((err, req, res, next) => {
 
 
 
+// 诊断 API：查看队列状态并修复卡住的任务
+app.get('/api/queue/status', (req, res) => {
+    try {
+        const queueStatus = db.prepare(`
+            SELECT 
+                tq.task_id,
+                tq.status as queue_status,
+                tq.created_at,
+                tq.started_at,
+                (SELECT COUNT(*) FROM model_runs mr WHERE mr.task_id = tq.task_id AND mr.status = 'running') as running_models,
+                (SELECT COUNT(*) FROM model_runs mr WHERE mr.task_id = tq.task_id AND mr.status = 'pending') as pending_models,
+                (SELECT COUNT(*) FROM model_runs mr WHERE mr.task_id = tq.task_id AND mr.status = 'completed') as completed_models
+            FROM task_queue tq
+            ORDER BY tq.created_at DESC
+            LIMIT 20
+        `).all();
+        
+        res.json({
+            isTaskRunning,
+            activeTaskProcesses: Object.keys(activeTaskProcesses),
+            queue: queueStatus
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/queue/fix', (req, res) => {
+    try {
+        // 修复所有卡住的任务
+        const stuckTasks = db.prepare(`
+            SELECT tq.task_id 
+            FROM task_queue tq 
+            WHERE tq.status = 'running' 
+            AND NOT EXISTS (
+                SELECT 1 FROM model_runs mr 
+                WHERE mr.task_id = tq.task_id AND mr.status = 'running'
+            )
+        `).all();
+        
+        let fixed = 0;
+        stuckTasks.forEach(task => {
+            const anyCompleted = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'completed'").get(task.task_id);
+            const newStatus = anyCompleted.count > 0 ? 'completed' : 'stopped';
+            db.prepare(`UPDATE task_queue SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE task_id = ?`).run(newStatus, task.task_id);
+            console.log(`[Fix] Task ${task.task_id}: set to '${newStatus}'`);
+            fixed++;
+        });
+        
+        // 重置 isTaskRunning 标志
+        isTaskRunning = false;
+        
+        // 重新触发队列
+        processQueue();
+        
+        res.json({ success: true, fixed, message: `Fixed ${fixed} stuck task(s), queue restarted` });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// 服务器启动时修复可能卡住的任务状态
+(function fixStuckTasks() {
+    try {
+        // 检查是否有卡在 running 状态的任务，但实际上没有模型在运行
+        const stuckTasks = db.prepare(`
+            SELECT tq.task_id 
+            FROM task_queue tq 
+            WHERE tq.status = 'running' 
+            AND NOT EXISTS (
+                SELECT 1 FROM model_runs mr 
+                WHERE mr.task_id = tq.task_id AND mr.status = 'running'
+            )
+        `).all();
+        
+        if (stuckTasks.length > 0) {
+            console.log(`[Startup] Found ${stuckTasks.length} stuck task(s), fixing...`);
+            stuckTasks.forEach(task => {
+                // 检查是否有已完成的模型
+                const anyCompleted = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'completed'").get(task.task_id);
+                const newStatus = anyCompleted.count > 0 ? 'completed' : 'stopped';
+                db.prepare(`UPDATE task_queue SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE task_id = ?`).run(newStatus, task.task_id);
+                console.log(`[Startup] Fixed task ${task.task_id}: set to '${newStatus}'`);
+            });
+        }
+    } catch (e) {
+        console.error('[Startup] Error fixing stuck tasks:', e);
+    }
+})();
+
 // Start queue processing on server start
 processQueue();
 
