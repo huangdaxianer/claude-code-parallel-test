@@ -24,6 +24,34 @@ server.timeout = 300000; // 5 minutes timeout for large uploads
 const SCRIPT_FILE = path.join(__dirname, 'batch_claude_parallel.sh');
 const TASKS_DIR = path.join(__dirname, '../tasks');
 const UPLOAD_DIR = path.join(TASKS_DIR, 'temp_uploads');
+const CONFIG_FILE = path.join(__dirname, 'config.json');
+
+// Default configuration
+const defaultConfig = {
+    maxParallelSubtasks: 5  // 最大并行子任务数
+};
+
+// Load or initialize config
+function loadConfig() {
+    try {
+        if (fs.existsSync(CONFIG_FILE)) {
+            return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+        }
+    } catch (e) {
+        console.error('[Config] Error loading config:', e);
+    }
+    return { ...defaultConfig };
+}
+
+function saveConfig(config) {
+    try {
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+    } catch (e) {
+        console.error('[Config] Error saving config:', e);
+    }
+}
+
+let appConfig = loadConfig();
 
 // Ensure directories exist
 [TASKS_DIR, UPLOAD_DIR].forEach(dir => {
@@ -158,6 +186,121 @@ app.get('/api/user/:userId', (req, res) => {
     }
 });
 
+// ========== Task Manager Admin API ==========
+
+// 获取所有任务的管理视图（包含用户信息和队列状态）
+app.get('/api/admin/tasks', (req, res) => {
+    try {
+        const tasks = db.prepare(`
+            SELECT 
+                t.task_id,
+                t.title,
+                t.prompt,
+                t.base_dir,
+                t.user_id,
+                t.created_at,
+                u.username,
+                q.status as queue_status,
+                q.started_at,
+                q.completed_at
+            FROM tasks t
+            LEFT JOIN users u ON t.user_id = u.id
+            LEFT JOIN task_queue q ON t.task_id = q.task_id
+            ORDER BY t.created_at DESC
+        `).all();
+
+        // 获取每个任务的模型运行状态
+        const tasksWithRuns = tasks.map(task => {
+            const runs = db.prepare(`
+                SELECT model_name, status, duration, input_tokens, output_tokens
+                FROM model_runs 
+                WHERE task_id = ?
+            `).all(task.task_id);
+
+            return {
+                taskId: task.task_id,
+                title: task.title,
+                prompt: task.prompt,
+                baseDir: task.base_dir,
+                userId: task.user_id,
+                username: task.username || 'Unknown',
+                createdAt: task.created_at,
+                queueStatus: task.queue_status || 'unknown',
+                startedAt: task.started_at,
+                completedAt: task.completed_at,
+                runs: runs.map(r => ({
+                    modelName: r.model_name,
+                    status: r.status,
+                    duration: r.duration,
+                    inputTokens: r.input_tokens,
+                    outputTokens: r.output_tokens
+                }))
+            };
+        });
+
+        return res.json(tasksWithRuns);
+    } catch (e) {
+        console.error('Error fetching admin tasks:', e);
+        return res.status(500).json({ error: 'Failed to fetch tasks' });
+    }
+});
+
+// 获取所有用户列表
+app.get('/api/admin/users', (req, res) => {
+    try {
+        const users = db.prepare('SELECT id, username, created_at FROM users ORDER BY created_at DESC').all();
+        return res.json(users);
+    } catch (e) {
+        console.error('Error fetching users:', e);
+        return res.status(500).json({ error: 'Failed to fetch users' });
+    }
+});
+
+// ========== Config API ==========
+
+// 获取系统配置
+app.get('/api/admin/config', (req, res) => {
+    res.json(appConfig);
+});
+
+// 更新系统配置
+app.post('/api/admin/config', express.json(), (req, res) => {
+    const { maxParallelSubtasks } = req.body;
+    
+    if (maxParallelSubtasks !== undefined) {
+        const value = parseInt(maxParallelSubtasks, 10);
+        if (isNaN(value) || value < 1 || value > 50) {
+            return res.status(400).json({ error: 'maxParallelSubtasks must be between 1 and 50' });
+        }
+        appConfig.maxParallelSubtasks = value;
+    }
+    
+    saveConfig(appConfig);
+    console.log(`[Config] Updated config:`, appConfig);
+    
+    // Trigger queue processing in case we increased parallel limit
+    setTimeout(processQueue, 100);
+    
+    res.json(appConfig);
+});
+
+// 获取队列状态（用于 Task Manager 显示）
+app.get('/api/admin/queue-status', (req, res) => {
+    try {
+        const runningSubtasks = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE status = 'running'").get().count;
+        const pendingSubtasks = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE status = 'pending'").get().count;
+        
+        res.json({
+            maxParallelSubtasks: appConfig.maxParallelSubtasks,
+            runningSubtasks,
+            pendingSubtasks
+        });
+    } catch (e) {
+        console.error('Error fetching queue status:', e);
+        res.status(500).json({ error: 'Failed to fetch queue status' });
+    }
+});
+
 // ========== Task API (with user filtering) ==========
 
 // 获取所有任务 (从数据库读取，支持用户过滤)
@@ -268,75 +411,134 @@ app.post('/api/upload', upload.any(), (req, res) => {
 });
 
 
-const activeTaskProcesses = {}; // Map<taskId, ChildProcess>
-let isTaskRunning = false;
+const activeSubtaskProcesses = {}; // Map<"taskId/modelName", ChildProcess>
+let isProcessingQueue = false;
 
-// Function to process the queue
+// Function to process the queue - now at subtask (model_runs) level
 async function processQueue() {
-    if (isTaskRunning) return;
+    if (isProcessingQueue) return;
+    isProcessingQueue = true;
 
-    // Fetch next pending task
     try {
-        const nextTask = db.prepare("SELECT * FROM task_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1").get();
+        // Count currently running subtasks across ALL users
+        const runningCount = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE status = 'running'").get().count;
+        const maxParallel = appConfig.maxParallelSubtasks || 5;
 
-        if (!nextTask) return; // No tasks pending
-
-        isTaskRunning = true;
-
-        // Update status to running
-        db.prepare("UPDATE task_queue SET status = 'running', started_at = CURRENT_TIMESTAMP WHERE id = ?").run(nextTask.id);
-
-        console.log(`[Queue] Starting task: ${nextTask.task_id}`);
-
-        await executeTask(nextTask.task_id);
-
-        // Mark as completed only if no more models are pending for this task
-        const pendingModels = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'pending'").get(nextTask.task_id);
-        if (pendingModels.count === 0) {
-            db.prepare("UPDATE task_queue SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?").run(nextTask.id);
-        } else {
-            // If models were added/restarted during execution, set back to pending
-            db.prepare("UPDATE task_queue SET status = 'pending', started_at = NULL WHERE id = ?").run(nextTask.id);
+        if (runningCount >= maxParallel) {
+            console.log(`[Queue] Max parallel subtasks reached (${runningCount}/${maxParallel})`);
+            return;
         }
 
-        console.log(`[Queue] Task completed: ${nextTask.task_id}`);
+        // Calculate how many new subtasks we can start
+        const availableSlots = maxParallel - runningCount;
+
+        // Fetch pending subtasks ordered by task creation time, then by model_runs id
+        // This ensures fair scheduling across all users
+        const pendingSubtasks = db.prepare(`
+            SELECT mr.id, mr.task_id, mr.model_name, t.title
+            FROM model_runs mr
+            JOIN tasks t ON mr.task_id = t.task_id
+            JOIN task_queue tq ON mr.task_id = tq.task_id
+            WHERE mr.status = 'pending' AND tq.status != 'stopped'
+            ORDER BY tq.created_at ASC, mr.id ASC
+            LIMIT ?
+        `).all(availableSlots);
+
+        if (pendingSubtasks.length === 0) {
+            return; // No pending subtasks
+        }
+
+        console.log(`[Queue] Starting ${pendingSubtasks.length} subtasks (${runningCount}/${maxParallel} running)`);
+
+        // Start each subtask
+        for (const subtask of pendingSubtasks) {
+            // Update subtask status to running
+            db.prepare("UPDATE model_runs SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(subtask.id);
+            
+            // Update parent task queue status to running if not already
+            db.prepare("UPDATE task_queue SET status = 'running', started_at = COALESCE(started_at, CURRENT_TIMESTAMP) WHERE task_id = ?").run(subtask.task_id);
+
+            console.log(`[Queue] Starting subtask: ${subtask.task_id}/${subtask.model_name}`);
+
+            // Execute the subtask (non-blocking)
+            executeSubtask(subtask.task_id, subtask.model_name);
+        }
     } catch (e) {
-        console.error('[Queue] Error processing task:', e);
+        console.error('[Queue] Error processing queue:', e);
     } finally {
-        isTaskRunning = false;
-        // Trigger next check immediately
-        setTimeout(processQueue, 100);
+        isProcessingQueue = false;
+        // Schedule next check
+        setTimeout(processQueue, 500);
     }
 }
 
-// Function to actually execute the task script
-function executeTask(taskId) {
-    return new Promise((resolve, reject) => {
-        const SCRIPT_FILE = path.join(__dirname, 'batch_claude_parallel.sh');
-        const child = spawn('bash', [SCRIPT_FILE, taskId], {
-            env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' },
-            detached: true
-        });
+// Function to execute a single model subtask
+function executeSubtask(taskId, modelName) {
+    const subtaskKey = `${taskId}/${modelName}`;
+    
+    const SCRIPT_FILE = path.join(__dirname, 'batch_claude_parallel.sh');
+    const child = spawn('bash', [SCRIPT_FILE, taskId, modelName], {
+        env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' },
+        detached: true
+    });
 
-        // Track process
-        activeTaskProcesses[taskId] = child;
+    // Track process
+    activeSubtaskProcesses[subtaskKey] = child;
 
-        child.stdout.on('data', (data) => console.log(`[Task ${taskId} STDOUT] ${data}`));
-        child.stderr.on('data', (data) => console.error(`[Task ${taskId} STDERR] ${data}`));
+    child.stdout.on('data', (data) => console.log(`[Subtask ${subtaskKey} STDOUT] ${data}`));
+    child.stderr.on('data', (data) => console.error(`[Subtask ${subtaskKey} STDERR] ${data}`));
 
-        child.on('error', (err) => {
-            console.error(`[Task ${taskId} ERROR] Failed to spawn process:`, err);
-            reject(err);
-        });
+    child.on('error', (err) => {
+        console.error(`[Subtask ${subtaskKey} ERROR] Failed to spawn process:`, err);
+        // Mark as stopped on error
+        db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+        delete activeSubtaskProcesses[subtaskKey];
+        checkAndUpdateTaskStatus(taskId);
+        // Trigger queue processing to start next subtask
+        setTimeout(processQueue, 100);
+    });
 
-        child.on('exit', (code, signal) => {
-            console.log(`[Task ${taskId} EXIT] Process exited with code ${code} and signal ${signal}`);
-            delete activeTaskProcesses[taskId]; // Cleanup
-            if (code === 0) resolve();
-            else reject(new Error(`Process exited with code ${code}`));
-        });
+    child.on('exit', (code, signal) => {
+        console.log(`[Subtask ${subtaskKey} EXIT] Process exited with code ${code} and signal ${signal}`);
+        delete activeSubtaskProcesses[subtaskKey];
+        
+        // Update subtask status based on exit code (if not already updated by ingest.js)
+        const currentStatus = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_name = ?").get(taskId, modelName);
+        if (currentStatus && currentStatus.status === 'running') {
+            // Only update if still running (ingest.js may have already marked it as completed)
+            const newStatus = (code === 0) ? 'completed' : 'stopped';
+            db.prepare("UPDATE model_runs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_name = ?").run(newStatus, taskId, modelName);
+        }
+        
+        checkAndUpdateTaskStatus(taskId);
+        // Trigger queue processing to start next subtask
+        setTimeout(processQueue, 100);
     });
 }
+
+// Check if all subtasks of a task are done and update task_queue status
+function checkAndUpdateTaskStatus(taskId) {
+    const subtasks = db.prepare("SELECT status FROM model_runs WHERE task_id = ?").all(taskId);
+    
+    const allCompleted = subtasks.every(s => s.status === 'completed');
+    const allStopped = subtasks.every(s => s.status === 'stopped' || s.status === 'completed');
+    const hasRunning = subtasks.some(s => s.status === 'running');
+    const hasPending = subtasks.some(s => s.status === 'pending');
+
+    if (allCompleted) {
+        db.prepare("UPDATE task_queue SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE task_id = ?").run(taskId);
+        console.log(`[Queue] Task ${taskId} completed (all subtasks done)`);
+    } else if (allStopped && !hasRunning && !hasPending) {
+        db.prepare("UPDATE task_queue SET status = 'stopped', completed_at = CURRENT_TIMESTAMP WHERE task_id = ?").run(taskId);
+        console.log(`[Queue] Task ${taskId} stopped (all subtasks stopped or completed)`);
+    } else if (hasRunning || hasPending) {
+        // Task still has work to do, ensure it's marked as running
+        db.prepare("UPDATE task_queue SET status = 'running' WHERE task_id = ? AND status != 'running'").run(taskId);
+    }
+}
+
+// Legacy compatibility: keep activeTaskProcesses as alias
+const activeTaskProcesses = activeSubtaskProcesses;
 
 app.post('/api/tasks', (req, res) => {
     const task = req.body.task;
@@ -1173,121 +1375,139 @@ app.post('/api/tasks/:taskId/stop', async (req, res) => {
         try {
             db.prepare("UPDATE model_runs SET status = 'stopped' WHERE task_id = ? AND model_name = ? AND status = 'running'").run(taskId, modelName);
             
-            // Check if all models are now stopped/completed - if so, mark task as completed
-            const remainingRunning = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'running'").get(taskId);
-            if (remainingRunning.count === 0) {
-                // All models done, check if any completed successfully
-                const anyCompleted = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'completed'").get(taskId);
-                if (anyCompleted.count > 0) {
-                    db.prepare("UPDATE task_queue SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE task_id = ?").run(taskId);
-                } else {
-                    db.prepare("UPDATE task_queue SET status = 'stopped', completed_at = CURRENT_TIMESTAMP WHERE task_id = ?").run(taskId);
-                }
-                isTaskRunning = false;
-            }
+            // Remove from active processes
+            const subtaskKey = `${taskId}/${modelName}`;
+            delete activeSubtaskProcesses[subtaskKey];
+            
+            // Check and update parent task status
+            checkAndUpdateTaskStatus(taskId);
         } catch (e) {
             console.error('Error updating DB for model stop:', e);
             return res.status(500).json({ error: 'Failed to update model status' });
         }
     } else {
-        // 停止整个任务（原逻辑）
+        // 停止整个任务（所有子任务）
         console.log(`[Control] Stopping entire task ${taskId}`);
 
-        // 1. Kill Process if active
-        if (activeTaskProcesses[taskId]) {
-            try {
-                const child = activeTaskProcesses[taskId];
-                const pid = child.pid;
-                console.log(`[Control] Killing process group for PID ${pid}`);
-                
-                // Kill entire process group (negative PID kills the group)
+        // 1. Kill all active subtask processes for this task
+        const taskDir = path.join(TASKS_DIR, taskId);
+        for (const [key, child] of Object.entries(activeSubtaskProcesses)) {
+            if (key.startsWith(`${taskId}/`)) {
                 try {
-                    process.kill(-pid, 'SIGTERM');
+                    const pid = child.pid;
+                    console.log(`[Control] Killing subtask process ${key} (PID ${pid})`);
+                    try {
+                        process.kill(-pid, 'SIGTERM');
+                    } catch (e) {
+                        try { process.kill(-pid, 'SIGKILL'); } catch (e2) { }
+                    }
                 } catch (e) {
-                    console.log(`[Control] SIGTERM to group failed, trying SIGKILL`);
-                    try { process.kill(-pid, 'SIGKILL'); } catch (e2) { }
+                    console.error(`[Control] Error killing subtask ${key}:`, e);
+                    try { child.kill('SIGKILL'); } catch (e2) { }
                 }
-                
-                // Also try to kill any claude processes for this task directory
-                const taskDir = path.join(TASKS_DIR, taskId);
-                try {
-                    execSync(`pkill -f "claude.*${taskDir}" 2>/dev/null || true`, { timeout: 5000 });
-                } catch (e) {
-                    // Ignore errors from pkill
-                }
-                
-            } catch (e) {
-                console.error('[Control] Error killing process:', e);
-                try { activeTaskProcesses[taskId].kill('SIGKILL'); } catch (e2) { }
-            }
-            delete activeTaskProcesses[taskId];
-        } else {
-            // Fallback: try to find and kill any loose claude processes for this task
-            const taskDir = path.join(TASKS_DIR, taskId);
-            try {
-                execSync(`pkill -f "claude.*${taskDir}" 2>/dev/null || true`, { timeout: 5000 });
-                console.log(`[Control] Attempted to kill loose processes for ${taskId}`);
-            } catch (e) {
-                // Ignore errors
+                delete activeSubtaskProcesses[key];
             }
         }
+        
+        // Also try to kill any loose claude processes for this task
+        try {
+            execSync(`pkill -f "claude.*${taskDir}" 2>/dev/null || true`, { timeout: 5000 });
+            console.log(`[Control] Attempted to kill loose processes for ${taskId}`);
+        } catch (e) {
+            // Ignore errors
+        }
 
-        // 2. Update DB status
+        // 2. Update DB status - stop all running and pending subtasks
         try {
             db.prepare("UPDATE task_queue SET status = 'stopped', completed_at = CURRENT_TIMESTAMP WHERE task_id = ?").run(taskId);
-            db.prepare("UPDATE model_runs SET status = 'stopped' WHERE task_id = ? AND status = 'running'").run(taskId);
+            db.prepare("UPDATE model_runs SET status = 'stopped' WHERE task_id = ? AND status IN ('running', 'pending')").run(taskId);
         } catch (e) {
             console.error('Error updating DB for stop:', e);
             return res.status(500).json({ error: 'Failed to update task status' });
         }
-
-        // 3. Reset queue runner flag
-        isTaskRunning = false;
     }
 
     res.json({ success: true });
 });
 
-// 启动任务 (重试/恢复)
+// 启动任务 (重试/恢复) - 支持针对特定模型的重启
 app.post('/api/tasks/:taskId/start', (req, res) => {
     const { taskId } = req.params;
     const { modelName } = req.body || {};
-    console.log(`[Control] Starting task ${taskId}, req.body:`, JSON.stringify(req.body), `modelName: "${modelName}"`);
+    console.log(`[Control] Starting task ${taskId}${modelName ? ` for model ${modelName}` : ''}`);
 
     try {
         if (modelName) {
-            // 1. 重启单个模型
-            // 先检查该模型是否已经在运行
-            const run = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_name = ?").get(taskId, modelName);
-            if (run && run.status === 'running') {
-                return res.status(400).json({ error: 'Model is already running' });
+            // 针对特定模型的重启
+            console.log(`[Control] Restarting model ${modelName} for task ${taskId}`);
+            
+            const modelRun = db.prepare("SELECT id, status FROM model_runs WHERE task_id = ? AND model_name = ?").get(taskId, modelName);
+            if (!modelRun) {
+                console.log(`[Control] Model ${modelName} not found`);
+                return res.status(404).json({ error: `Model ${modelName} not found for task ${taskId}` });
+            }
+            
+            if (modelRun.status === 'running') {
+                console.log(`[Control] Model ${modelName} is still running`);
+                return res.status(400).json({ error: `Model ${modelName} is already running` });
+            }
+            
+            console.log(`[Control] Model ${modelName} found with id ${modelRun.id}, status: ${modelRun.status}`);
+
+            // 1. 删除该模型的 log_entries 记录
+            const deleteResult = db.prepare("DELETE FROM log_entries WHERE run_id = ?").run(modelRun.id);
+            console.log(`[Control] Deleted ${deleteResult.changes} log entries for model ${modelName}`);
+
+            // 2. 重置该模型的统计数据和状态
+            db.prepare(`
+                UPDATE model_runs SET 
+                    status = 'pending',
+                    duration = NULL,
+                    turns = NULL,
+                    input_tokens = NULL,
+                    output_tokens = NULL,
+                    cache_read_tokens = NULL,
+                    count_todo_write = NULL,
+                    count_read = NULL,
+                    count_write = NULL,
+                    count_bash = NULL,
+                    previewable = 0,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE task_id = ? AND model_name = ?
+            `).run(taskId, modelName);
+            console.log(`[Control] Reset model run stats for ${modelName}`);
+
+            // 3. 删除该模型的运行结果文件夹
+            const modelDir = path.join(TASKS_DIR, taskId, modelName);
+            console.log(`[Control] Checking model directory: ${modelDir}`);
+            if (fs.existsSync(modelDir)) {
+                fs.rmSync(modelDir, { recursive: true, force: true });
+                console.log(`[Control] Deleted model directory: ${modelDir}`);
+            } else {
+                console.log(`[Control] Model directory does not exist: ${modelDir}`);
             }
 
-            db.prepare("UPDATE model_runs SET status = 'pending' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
-            
-            // 2. 将任务设为 pending 以便 processQueue 拾取（如果当前不是 running）
-            const current = db.prepare("SELECT status FROM task_queue WHERE task_id = ?").get(taskId);
-            if (current && current.status !== 'running') {
-                db.prepare("UPDATE task_queue SET status = 'pending', started_at = NULL, completed_at = NULL WHERE task_id = ?").run(taskId);
+            // 4. 删除该模型的日志文件
+            const logFile = path.join(TASKS_DIR, taskId, `${modelName}.txt`);
+            console.log(`[Control] Checking log file: ${logFile}`);
+            if (fs.existsSync(logFile)) {
+                fs.unlinkSync(logFile);
+                console.log(`[Control] Deleted log file: ${logFile}`);
+            } else {
+                console.log(`[Control] Log file does not exist: ${logFile}`);
             }
         } else {
-            // 3. 重启整个任务（原逻辑）
-            // Check if already running
-            const current = db.prepare("SELECT status FROM task_queue WHERE task_id = ?").get(taskId);
-            if (current && current.status === 'running') {
-                // 双重检查：是否真的有模型在运行？
-                const runningModels = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'running'").get(taskId);
-                if (runningModels.count > 0) {
-                    return res.status(400).json({ error: 'Task is already running' });
-                }
-                // 如果没有模型在运行，但状态是 running，说明状态不一致，自动修复
-                console.log(`[Control] Auto-fixing inconsistent state for task ${taskId}: task_queue is 'running' but no models are running`);
+            // 整个任务重启时，检查是否有任何子任务在运行
+            const runningSubtasks = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'running'").get(taskId);
+            if (runningSubtasks.count > 0) {
+                return res.status(400).json({ error: 'Some subtasks are still running. Stop them first or restart individual models.' });
             }
-
-            // Reset to pending
-            db.prepare("UPDATE task_queue SET status = 'pending', started_at = NULL, completed_at = NULL WHERE task_id = ?").run(taskId);
+            // 原有逻辑：重置所有非已完成的模型
             db.prepare("UPDATE model_runs SET status = 'pending' WHERE task_id = ? AND status != 'completed'").run(taskId);
         }
+
+        // Reset task queue status
+        db.prepare("UPDATE task_queue SET status = 'pending', started_at = NULL, completed_at = NULL WHERE task_id = ?").run(taskId);
 
         // Trigger Queue
         processQueue();
@@ -1446,101 +1666,11 @@ app.use((err, req, res, next) => {
 
 
 
-// 诊断 API：查看队列状态并修复卡住的任务
-app.get('/api/queue/status', (req, res) => {
-    try {
-        const queueStatus = db.prepare(`
-            SELECT 
-                tq.task_id,
-                tq.status as queue_status,
-                tq.created_at,
-                tq.started_at,
-                (SELECT COUNT(*) FROM model_runs mr WHERE mr.task_id = tq.task_id AND mr.status = 'running') as running_models,
-                (SELECT COUNT(*) FROM model_runs mr WHERE mr.task_id = tq.task_id AND mr.status = 'pending') as pending_models,
-                (SELECT COUNT(*) FROM model_runs mr WHERE mr.task_id = tq.task_id AND mr.status = 'completed') as completed_models
-            FROM task_queue tq
-            ORDER BY tq.created_at DESC
-            LIMIT 20
-        `).all();
-        
-        res.json({
-            isTaskRunning,
-            activeTaskProcesses: Object.keys(activeTaskProcesses),
-            queue: queueStatus
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/api/queue/fix', (req, res) => {
-    try {
-        // 修复所有卡住的任务
-        const stuckTasks = db.prepare(`
-            SELECT tq.task_id 
-            FROM task_queue tq 
-            WHERE tq.status = 'running' 
-            AND NOT EXISTS (
-                SELECT 1 FROM model_runs mr 
-                WHERE mr.task_id = tq.task_id AND mr.status = 'running'
-            )
-        `).all();
-        
-        let fixed = 0;
-        stuckTasks.forEach(task => {
-            const anyCompleted = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'completed'").get(task.task_id);
-            const newStatus = anyCompleted.count > 0 ? 'completed' : 'stopped';
-            db.prepare(`UPDATE task_queue SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE task_id = ?`).run(newStatus, task.task_id);
-            console.log(`[Fix] Task ${task.task_id}: set to '${newStatus}'`);
-            fixed++;
-        });
-        
-        // 重置 isTaskRunning 标志
-        isTaskRunning = false;
-        
-        // 重新触发队列
-        processQueue();
-        
-        res.json({ success: true, fixed, message: `Fixed ${fixed} stuck task(s), queue restarted` });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// 服务器启动时修复可能卡住的任务状态
-(function fixStuckTasks() {
-    try {
-        // 检查是否有卡在 running 状态的任务，但实际上没有模型在运行
-        const stuckTasks = db.prepare(`
-            SELECT tq.task_id 
-            FROM task_queue tq 
-            WHERE tq.status = 'running' 
-            AND NOT EXISTS (
-                SELECT 1 FROM model_runs mr 
-                WHERE mr.task_id = tq.task_id AND mr.status = 'running'
-            )
-        `).all();
-        
-        if (stuckTasks.length > 0) {
-            console.log(`[Startup] Found ${stuckTasks.length} stuck task(s), fixing...`);
-            stuckTasks.forEach(task => {
-                // 检查是否有已完成的模型
-                const anyCompleted = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'completed'").get(task.task_id);
-                const newStatus = anyCompleted.count > 0 ? 'completed' : 'stopped';
-                db.prepare(`UPDATE task_queue SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE task_id = ?`).run(newStatus, task.task_id);
-                console.log(`[Startup] Fixed task ${task.task_id}: set to '${newStatus}'`);
-            });
-        }
-    } catch (e) {
-        console.error('[Startup] Error fixing stuck tasks:', e);
-    }
-})();
-
 // Start queue processing on server start
 processQueue();
 
 // Error handling to ensure queue resilience
 process.on('uncaughtException', (error) => {
     console.error('Uncaught Exception:', error);
-    if (!isTaskRunning) setTimeout(processQueue, 1000);
+    if (!isProcessingQueue) setTimeout(processQueue, 1000);
 });

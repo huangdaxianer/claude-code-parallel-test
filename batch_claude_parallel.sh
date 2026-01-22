@@ -61,7 +61,153 @@ if [ -z "$CLAUDE_BIN" ]; then
     fi
 fi
 
-# Function to process a single task
+# Function to run a single model
+run_single_model() {
+    local task_id="$1"
+    local model_name="$2"
+    local task_root="$TASKS_DIR/${task_id}"
+    local folder_path="$task_root/$model_name"
+    
+    echo "[Task $task_id] 启动单个模型: $model_name"
+    
+    # Ensure directories exist
+    mkdir -p "$folder_path"
+    
+    # Copy base files if needed (check if folder is empty)
+    local base_dir=$(node -e "
+        const Database = require('better-sqlite3');
+        const path = require('path');
+        const dbPath = path.join('$TASKS_DIR', 'tasks.db');
+        try {
+            const db = new Database(dbPath, { readonly: true });
+            const task = db.prepare('SELECT base_dir FROM tasks WHERE task_id = ?').get('$task_id');
+            if (task && task.base_dir) console.log(task.base_dir);
+        } catch (e) {}
+    ")
+    
+    if [[ -n "$base_dir" && -d "$base_dir" ]]; then
+        # Only copy if folder is empty (new or restarted)
+        if [ -z "$(ls -A "$folder_path" 2>/dev/null)" ]; then
+            cp -R "$base_dir/." "$folder_path/"
+        fi
+    fi
+    
+    # 赋予权限
+    if [ "$USE_ISOLATION" = true ]; then
+        chmod -R 777 "$task_root"
+        sudo -n chown -R claude-user "$task_root" 2>/dev/null
+    fi
+    
+    cd "$folder_path" || exit 1
+    
+    local CMD_PREFIX=""
+    if [ "$USE_ISOLATION" = true ]; then
+         CMD_PREFIX="sudo -n -H -u claude-user env"
+         CMD_PREFIX="$CMD_PREFIX ANTHROPIC_AUTH_TOKEN=$ANTHROPIC_AUTH_TOKEN"
+         CMD_PREFIX="$CMD_PREFIX ANTHROPIC_BASE_URL=$ANTHROPIC_BASE_URL"
+         CMD_PREFIX="$CMD_PREFIX CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=$CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+    fi
+
+    # Set Pipefail to capture first command failure
+    set -o pipefail
+
+    echo "[Task $task_id] [$model_name] Environment check:"
+    echo "  - CLAUDE_BIN: $CLAUDE_BIN"
+    echo "  - CMD_PREFIX: $CMD_PREFIX"
+    echo "  - PWD: $(pwd)"
+    
+    # Build firejail wrapper if available
+    local USE_FIREJAIL=false
+    local FIREJAIL_ARGS=""
+    
+    if command -v firejail &> /dev/null; then
+        USE_FIREJAIL=true
+        local TASK_DIR="$(dirname $(pwd))"
+        local TASKS_ROOT="$(dirname $TASK_DIR)"
+        local PROJECT_ROOT="$(dirname $TASKS_ROOT)"
+        local CURRENT_TASK="$(basename $TASK_DIR)"
+        local CURRENT_MODEL="$model_name"
+        
+        FIREJAIL_ARGS="--blacklist=$PROJECT_ROOT/claude-code-parallel-test"
+        
+        for dir in "$TASKS_ROOT"/*/; do
+            local dir_name=$(basename "$dir")
+            if [ "$dir_name" != "$CURRENT_TASK" ] && [ "$dir_name" != "temp_uploads" ]; then
+                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$dir"
+            fi
+        done
+        
+        for model_dir in "$TASK_DIR"/*/; do
+            local model_dir_name=$(basename "$model_dir")
+            if [ "$model_dir_name" != "$CURRENT_MODEL" ]; then
+                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$model_dir"
+            fi
+        done
+        
+        for log_file in "$TASK_DIR"/*.txt; do
+            local log_name=$(basename "$log_file" .txt)
+            if [ "$log_name" != "$CURRENT_MODEL" ] && [ "$log_name" != "prompt" ] && [ "$log_name" != "title" ]; then
+                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$log_file"
+            fi
+        done
+        
+        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.ssh"
+        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.gnupg"
+        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/etc/shadow"
+        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/etc/passwd"
+        
+        echo "  - FIREJAIL: enabled (model $CURRENT_MODEL isolated from other models)"
+    else
+        echo "  - FIREJAIL: not installed, running without sandbox"
+    fi
+    
+    if [ "$USE_FIREJAIL" = true ]; then
+        if ! cat "$task_root/prompt.txt" | firejail --quiet --noprofile \
+            $FIREJAIL_ARGS \
+            -- $CMD_PREFIX "$CLAUDE_BIN" --model "$model_name" \
+            --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
+            --disallowedTools 'EnterPlanMode,ExitPlanMode' \
+            --dangerously-skip-permissions \
+            --output-format stream-json --verbose 2>&1 | \
+            tee "$task_root/${model_name}.txt" | \
+            node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
+        then
+            EXIT_CODE=$?
+            echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
+            if [ $EXIT_CODE -eq 127 ]; then
+                echo "  -> Error: Command not found. Check CLAUDE_BIN path."
+            fi
+            exit $EXIT_CODE
+        else
+            echo "[Task $task_id] [$model_name] 完成"
+        fi
+    else
+        if ! cat "$task_root/prompt.txt" | $CMD_PREFIX "$CLAUDE_BIN" \
+            --model "$model_name" \
+            --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
+            --disallowedTools 'EnterPlanMode,ExitPlanMode' \
+            --dangerously-skip-permissions \
+            --output-format stream-json --verbose 2>&1 | \
+            tee "$task_root/${model_name}.txt" | \
+            node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
+        then
+            EXIT_CODE=$?
+            echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
+            if [ $EXIT_CODE -eq 127 ]; then
+                echo "  -> Error: Command not found. Check CLAUDE_BIN path."
+            fi
+            exit $EXIT_CODE
+        else
+            echo "[Task $task_id] [$model_name] 完成"
+        fi
+    fi
+    
+    if [ "$USE_ISOLATION" = true ]; then
+        sudo -n -u claude-user chmod -R a+rX "$folder_path" 2>/dev/null || true
+    fi
+}
+
+# Function to process a single task (legacy - runs all pending models)
 process_task() {
     local base_dir="$1"
     local title="$2"
@@ -72,7 +218,6 @@ process_task() {
     # Debug info
     echo "Processing Task: $task_id"
     echo "Title: $title"
-    # echo "Prompt: $prompt"
 
     if [[ -n "$models_str" ]]; then
         OLD_IFS=$IFS; IFS=',' read -r -a MODELS <<< "$models_str"; IFS=$OLD_IFS
@@ -86,143 +231,13 @@ process_task() {
     echo "$prompt" > "$task_root/prompt.txt"
     
     for model_name in "${MODELS[@]}"; do
-        local folder_path="$task_root/$model_name"
-        mkdir -p "$folder_path"
-        if [[ -n "$base_dir" && -d "$base_dir" ]]; then cp -R "$base_dir/." "$folder_path/"; fi
-
-        # 赋予权限
-        if [ "$USE_ISOLATION" = true ]; then
-            chmod -R 777 "$task_root"
-            sudo -n chown -R claude-user "$task_root" 2>/dev/null
-        fi
-
-        (
-            cd "$folder_path" || exit 1
-            echo "[Task $task_id] 启动中 ($model_name)..."
-            
-            local CMD_PREFIX=""
-            if [ "$USE_ISOLATION" = true ]; then
-                 CMD_PREFIX="sudo -n -H -u claude-user env"
-                 CMD_PREFIX="$CMD_PREFIX ANTHROPIC_AUTH_TOKEN=$ANTHROPIC_AUTH_TOKEN"
-                 CMD_PREFIX="$CMD_PREFIX ANTHROPIC_BASE_URL=$ANTHROPIC_BASE_URL"
-                 CMD_PREFIX="$CMD_PREFIX CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=$CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
-            fi
-
-            # Set Pipefail to capture first command failure
-            set -o pipefail
-
-            # Execute and capture exit code
-            # We don't background here so we can wait and check exit code
-            echo "[Task $task_id] [$model_name] Environment check:"
-            echo "  - CLAUDE_BIN: $CLAUDE_BIN"
-            echo "  - CMD_PREFIX: $CMD_PREFIX"
-            echo "  - PWD: $(pwd)"
-            
-            # Build firejail wrapper if available
-            local USE_FIREJAIL=false
-            local FIREJAIL_ARGS=""
-            
-            if command -v firejail &> /dev/null; then
-                USE_FIREJAIL=true
-                # Strategy: blacklist other tasks, other models, and server code
-                local TASK_DIR="$(dirname $(pwd))"  # e.g., /root/project/tasks/TASKID
-                local TASKS_ROOT="$(dirname $TASK_DIR)"  # e.g., /root/project/tasks
-                local PROJECT_ROOT="$(dirname $TASKS_ROOT)"  # e.g., /root/project
-                local CURRENT_TASK="$(basename $TASK_DIR)"
-                local CURRENT_MODEL="$model_name"  # e.g., strawberry, potato
-                
-                # Blacklist server code directory
-                FIREJAIL_ARGS="--blacklist=$PROJECT_ROOT/claude-code-parallel-test"
-                
-                # Blacklist all other task directories (but not current task)
-                for dir in "$TASKS_ROOT"/*/; do
-                    local dir_name=$(basename "$dir")
-                    if [ "$dir_name" != "$CURRENT_TASK" ] && [ "$dir_name" != "temp_uploads" ]; then
-                        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$dir"
-                    fi
-                done
-                
-                # Blacklist other model directories within the same task
-                # This ensures strawberry can't access potato, etc.
-                for model_dir in "$TASK_DIR"/*/; do
-                    local model_dir_name=$(basename "$model_dir")
-                    if [ "$model_dir_name" != "$CURRENT_MODEL" ]; then
-                        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$model_dir"
-                    fi
-                done
-                
-                # Also blacklist other models' log files (MODEL.txt)
-                for log_file in "$TASK_DIR"/*.txt; do
-                    local log_name=$(basename "$log_file" .txt)
-                    if [ "$log_name" != "$CURRENT_MODEL" ] && [ "$log_name" != "prompt" ] && [ "$log_name" != "title" ]; then
-                        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$log_file"
-                    fi
-                done
-                
-                # Blacklist sensitive directories
-                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.ssh"
-                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.gnupg"
-                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/etc/shadow"
-                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/etc/passwd"
-                
-                echo "  - FIREJAIL: enabled (model $CURRENT_MODEL isolated from other models)"
-            else
-                echo "  - FIREJAIL: not installed, running without sandbox"
-            fi
-            
-            if [ "$USE_FIREJAIL" = true ]; then
-                # Run Claude inside firejail with isolation
-                # - blacklist: Block access to server code and other task directories
-                # - Claude works in original task directory
-                # Note: firejail runs as root (before $CMD_PREFIX) so blacklist works
-                if ! cat "$task_root/prompt.txt" | firejail --quiet --noprofile \
-                    $FIREJAIL_ARGS \
-                    -- $CMD_PREFIX "$CLAUDE_BIN" --model "$model_name" \
-                    --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
-                    --disallowedTools 'EnterPlanMode,ExitPlanMode' \
-                    --dangerously-skip-permissions \
-                    --output-format stream-json --verbose 2>&1 | \
-                    tee "$task_root/${model_name}.txt" | \
-                    node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
-                then
-                    EXIT_CODE=$?
-                    echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
-                    if [ $EXIT_CODE -eq 127 ]; then
-                        echo "  -> Error: Command not found. Check CLAUDE_BIN path."
-                    fi
-                else
-                    echo "[Task $task_id] [$model_name] 完成"
-                fi
-            else
-                # Run Claude without firejail (original behavior)
-                if ! cat "$task_root/prompt.txt" | $CMD_PREFIX "$CLAUDE_BIN" \
-                    --model "$model_name" \
-                    --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
-                    --disallowedTools 'EnterPlanMode,ExitPlanMode' \
-                    --dangerously-skip-permissions \
-                    --output-format stream-json --verbose 2>&1 | \
-                    tee "$task_root/${model_name}.txt" | \
-                    node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
-                then
-                    EXIT_CODE=$?
-                    echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
-                    if [ $EXIT_CODE -eq 127 ]; then
-                        echo "  -> Error: Command not found. Check CLAUDE_BIN path."
-                    fi
-                else
-                    echo "[Task $task_id] [$model_name] 完成"
-                fi
-            fi
-            
-            if [ "$USE_ISOLATION" = true ]; then
-                sudo -n -u claude-user chmod -R a+rX "$folder_path" 2>/dev/null || true
-            fi
-        ) &
+        run_single_model "$task_id" "$model_name" &
     done
     wait
 }
 
 INPUT_ARG="$1"
+MODEL_ARG="$2"
 
 # Prepare Isolation user home if needed
 if [ "$USE_ISOLATION" = true ]; then
@@ -242,7 +257,7 @@ if [ "$USE_ISOLATION" = true ]; then
     fi
 fi
 
-# Main Logic: Check if input is a File or Task ID
+# Main Logic: Check execution mode
 if [ -f "$INPUT_ARG" ]; then
     # Legacy Mode: Read from File
     echo "[Batch] Reading tasks from file: $INPUT_ARG"
@@ -251,13 +266,15 @@ if [ -f "$INPUT_ARG" ]; then
          if [[ -z "$task_id" ]]; then task_id=$(echo "$RANDOM" | md5sum | head -c 6 | tr '[:lower:]' '[:upper:]'); fi
          process_task "$base_dir" "$title" "$prompt" "$task_id" "$models_str"
     done < "$INPUT_ARG"
-else
-    # DB Mode: Input is Task ID
+elif [ -n "$INPUT_ARG" ] && [ -n "$MODEL_ARG" ]; then
+    # Single Model Mode: Run specific model for a task
     TASK_ID="$INPUT_ARG"
-    if [ -z "$TASK_ID" ]; then
-        echo "Error: Argument is neither a file nor a Task ID"
-        exit 1
-    fi
+    MODEL_NAME="$MODEL_ARG"
+    echo "[Batch] Running single model: $MODEL_NAME for task: $TASK_ID"
+    run_single_model "$TASK_ID" "$MODEL_NAME"
+elif [ -n "$INPUT_ARG" ]; then
+    # DB Mode: Input is Task ID (legacy - runs all pending models in parallel)
+    TASK_ID="$INPUT_ARG"
     echo "[Batch] Fetching details for Task ID: $TASK_ID"
     
     EVAL_STR=$(node -e "
@@ -267,11 +284,17 @@ else
         try {
             const db = new Database(dbPath, { readonly: true });
             const task = db.prepare('SELECT title, prompt, base_dir FROM tasks WHERE task_id = ?').get('$TASK_ID');
-            const runs = db.prepare("SELECT model_name FROM model_runs WHERE task_id = ? AND status = 'pending'").all('$TASK_ID');
+            // 只获取 pending 状态的模型，跳过已完成或正在运行的模型
+            const runs = db.prepare('SELECT model_name FROM model_runs WHERE task_id = ? AND status = ?').all('$TASK_ID', 'pending');
             
             if (!task) {
                 console.error('Task not found');
                 process.exit(1);
+            }
+            
+            if (runs.length === 0) {
+                console.error('No pending models to run');
+                process.exit(0);
             }
             
             const models = runs.map(r => r.model_name).join(',');
@@ -296,6 +319,12 @@ else
     
     eval "$EVAL_STR"
     process_task "$BASE_DIR" "$TITLE" "$PROMPT" "$TASK_ID" "$MODELS_STR"
+else
+    echo "Error: No arguments provided"
+    echo "Usage: $0 <task_id> [model_name]"
+    echo "  - With only task_id: runs all pending models for the task"
+    echo "  - With task_id and model_name: runs only the specified model"
+    exit 1
 fi
 
 echo "执行完毕！"

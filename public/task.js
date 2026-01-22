@@ -979,7 +979,7 @@ function renderStatisticsView() {
     // 状态翻译函数
     const translateStatus = (status) => {
         const map = {
-            'pending': '等待',
+            'pending': '排队中',
             'running': '运行中',
             'completed': '完成',
             'stopped': '中止'
@@ -1193,7 +1193,7 @@ function updateComparisonSide(side) {
         iframe.style.display = 'none';
         iframe.dataset.src = '';
         emptyState.style.display = 'flex';
-        const statusMap = { 'pending': '等待中', 'running': '运行中', 'completed': '已完成', 'stopped': '已中止' };
+        const statusMap = { 'pending': '排队中', 'running': '运行中', 'completed': '已完成', 'stopped': '已中止' };
         emptyState.innerHTML = `<p>暂无预览<br><span style="font-size:0.8em;color:#cbd5e1;">${statusMap[run.status] || run.status}</span></p>`;
     }
 }
