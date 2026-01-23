@@ -1862,7 +1862,21 @@ function autoOpenFeedbackSidebar() {
     if (!sidebar) return;
 
     if (!isStatsMode && !isCompareMode && activeFolder) {
-        openFeedbackSidebar();
+        const currentRun = currentRuns.find(r => r.folderName === activeFolder);
+        if (currentRun && (currentRun.status === 'completed' || currentRun.status === 'success' || currentRun.status === 'evaluated')) {
+            openFeedbackSidebar();
+        } else {
+            closeFeedbackSidebar();
+        }
+    } else {
+        closeFeedbackSidebar();
+    }
+}
+
+function closeFeedbackSidebar() {
+    const sidebar = document.getElementById('feedback-sidebar');
+    if (sidebar) {
+        sidebar.classList.remove('open');
     }
 }
 
@@ -1917,10 +1931,6 @@ async function openFeedbackSidebar() {
         console.error("Failed to load feedback:", e);
         body.innerHTML = '<div style="text-align:center; padding:2rem; color:#ef4444;">加载失败，请刷新重试</div>';
     }
-}
-
-function closeFeedbackSidebar() {
-    // Persistent sidebar, no-op
 }
 
 function renderFeedbackForm(existingMap = {}) {

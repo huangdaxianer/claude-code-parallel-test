@@ -315,7 +315,7 @@ function getStatusText(status) {
         'pending': '排队中',
         'running': '运行中',
         'completed': '已完成',
-        'evaluated': '已评价',
+        'evaluated': '已反馈',
         'stopped': '已中止',
         'unknown': '未知'
     };
