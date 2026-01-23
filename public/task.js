@@ -1563,7 +1563,7 @@ function renderFileTree(tree, rootFolder, pathPrefix = '') {
 }
 
 
-let activeTab = 'files';
+let activeTab = 'trajectory';
 function switchTab(tabName) {
     activeTab = tabName;
 
@@ -1573,6 +1573,7 @@ function switchTab(tabName) {
     });
 
     // Update content visibility
+    document.getElementById('tab-content-trajectory').classList.toggle('active', tabName === 'trajectory');
     document.getElementById('tab-content-files').classList.toggle('active', tabName === 'files');
     document.getElementById('tab-content-preview').classList.toggle('active', tabName === 'preview');
 
@@ -1608,53 +1609,7 @@ function closePreview() {
     previewModal.classList.remove('show');
 }
 
-// Resizer Logic
-document.addEventListener('DOMContentLoaded', () => {
-    const resizer = document.getElementById('resizer');
-    const leftPanel = document.getElementById('panel-left');
-    const mainContent = document.querySelector('.main-content');
-    let isResizing = false;
-
-    if (resizer && leftPanel && mainContent) {
-        resizer.addEventListener('mousedown', function (e) {
-            isResizing = true;
-            resizer.classList.add('dragging');
-            document.body.style.cursor = 'col-resize';
-            e.preventDefault(); // Prevent text selection
-        });
-
-        document.addEventListener('mousemove', function (e) {
-            if (!isResizing) return;
-
-            const containerRect = mainContent.getBoundingClientRect();
-            // Calculate pointer position relative to container
-            let newLeftWidth = e.clientX - containerRect.left;
-
-            // Limits
-            if (newLeftWidth < 200) newLeftWidth = 200;
-            if (newLeftWidth > containerRect.width - 200) newLeftWidth = containerRect.width - 200;
-
-            // Convert to percentage for responsiveness
-            const newWidthPercent = (newLeftWidth / containerRect.width) * 100;
-            leftPanel.style.width = `${newWidthPercent}% `;
-
-            // Disable iframe pointer events during drag to prevent iframe stealing mouse events
-            const iframe = document.getElementById('preview-iframe');
-            if (iframe) iframe.style.pointerEvents = 'none';
-        });
-
-        document.addEventListener('mouseup', function (e) {
-            if (isResizing) {
-                isResizing = false;
-                resizer.classList.remove('dragging');
-                document.body.style.cursor = 'default';
-                // Re-enable iframe events
-                const iframe = document.getElementById('preview-iframe');
-                if (iframe) iframe.style.pointerEvents = 'auto';
-            }
-        });
-    }
-});
+// Resizer logic removed as layout is now single-column tabbed.
 
 // Helper Functions
 function escapeHtml(text) {

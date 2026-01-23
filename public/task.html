@@ -54,7 +54,8 @@
             grid-column: 2;
             display: flex;
             align-items: center;
-            padding: 0 60px 0 1.5rem; /* 右侧留出空间给用户按钮 */
+            padding: 0 60px 0 1.5rem;
+            /* 右侧留出空间给用户按钮 */
             gap: 2rem;
             background: #ffffff;
             border-bottom: 1px solid #e2e8f0;
@@ -278,7 +279,8 @@
             scrollbar-width: none;
             padding-top: 0;
             padding-bottom: 0;
-            padding-right: 50px; /* 为用户按钮留出空间 */
+            padding-right: 50px;
+            /* 为用户按钮留出空间 */
         }
 
         .model-list::-webkit-scrollbar {
@@ -305,7 +307,7 @@
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
 
         .user-dropdown-trigger:hover {
@@ -322,7 +324,7 @@
             background: #fff;
             border: 1px solid #e2e8f0;
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             min-width: 140px;
             opacity: 0;
             visibility: hidden;
@@ -766,39 +768,16 @@
             background: #f8fafc;
         }
 
-        .panel-left {
-            width: 60%;
-            display: flex;
-            flex-direction: column;
-            border-right: none;
-            /* Border moved to resizer */
-            min-width: 200px;
-        }
-
-        .panel-right {
+        .panel-single {
             flex: 1;
             display: flex;
             flex-direction: column;
-            background: #f8fafc;
-            min-width: 200px;
-        }
-
-        /* Draggable Resizer */
-        .resizer {
-            width: 5px;
-            background: #e2e8f0;
-            cursor: col-resize;
-            transition: background 0.2s;
-            z-index: 10;
-        }
-
-        .resizer:hover,
-        .resizer.dragging {
-            background: #94a3b8;
+            overflow: hidden;
+            background: #ffffff;
         }
 
         .panel-header {
-            padding: 1rem 1.5rem;
+            padding: 0 1.5rem;
             border-bottom: 1px solid #e2e8f0;
             background: #ffffff;
             display: flex;
@@ -808,16 +787,48 @@
             flex-shrink: 0;
         }
 
-        .panel-right .panel-header {
-            background: #f8fafc;
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 1.5rem;
+            height: 100%;
         }
 
-        .panel-title {
-            font-weight: 600;
-            font-size: 1rem;
+        .tab {
+            background: none;
+            border: none;
+            font-size: 0.9rem;
+            color: #64748b;
+            cursor: pointer;
+            padding: 0 0.5rem;
+            height: 100%;
+            border-bottom: 2px solid transparent;
+            font-weight: 500;
+            transition: all 0.2s;
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            margin-bottom: -1px;
+            position: relative;
+        }
+
+        .tab:hover {
+            color: #000;
+        }
+
+        .tab.active {
+            color: #000;
+            border-bottom-color: #000;
+        }
+
+        .tab-content {
+            display: none;
+            flex: 1;
+            overflow: hidden;
+            flex-direction: column;
+        }
+
+        .tab-content.active {
+            display: flex;
         }
 
         /* Log Display */
@@ -1224,7 +1235,8 @@
             border-color: #10b981;
             background: #ecfdf5;
             color: #059669;
-            flex: 1; /* 确保在 has-file 状态下也占据剩余空间 */
+            flex: 1;
+            /* 确保在 has-file 状态下也占据剩余空间 */
         }
 
         .upload-folder-btn.has-file:hover {
@@ -1238,7 +1250,8 @@
         }
 
         .upload-folder-btn.has-file:hover .upload-folder-icon {
-            filter: grayscale(1) sepia(1) hue-rotate(-50deg) saturate(5); /* 将图标变红 */
+            filter: grayscale(1) sepia(1) hue-rotate(-50deg) saturate(5);
+            /* 将图标变红 */
         }
 
         .upload-folder-btn .delete-text {
@@ -1531,35 +1544,7 @@
             animation: spin 1s linear infinite;
         }
 
-        /* Tabs */
-        .tabs {
-            display: flex;
-            gap: 1.5rem;
-            height: 100%;
-        }
-
-        .tab {
-            background: none;
-            border: none;
-            font-size: 0.9rem;
-            color: #64748b;
-            cursor: pointer;
-            padding: 0 0.5rem;
-            height: 100%;
-            border-bottom: 2px solid transparent;
-            font-weight: 500;
-            transition: all 0.2s;
-        }
-
-        .tab:hover {
-            color: #000;
-        }
-
-        .tab.active {
-            color: #000;
-            border-bottom-color: #000;
-        }
-
+        /* Tab Content Styles */
         .tab-content {
             display: none;
             flex: 1;
@@ -1893,7 +1878,7 @@
                 <h1>Web Coding</h1>
             </div>
         </div>
-        
+
         <!-- User Info Bar - Dropdown Style -->
         <div id="user-info-bar" class="user-dropdown-container">
             <button class="user-dropdown-trigger" id="user-dropdown-trigger">👤</button>
@@ -2015,27 +2000,13 @@
             </div>
 
             <main class="main-content" id="main-content">
-                <!-- Left Panel: Logs -->
-                <div class="panel-left" id="panel-left">
-
-                    <div id="log-display" class="log-display">
-                        <div class="empty-state">
-                            <div class="loading-spinner"></div>
-                            <p style="margin-top: 1rem; font-size: 0.9rem;">Waiting for logs...</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Resizer -->
-                <div class="resizer" id="resizer"></div>
-
-                <!-- Right Panel: Files & Preview -->
-                <div class="panel-right">
-                    <div class="panel-header"
-                        style="height: 60px; padding: 0 1.5rem; justify-content: flex-start; gap: 1rem;">
-                        <div class="tabs" style="margin-right: 1rem;">
-                            <button class="tab active" data-tab="files" onclick="switchTab('files')">Files</button>
-                            <button class="tab" data-tab="preview" onclick="switchTab('preview')">Preview</button>
+                <div class="panel-single">
+                    <div class="panel-header">
+                        <div class="tabs">
+                            <button class="tab active" data-tab="trajectory"
+                                onclick="switchTab('trajectory')">执行轨迹</button>
+                            <button class="tab" data-tab="files" onclick="switchTab('files')">产物</button>
+                            <button class="tab" data-tab="preview" onclick="switchTab('preview')">预览</button>
                         </div>
                         <div style="display: flex; gap: 0.5rem;">
                             <button class="action-btn" onclick="downloadFiles()" title="下载当前产物">
@@ -2047,8 +2018,18 @@
                         </div>
                     </div>
 
+                    <!-- Trajectory Tab Content -->
+                    <div id="tab-content-trajectory" class="tab-content active">
+                        <div id="log-display" class="log-display">
+                            <div class="empty-state">
+                                <div class="loading-spinner"></div>
+                                <p style="margin-top: 1rem; font-size: 0.9rem;">Waiting for logs...</p>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Files Tab Content -->
-                    <div id="tab-content-files" class="tab-content active">
+                    <div id="tab-content-files" class="tab-content">
                         <div id="file-list-container" class="file-list-container">
                             <ul id="file-list" class="file-list">
                                 <!-- Files will be injected here -->
@@ -2135,7 +2116,7 @@
                                     style="min-height:120px;"></textarea>
                             </div>
                         </div>
-                        
+
                         <!-- 批量任务预览区域（初始隐藏） -->
                         <div id="batch-preview-area" style="display:none;">
                             <div class="batch-preview-table-wrapper">
@@ -2154,11 +2135,11 @@
                                 <button type="button" id="clear-batch-btn" class="btn-text">清除</button>
                             </div>
                         </div>
-                        
+
                         <!-- 隐藏的文件输入 -->
                         <input type="file" id="folder-input" webkitdirectory directory style="display:none">
                         <input type="file" id="csv-file-input" accept=".csv" style="display:none">
-                        
+
                         <!-- 上传按钮区域 -->
                         <div class="upload-buttons-row">
                             <button type="button" id="browse-folder-btn" class="upload-folder-btn">
@@ -2202,7 +2183,8 @@
                             </div>
                         </div>
 
-                        <button id="add-task-btn" class="btn-primary btn-empty-prompt" style="margin-top:1rem;">启动任务</button>
+                        <button id="add-task-btn" class="btn-primary btn-empty-prompt"
+                            style="margin-top:1rem;">启动任务</button>
                     </div>
                 </div>
             </div>
