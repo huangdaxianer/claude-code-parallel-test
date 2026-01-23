@@ -6,6 +6,7 @@ let selectedTasks = new Set();
 let refreshInterval = null;
 let queueStatus = { maxParallelSubtasks: 5, runningSubtasks: 0, pendingSubtasks: 0 };
 let allModelNames = []; // Store all unique model names across all tasks
+let prevModelNamesKey = ''; // Track previous model names to avoid unnecessary header rebuilds
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -108,9 +109,7 @@ async function updateMaxParallel() {
 
 // Fetch all tasks
 async function refreshTasks() {
-    const spinner = document.getElementById('loading-spinner');
-    spinner.style.display = 'inline-block';
-
+    // Note: Removed spinner show/hide to prevent layout shifts that cause page "jumping"
     try {
         const res = await fetch('/api/admin/tasks');
         allTasks = await res.json();
@@ -123,8 +122,6 @@ async function refreshTasks() {
         updateLastRefresh();
     } catch (e) {
         console.error('Failed to fetch tasks:', e);
-    } finally {
-        spinner.style.display = 'none';
     }
 }
 
@@ -146,6 +143,13 @@ function extractAllModelNames() {
 function updateTableHeader() {
     const thead = document.getElementById('tasks-thead');
     if (!thead) return;
+
+    // Check if model columns have changed
+    const newModelNamesKey = allModelNames.join('|');
+    if (newModelNamesKey === prevModelNamesKey) {
+        return; // No change, skip update
+    }
+    prevModelNamesKey = newModelNamesKey;
 
     // Build header row
     let headerHTML = `
@@ -216,10 +220,10 @@ function applyFilters() {
     renderTasks();
 }
 
-// Render tasks table
+// Render tasks table with smart DOM updates to avoid flicker
 function renderTasks() {
     const tbody = document.getElementById('tasks-tbody');
-    const totalCols = 4 + allModelNames.length; // checkbox + task + user + models + time + actions
+    const totalCols = 5 + allModelNames.length; // checkbox + task + user + models + time + actions
 
     if (filteredTasks.length === 0) {
         tbody.innerHTML = `
@@ -232,7 +236,28 @@ function renderTasks() {
         return;
     }
 
-    tbody.innerHTML = filteredTasks.map(task => {
+    // Build a map of existing rows by taskId
+    const existingRows = {};
+    tbody.querySelectorAll('tr[data-task-id]').forEach(row => {
+        existingRows[row.dataset.taskId] = row;
+    });
+
+    // Track which task IDs should exist
+    const currentTaskIds = new Set(filteredTasks.map(t => t.taskId));
+
+    // Remove rows that no longer exist
+    Object.keys(existingRows).forEach(taskId => {
+        if (!currentTaskIds.has(taskId)) {
+            existingRows[taskId].remove();
+            delete existingRows[taskId];
+        }
+    });
+
+    // Clear any placeholder rows (like loading or empty state)
+    tbody.querySelectorAll('tr:not([data-task-id])').forEach(row => row.remove());
+
+    // Process each task
+    filteredTasks.forEach((task, index) => {
         const isChecked = selectedTasks.has(task.taskId);
         const createdAt = formatDateTime(task.createdAt);
 
@@ -242,55 +267,135 @@ function renderTasks() {
             modelStatusMap[run.modelName] = run.status;
         });
 
-        // Generate model status cells (dot only, no text)
-        const modelCells = allModelNames.map(modelName => {
-            const status = modelStatusMap[modelName];
-            const statusClass = getModelStatusClass(status);
-            return `<td class="model-col-cell"><span class="model-status ${statusClass}"></span></td>`;
-        }).join('');
+        // Check if row exists
+        let row = existingRows[task.taskId];
+        if (!row) {
+            // Create new row
+            row = document.createElement('tr');
+            row.dataset.taskId = task.taskId;
+            row.innerHTML = buildRowContent(task, isChecked, createdAt, modelStatusMap);
 
-        // Action buttons based on status (check if any model is running or pending)
-        const hasRunningOrPending = (task.runs || []).some(r => r.status === 'running' || r.status === 'pending');
-        let actionButtons = '';
-        if (hasRunningOrPending) {
-            actionButtons = `
-                <button class="action-btn action-btn-stop" onclick="stopTask('${task.taskId}')">中止</button>
-            `;
+            // Insert at correct position
+            const nextSibling = tbody.children[index];
+            if (nextSibling) {
+                tbody.insertBefore(row, nextSibling);
+            } else {
+                tbody.appendChild(row);
+            }
+            existingRows[task.taskId] = row;
+        } else {
+            // Update existing row - only update changed parts
+            updateRowContent(row, task, isChecked, createdAt, modelStatusMap);
+
+            // Ensure correct position
+            const currentIndex = Array.from(tbody.children).indexOf(row);
+            if (currentIndex !== index) {
+                const nextSibling = tbody.children[index];
+                if (nextSibling && nextSibling !== row) {
+                    tbody.insertBefore(row, nextSibling);
+                } else if (!nextSibling) {
+                    tbody.appendChild(row);
+                }
+            }
         }
-        actionButtons += `
-            <button class="action-btn action-btn-view" onclick="viewTask('${task.taskId}')">查看</button>
-            <button class="action-btn action-btn-delete" onclick="deleteTask('${task.taskId}')">删除</button>
-        `;
-
-        return `
-            <tr>
-                <td class="checkbox-cell">
-                    <input type="checkbox" class="task-checkbox" 
-                           data-task-id="${task.taskId}" 
-                           ${isChecked ? 'checked' : ''} 
-                           onchange="toggleTaskSelection('${task.taskId}')">
-                </td>
-                <td class="task-cell">
-                    <div class="task-title" title="${escapeHtml(task.title || 'Untitled')}">${escapeHtml(task.title || 'Untitled')}</div>
-                    <div class="task-id">${task.taskId}</div>
-                </td>
-                <td>
-                    <span class="user-badge">${escapeHtml(task.username)}</span>
-                </td>
-                ${modelCells}
-                <td>
-                    <span class="timestamp">${createdAt}</span>
-                </td>
-                <td>
-                    <div class="action-buttons">
-                        ${actionButtons}
-                    </div>
-                </td>
-            </tr>
-        `;
-    }).join('');
+    });
 
     updateBatchActions();
+}
+
+// Build the full HTML content for a row
+function buildRowContent(task, isChecked, createdAt, modelStatusMap) {
+    // Generate model status cells (dot only, no text)
+    const modelCells = allModelNames.map(modelName => {
+        const status = modelStatusMap[modelName];
+        const statusClass = getModelStatusClass(status);
+        return `<td class="model-col-cell" data-model="${escapeHtml(modelName)}"><span class="model-status ${statusClass}"></span></td>`;
+    }).join('');
+
+    // Action buttons based on status (check if any model is running or pending)
+    const hasRunningOrPending = (task.runs || []).some(r => r.status === 'running' || r.status === 'pending');
+    const actionButtons = buildActionButtons(task.taskId, hasRunningOrPending);
+
+    return `
+        <td class="checkbox-cell">
+            <input type="checkbox" class="task-checkbox" 
+                   data-task-id="${task.taskId}" 
+                   ${isChecked ? 'checked' : ''} 
+                   onchange="toggleTaskSelection('${task.taskId}')">
+        </td>
+        <td class="task-cell">
+            <div class="task-title" title="${escapeHtml(task.title || 'Untitled')}">${escapeHtml(task.title || 'Untitled')}</div>
+            <div class="task-id">${task.taskId}</div>
+        </td>
+        <td>
+            <span class="user-badge">${escapeHtml(task.username)}</span>
+        </td>
+        ${modelCells}
+        <td>
+            <span class="timestamp">${createdAt}</span>
+        </td>
+        <td class="actions-cell">
+            <div class="action-buttons">
+                ${actionButtons}
+            </div>
+        </td>
+    `;
+}
+
+// Update only the changed parts of an existing row
+function updateRowContent(row, task, isChecked, createdAt, modelStatusMap) {
+    // Update checkbox state without replacing it
+    const checkbox = row.querySelector('input.task-checkbox');
+    if (checkbox && checkbox.checked !== isChecked) {
+        checkbox.checked = isChecked;
+    }
+
+    // Update model status dots
+    allModelNames.forEach(modelName => {
+        const status = modelStatusMap[modelName];
+        const newStatusClass = getModelStatusClass(status);
+        // Find cell by iterating through model cells
+        const cells = row.querySelectorAll('td.model-col-cell');
+        for (const cell of cells) {
+            if (cell.dataset.model === modelName) {
+                const dot = cell.querySelector('.model-status');
+                if (dot) {
+                    // Only update if class changed
+                    const currentClasses = dot.className;
+                    const expectedClasses = `model-status ${newStatusClass}`;
+                    if (currentClasses !== expectedClasses) {
+                        dot.className = expectedClasses;
+                    }
+                }
+                break;
+            }
+        }
+    });
+
+    // Update action buttons if needed
+    const hasRunningOrPending = (task.runs || []).some(r => r.status === 'running' || r.status === 'pending');
+    const actionsCell = row.querySelector('.actions-cell');
+    if (actionsCell) {
+        const hasStopButton = actionsCell.querySelector('.action-btn-stop') !== null;
+        if (hasRunningOrPending !== hasStopButton) {
+            // Need to update action buttons
+            const actionButtons = buildActionButtons(task.taskId, hasRunningOrPending);
+            actionsCell.innerHTML = `<div class="action-buttons">${actionButtons}</div>`;
+        }
+    }
+}
+
+// Build action buttons HTML
+function buildActionButtons(taskId, hasRunningOrPending) {
+    let actionButtons = '';
+    if (hasRunningOrPending) {
+        actionButtons = `<button class="action-btn action-btn-stop" onclick="stopTask('${taskId}')">中止</button>`;
+    }
+    actionButtons += `
+        <button class="action-btn action-btn-view" onclick="viewTask('${taskId}')">查看</button>
+        <button class="action-btn action-btn-delete" onclick="deleteTask('${taskId}')">删除</button>
+    `;
+    return actionButtons;
 }
 
 // Get model status CSS class
