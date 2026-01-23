@@ -1697,6 +1697,7 @@ app.delete('/api/tasks/:taskId', (req, res) => {
 
 // 下载任务轨迹 (打包任务目录)
 // Download Task Trajectory (Zip task directory)
+// Download Task Trajectory (Zip task directory)
 app.get('/api/tasks/:taskId/download', (req, res) => {
     const { taskId } = req.params;
     const taskDir = path.join(TASKS_DIR, taskId);
@@ -1705,22 +1706,51 @@ app.get('/api/tasks/:taskId/download', (req, res) => {
         return res.status(404).json({ error: 'Task directory not found' });
     }
 
-    // Set headers
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="task_${taskId}.zip"`);
+    const tempZipName = `task_${taskId}_${Date.now()}.zip`;
+    const tempZipPath = path.join(TASKS_DIR, 'temp_uploads', tempZipName);
 
+    // Ensure temp dir exists
+    const tempDir = path.dirname(tempZipPath);
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+    console.log(`[Download] Starting zip generation for ${taskId} to ${tempZipPath}`);
+
+    const output = fs.createWriteStream(tempZipPath);
     const archive = archiver('zip', {
         zlib: { level: 1 } // Use lower compression level for speed
     });
 
-    // Handle archive errors
+    output.on('close', function () {
+        console.log(`[Download] Zip created: ${archive.pointer()} total bytes`);
+
+        // Send file with correct headers - res.download automatically sets Content-Length
+        res.download(tempZipPath, `task_${taskId}.zip`, (err) => {
+            if (err) {
+                console.error('[Download] Send error:', err);
+                if (!res.headersSent) res.status(500).send({ error: 'Download failed during transmission' });
+            }
+
+            // Clean up temp file
+            try {
+                if (fs.existsSync(tempZipPath)) {
+                    fs.unlinkSync(tempZipPath);
+                    console.log(`[Download] Temp file deleted: ${tempZipPath}`);
+                }
+            } catch (e) {
+                console.error(`[Download] Failed to delete temp file: ${tempZipPath}`, e);
+            }
+        });
+    });
+
     archive.on('error', (err) => {
         console.error('[Download] Archive error:', err);
         if (!res.headersSent) res.status(500).send({ error: err.message });
+
+        // Try to clean up incomplete file
+        try { if (fs.existsSync(tempZipPath)) fs.unlinkSync(tempZipPath); } catch (e) { }
     });
 
-    // Pipe archive data to the response
-    archive.pipe(res);
+    archive.pipe(output);
 
     // Append files excluding node_modules and hidden files
     console.log(`[Download] Archiving task directory: ${taskDir}`);
@@ -1738,7 +1768,6 @@ app.get('/api/tasks/:taskId/download', (req, res) => {
         follow: false
     });
 
-    // Finalize the archive
     archive.finalize();
 });
 
