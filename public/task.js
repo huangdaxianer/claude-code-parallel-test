@@ -508,8 +508,8 @@ function handleCsvUpload(e) {
     const reader = new FileReader();
     reader.onload = function (event) {
         const content = event.target.result;
-        // 按行分割，过滤空行
-        const lines = content.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+        const lines = parseCSV(content);
 
         if (lines.length === 0) {
             alert('CSV 文件为空或格式不正确');
@@ -526,6 +526,80 @@ function handleCsvUpload(e) {
         alert('读取文件失败');
     };
     reader.readAsText(file);
+}
+
+/**
+ * Robust CSV Parser that handles:
+ * 1. Quoted fields containing newlines
+ * 2. Escaped quotes ("")
+ * 3. UTF-8 BOM
+ * 4. Windows/Unix line endings
+ * Returns array of first-column values (prompts)
+ */
+function parseCSV(text) {
+    if (!text) return [];
+
+    // Remove BOM
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+
+    // Normalize newlines for easier parsing? 
+    // Actually, state machine handles them fine.
+
+    const results = [];
+    let currentField = '';
+    let insideQuotes = false;
+    let row = [];
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const nextChar = text[i + 1];
+
+        if (char === '"') {
+            if (insideQuotes && nextChar === '"') {
+                // Escaped double quote
+                currentField += '"';
+                i++; // Skip next quote
+            } else {
+                // Toggle quote state
+                insideQuotes = !insideQuotes;
+            }
+        } else if (char === ',' && !insideQuotes) {
+            // End of field
+            row.push(currentField);
+            currentField = '';
+        } else if ((char === '\r' || char === '\n') && !insideQuotes) {
+            // End of row
+            if (char === '\r' && nextChar === '\n') i++; // Handle CRLF
+
+            row.push(currentField);
+            if (row.length > 0 && row[0]) {
+                // Determine if we should trim? Usually prompts shouldn't have surrounding whitespace if not quoted,
+                // but if quoted, we might want to keep internal whitespace?
+                // The currentField logic keeps everything.
+                // Let's trim the FINAL string if desired, or just trust the CSV.
+                // Previously `line.trim()` was used on the whole line.
+                // Let's trim the result prompt to be safe/clean.
+                const prompt = row[0].trim();
+                if (prompt) results.push(prompt);
+            }
+
+            row = [];
+            currentField = '';
+        } else {
+            currentField += char;
+        }
+    }
+
+    // Handle last row
+    if (currentField || row.length > 0) {
+        row.push(currentField);
+        if (row.length > 0 && row[0]) {
+            const prompt = row[0].trim();
+            if (prompt) results.push(prompt);
+        }
+    }
+
+    return results;
 }
 
 function showBatchPreview() {
@@ -546,7 +620,7 @@ function showBatchPreview() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>${index + 1}</td>
-            <td title="${prompt.replace(/"/g, '&quot;')}">${prompt.length > 80 ? prompt.substring(0, 80) + '...' : prompt}</td>
+            <td title="${prompt.replace(/"/g, '&quot;')}">${prompt}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -654,7 +728,7 @@ async function startNewTask() {
             alert(`成功启动 ${successCount} 个任务`);
             closeNewTaskModal();
             clearBatchTasks();
-            loadTasks(); // 刷新任务列表
+            fetchTaskHistory(); // 刷新任务列表
             if (firstTaskId) {
                 loadTask(firstTaskId);
             }
@@ -1334,7 +1408,13 @@ function renderMainContent() {
 
                     for (let i = startIndex; i < currentCount; i++) {
                         const event = events[i];
-                        const textTypes = ['TXT', 'USER'];
+
+                        // Skip USER type events - don't display them in the trajectory
+                        if (event.type === 'USER') {
+                            continue;
+                        }
+
+                        const textTypes = ['TXT'];
 
                         if (textTypes.includes(event.type)) {
                             const div = document.createElement('div');
@@ -1348,17 +1428,7 @@ function renderMainContent() {
                                 contentHtml = escapeHtml(event.preview_text);
                             }
 
-                            // For USER, add a small inline tag if it's not the plain TXT type
-                            if (event.type !== 'TXT') {
-                                div.innerHTML = `
-                                    <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
-                                        <span class="json-type-badge ${event.status_class || 'type-content'}" style="margin-top: 0.2rem; flex-shrink: 0; min-width: 4rem; text-align: center; margin-right: 0;">${event.type}</span>
-                                        <div style="flex: 1;">${contentHtml}</div>
-                                    </div>
-                                `;
-                            } else {
-                                div.innerHTML = contentHtml;
-                            }
+                            div.innerHTML = contentHtml;
                             fragment.appendChild(div);
                         } else {
                             const details = document.createElement('details');
@@ -1369,6 +1439,8 @@ function renderMainContent() {
                             summary.className = 'json-summary';
                             const safePreview = event.preview_text.length > 200 ? event.preview_text.slice(0, 200) + '...' : event.preview_text;
 
+                            // Use event.type directly (already transformed to SUBAGENT for Task tools in ingest.js)
+                            // preview_text already contains the description for SUBAGENT
                             summary.innerHTML = `
         <span class="json-type-badge ${event.status_class || 'type-tool'}">${event.type}</span>
         <span class="json-preview-text" title="${escapeHtml(event.preview_text)}">${escapeHtml(safePreview)}</span>
