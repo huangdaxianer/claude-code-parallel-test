@@ -282,7 +282,11 @@ rl.on('line', (line) => {
 
                 // 1. Update Stats
                 if (obj.type === 'result') {
-                    stats.status = 'completed';
+                    if (obj.is_error) {
+                        stats.status = 'stopped';
+                    } else {
+                        stats.status = 'completed';
+                    }
                     if (obj.duration_ms) stats.duration = (obj.duration_ms / 1000).toFixed(1);
                     else if (obj.duration) stats.duration = (obj.duration / 1000).toFixed(1);
                     if (obj.usage) {
@@ -304,6 +308,45 @@ rl.on('line', (line) => {
                             if (stats.toolCounts.hasOwnProperty(name)) stats.toolCounts[name]++;
                         }
                     });
+                }
+
+                // If we received a full result, we should flush and exit to prevent hanging on open pipes
+                // (e.g. if a background process keeps stdout open)
+                if (obj.type === 'result') {
+                    // 2. Structured Log Entry (process this last log entry first)
+                    const entries = getLogEntries(obj, part);
+                    entries.forEach(entry => {
+                        insertLog.run(
+                            runId,
+                            lineNumber,
+                            entry.skip ? 'HIDDEN_' + entry.type : entry.type,
+                            entry.toolName || null,
+                            entry.toolUseId || null,
+                            entry.previewText || '',
+                            entry.typeClass || (entry.skip ? 'type-tool' : 'type-content'),
+                            entry.content
+                        );
+                    });
+
+                    // Flush stats immediately
+                    flush();
+
+                    // Check if project is previewable (only if completed successfully)
+                    if (stats.status === 'completed') {
+                        const TASKS_DIR = path.join(__dirname, '../tasks'); // re-declare to be safe or use global if available (it is global at line 5)
+                        const projectPath = path.join(TASKS_DIR, taskId, modelName);
+                        try {
+                            const type = detectProjectType(projectPath);
+                            const isPreviewable = (type === 'node' || type === 'html') ? 1 : 0;
+                            db.prepare('UPDATE model_runs SET previewable = ? WHERE id = ?').run(isPreviewable, runId);
+                        } catch (e) {
+                            console.error('[Ingest] Failed to update previewable status:', e);
+                        }
+                    }
+
+                    // EXIT explicitly
+                    process.stderr.write(`[Ingest] Task finished with status: ${stats.status}. Exiting.\\n`);
+                    process.exit(0);
                 }
 
                 // 2. Structured Log Entry

@@ -61,6 +61,25 @@ if [ -z "$CLAUDE_BIN" ]; then
     fi
 fi
 
+# Set a trap to cleanup child processes on exit
+cleanup() {
+    echo "[Batch] Cleaning up child processes..."
+    # Kill all child processes in the current process group
+    # We use ps to find all PIDs that have the current script as ancestor
+    pkill -P $$ 2>/dev/null
+    
+    # Also try to kill background jobs explicitly
+    jobs -p | xargs kill 2>/dev/null
+    
+    # Force kill any firejail instances related to this task if we can identify them?
+    # Actually, pkill -P $$ should catch the direct children (firejail/claude).
+    # But grandchildren (like python server) might be detached if they used double-fork or setsid.
+    
+    # Wait a bit
+    sleep 1
+}
+trap cleanup EXIT
+
 # Function to run a single model
 run_single_model() {
     local task_id="$1"
