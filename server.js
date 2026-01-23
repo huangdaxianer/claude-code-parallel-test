@@ -446,6 +446,72 @@ app.post('/api/feedback/submit', (req, res) => {
     }
 });
 
+// Get feedback statistics (Admin)
+app.get('/api/admin/feedback-stats', (req, res) => {
+    try {
+        // Fetch all feedback responses with related task, user, and question info
+        const feedbackData = db.prepare(`
+            SELECT 
+                t.task_id,
+                t.title,
+                u.username,
+                fr.model_name,
+                fq.id as question_id,
+                fq.stem as question_stem,
+                fq.short_name as question_short_name,
+                fr.score,
+                fr.comment,
+                fr.created_at
+            FROM feedback_responses fr
+            JOIN feedback_questions fq ON fr.question_id = fq.id
+            JOIN tasks t ON fr.task_id = t.task_id
+            JOIN users u ON t.user_id = u.id
+            WHERE fq.is_active = 1
+            ORDER BY t.created_at DESC, u.username, fr.model_name, fq.id
+        `).all();
+
+        // Group by task, user, and model
+        const grouped = {};
+        feedbackData.forEach(row => {
+            const key = `${row.task_id}|${row.username}|${row.model_name}`;
+            if (!grouped[key]) {
+                grouped[key] = {
+                    taskId: row.task_id,
+                    title: row.title,
+                    username: row.username,
+                    modelName: row.model_name,
+                    responses: []
+                };
+            }
+            grouped[key].responses.push({
+                questionId: row.question_id,
+                questionStem: row.question_stem,
+                questionShortName: row.question_short_name,
+                score: row.score,
+                comment: row.comment,
+                createdAt: row.created_at
+            });
+        });
+
+        // Convert to array and get latest submission time for each group
+        const result = Object.values(grouped).map(group => {
+            const latestTime = group.responses.reduce((latest, r) => {
+                return new Date(r.createdAt) > new Date(latest) ? r.createdAt : latest;
+            }, group.responses[0]?.createdAt || null);
+
+            return {
+                ...group,
+                submittedAt: latestTime
+            };
+        });
+
+        res.json({ success: true, data: result });
+    } catch (e) {
+        console.error('Error fetching feedback stats:', e);
+        res.status(500).json({ error: 'Failed to fetch feedback statistics' });
+    }
+});
+
 // ========== Task API (with user filtering) ==========
 
 // 获取所有任务 (从数据库读取，支持用户过滤)

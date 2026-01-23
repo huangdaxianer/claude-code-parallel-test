@@ -498,6 +498,11 @@ function switchTab(tabId) {
     // Update panes
     document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
     document.getElementById(`tab-${tabId}`).classList.add('active');
+
+    // Load data for feedback stats tab when activated
+    if (tabId === 'feedback-stats') {
+        fetchFeedbackStats();
+    }
 }
 
 async function fetchQuestions() {
@@ -675,4 +680,211 @@ async function toggleQuestionActive(id, isActive) {
         console.error(e);
         alert('请求失败');
     }
+}
+
+// ========== Feedback Statistics Logic ==========
+
+let feedbackStatsData = [];
+let allActiveQuestions = [];
+
+async function fetchFeedbackStats() {
+    try {
+        // Fetch stats data
+        const statsRes = await fetch('/api/admin/feedback-stats');
+        const statsResult = await statsRes.json();
+
+        if (!statsResult.success) {
+            throw new Error(statsResult.error || 'Failed to fetch stats');
+        }
+
+        feedbackStatsData = statsResult.data;
+
+        // Fetch active questions to build column headers
+        const questionsRes = await fetch('/api/admin/questions');
+        allActiveQuestions = (await questionsRes.json()).filter(q => q.is_active);
+
+        renderFeedbackStats();
+    } catch (e) {
+        console.error('Error fetching feedback stats:', e);
+        const tbody = document.getElementById('feedback-stats-tbody');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="empty-state">
+                    <p>加载失败: ${e.message}</p>
+                </td>
+            </tr>
+        `;
+    }
+}
+
+function refreshFeedbackStats() {
+    fetchFeedbackStats();
+}
+
+function renderFeedbackStats() {
+    const thead = document.getElementById('feedback-stats-thead');
+    const tbody = document.getElementById('feedback-stats-tbody');
+
+    if (feedbackStatsData.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="${5 + allActiveQuestions.length}" class="empty-state">
+                    <p>暂无反馈数据</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    // Build table header with dynamic question columns
+    let headerHTML = `
+        <tr>
+            <th>任务ID</th>
+            <th>任务标题</th>
+            <th>用户</th>
+            <th>模型</th>
+    `;
+
+    allActiveQuestions.forEach(q => {
+        const displayName = q.short_name || q.stem;
+        headerHTML += `<th style="text-align: center;">${escapeHtml(displayName)}</th>`;
+    });
+
+    headerHTML += `
+            <th>提交时间</th>
+        </tr>
+    `;
+    thead.innerHTML = headerHTML;
+
+    // Build table body
+    tbody.innerHTML = feedbackStatsData.map(row => {
+        // Create a map of questionId -> response for quick lookup
+        const responseMap = {};
+        row.responses.forEach(r => {
+            responseMap[r.questionId] = r;
+        });
+
+        // Generate question score cells
+        const questionCells = allActiveQuestions.map(q => {
+            const response = responseMap[q.id];
+            if (!response || response.score === null || response.score === undefined) {
+                return `<td style="text-align: center; color: #94a3b8;">-</td>`;
+            }
+
+            // Color code based on score (assuming 1-5 scale, adjust if needed)
+            const maxScore = q.scoring_type === 'stars_5' ? 5 : 3;
+            const scorePercent = response.score / maxScore;
+            let color = '#94a3b8'; // gray for neutral
+            if (scorePercent >= 0.8) color = '#22c55e'; // green for high
+            else if (scorePercent >= 0.6) color = '#3b82f6'; // blue for medium-high
+            else if (scorePercent >= 0.4) color = '#f59e0b'; // orange for medium
+            else color = '#ef4444'; // red for low
+
+            const title = response.comment ? `评论: ${response.comment}` : '';
+            return `<td style="text-align: center; color: ${color}; font-weight: 600;" title="${escapeHtml(title)}">${response.score}</td>`;
+        }).join('');
+
+        const submittedAt = formatDateTime(row.submittedAt);
+
+        return `
+            <tr>
+                <td>
+                    <div class="task-id">${escapeHtml(row.taskId)}</div>
+                </td>
+                <td>
+                    <div class="task-title" title="${escapeHtml(row.title || 'Untitled')}">${escapeHtml(row.title || 'Untitled')}</div>
+                </td>
+                <td>
+                    <span class="user-badge">${escapeHtml(row.username)}</span>
+                </td>
+                <td>
+                    <span style="font-size: 0.85rem; color: #475569;">${escapeHtml(row.modelName)}</span>
+                </td>
+                ${questionCells}
+                <td>
+                    <span class="timestamp">${submittedAt}</span>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function downloadFeedbackStatsCSV() {
+    if (feedbackStatsData.length === 0) {
+        alert('暂无数据可下载');
+        return;
+    }
+
+    // Build CSV header
+    const headers = ['任务ID', '任务标题', '用户', '模型'];
+    allActiveQuestions.forEach(q => {
+        const displayName = q.short_name || q.stem;
+        headers.push(displayName);
+        if (q.has_comment) {
+            headers.push(`${displayName} - 评论`);
+        }
+    });
+    headers.push('提交时间');
+
+    // Build CSV rows
+    const rows = feedbackStatsData.map(row => {
+        const responseMap = {};
+        row.responses.forEach(r => {
+            responseMap[r.questionId] = r;
+        });
+
+        const csvRow = [
+            row.taskId,
+            row.title || 'Untitled',
+            row.username,
+            row.modelName
+        ];
+
+        allActiveQuestions.forEach(q => {
+            const response = responseMap[q.id];
+            csvRow.push(response?.score ?? '');
+            if (q.has_comment) {
+                csvRow.push(response?.comment ?? '');
+            }
+        });
+
+        csvRow.push(formatDateTime(row.submittedAt));
+
+        return csvRow;
+    });
+
+    // Escape CSV values
+    const escapeCSV = (value) => {
+        if (value === null || value === undefined) return '';
+        const str = String(value);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+    };
+
+    // Generate CSV content
+    const csvContent = [
+        headers.map(escapeCSV).join(','),
+        ...rows.map(row => row.map(escapeCSV).join(','))
+    ].join('\n');
+
+    // Add BOM for Excel UTF-8 support
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+
+    // Create download link
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+
+    // Generate filename with timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    link.setAttribute('download', `feedback_stats_${timestamp}.csv`);
+
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }

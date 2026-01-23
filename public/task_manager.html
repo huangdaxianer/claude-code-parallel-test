@@ -655,6 +655,7 @@
         <div class="tabs-nav">
             <button class="tab-btn active" onclick="switchTab('tasks')">任务列表</button>
             <button class="tab-btn" onclick="switchTab('eval')">评测配置</button>
+            <button class="tab-btn" onclick="switchTab('feedback-stats')">反馈统计</button>
         </div>
 
         <!-- Task Management Tab -->
@@ -785,6 +786,39 @@
                 <div class="empty-state">
                     <p>加载中...</p>
                 </div>
+            </div>
+        </div>
+
+        <!-- Feedback Statistics Tab -->
+        <div id="tab-feedback-stats" class="tab-pane">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h2 style="font-size: 1.25rem; font-weight: 600;">反馈统计</h2>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn" onclick="downloadFeedbackStatsCSV()">📥 下载 CSV</button>
+                    <button class="btn" onclick="refreshFeedbackStats()">🔄 刷新</button>
+                </div>
+            </div>
+
+            <div class="table-container" style="overflow-x: auto;">
+                <table class="tasks-table" id="feedback-stats-table">
+                    <thead id="feedback-stats-thead">
+                        <tr>
+                            <th>任务ID</th>
+                            <th>任务标题</th>
+                            <th>用户</th>
+                            <th>模型</th>
+                            <!-- Dynamic question columns will be inserted here -->
+                            <th>提交时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="feedback-stats-tbody">
+                        <tr>
+                            <td colspan="5" class="empty-state">
+                                <p>加载中...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
