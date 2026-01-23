@@ -2196,54 +2196,9 @@
                             <button class="tab" data-tab="preview" onclick="switchTab('preview')">在线预览（Beta）</button>
                         </div>
                         <div style="display: flex; gap: 0.5rem;">
-                            <!-- Download Dropdown -->
-                            <div class="action-btn-group" style="position: relative;">
-                                <button class="action-btn" id="download-btn-trigger">
-                                    <span>📥</span> 下载产物
-                                </button>
-                                <div class="action-dropdown-menu" id="download-dropdown">
-                                    <div class="action-dropdown-item" onclick="downloadFiles(false)">
-                                        <div style="font-weight:500;">下载核心代码</div>
-                                        <div style="font-size:0.75rem; color:#94a3b8;">不包含 node_modules (推荐)</div>
-                                    </div>
-                                    <div class="action-dropdown-item" onclick="downloadFiles(true)">
-                                        <div style="font-weight:500;">下载完整项目</div>
-                                        <div style="font-size:0.75rem; color:#94a3b8;">包含所有依赖文件</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <style>
-                                .action-btn-group:hover .action-dropdown-menu {
-                                    display: block;
-                                }
-
-                                .action-dropdown-menu {
-                                    display: none;
-                                    position: absolute;
-                                    top: 100%;
-                                    right: 0;
-                                    /* Align right to avoid overflow */
-                                    margin-top: 4px;
-                                    background: white;
-                                    border: 1px solid #e2e8f0;
-                                    border-radius: 8px;
-                                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-                                    width: 200px;
-                                    z-index: 50;
-                                    padding: 4px;
-                                }
-
-                                .action-dropdown-item {
-                                    padding: 8px 12px;
-                                    cursor: pointer;
-                                    border-radius: 4px;
-                                    text-align: left;
-                                }
-
-                                .action-dropdown-item:hover {
-                                    background: #f1f5f9;
-                                }
-                            </style>
+                            <button class="action-btn" onclick="downloadFiles()" title="下载当前产物">
+                                <span>📥</span> 下载产物
+                            </button>
                             <button class="action-btn" onclick="openIncrementalTaskModal()" title="基于当前结果继续开发">
                                 <span>✨</span> 增量开发
                             </button>

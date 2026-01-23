@@ -1454,22 +1454,12 @@ app.get('/api/download_zip', (req, res) => {
 
     archive.pipe(output);
 
-    // Append files using glob
+    // Append files
     console.log(`[ZIP] Archiving directory: ${folderPath}`);
-
-    const ignoreList = (req.query.full === 'true') ?
-        ['**/.DS_Store'] : // Full download: only ignore OS files
-        [
-            '**/node_modules/**',
-            '**/node_modules',
-            '**/.git/**',
-            '**/.git',
-            '**/.DS_Store'
-        ]; // Core download: ignore deps and git
 
     archive.glob('**/*', {
         cwd: folderPath,
-        ignore: ignoreList,
+        ignore: ['**/.DS_Store'],
         dot: true,
         follow: false
     });
@@ -1753,19 +1743,9 @@ app.get('/api/tasks/:taskId/download', (req, res) => {
     // Append files
     console.log(`[Download] Archiving task directory: ${taskDir}`);
 
-    const ignoreList = (req.query.full === 'true') ?
-        ['**/.DS_Store'] : // Full download: only ignore OS files
-        [
-            '**/node_modules/**',
-            '**/node_modules',
-            '**/.git/**',
-            '**/.git',
-            '**/.DS_Store'
-        ]; // Core download: ignore deps and git
-
     archive.glob('**/*', {
         cwd: taskDir,
-        ignore: ignoreList,
+        ignore: ['**/.DS_Store'],
         dot: true,
         follow: false
     });
