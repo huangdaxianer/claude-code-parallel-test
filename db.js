@@ -13,6 +13,20 @@ if (!fs.existsSync(TASKS_DIR)) {
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 
+// Cleanup duplicates before index creation
+try {
+    db.prepare(`
+        DELETE FROM feedback_responses 
+        WHERE id NOT IN (
+            SELECT MIN(id) 
+            FROM feedback_responses 
+            GROUP BY task_id, model_name, question_id
+        )
+    `).run();
+} catch (e) {
+    console.error('[DB] Deduplication error:', e.message);
+}
+
 // Initialize Tables
 db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -71,7 +85,33 @@ db.exec(`
         FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS feedback_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stem TEXT NOT NULL,
+        short_name TEXT,
+        scoring_type TEXT NOT NULL, -- 'stars_3' or 'stars_5'
+        description TEXT,
+        has_comment INTEGER DEFAULT 0, -- 0 or 1
+        is_required INTEGER DEFAULT 0, -- 0 or 1
+        is_active INTEGER DEFAULT 1, -- 0 or 1
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS feedback_responses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        question_id INTEGER NOT NULL,
+        score INTEGER,
+        comment TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(question_id) REFERENCES feedback_questions(id),
+        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_task_model_question ON feedback_responses(task_id, model_name, question_id);
     CREATE INDEX IF NOT EXISTS idx_queue_status ON task_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_feedback_task_model ON feedback_responses(task_id, model_name);
 `);
 
 // Migration: Add new columns to log_entries if they don't exist
@@ -81,6 +121,8 @@ try { db.exec("ALTER TABLE log_entries ADD COLUMN tool_use_id TEXT"); } catch (e
 try { db.exec("ALTER TABLE log_entries ADD COLUMN preview_text TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE log_entries ADD COLUMN status_class TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE model_runs ADD COLUMN previewable INTEGER DEFAULT 0"); } catch (e) { }
+try { db.exec("ALTER TABLE feedback_questions ADD COLUMN short_name TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE feedback_questions ADD COLUMN options_json TEXT"); } catch (e) { }
 
 // Migration: Add user_id column to tasks if it doesn't exist
 try { db.exec("ALTER TABLE tasks ADD COLUMN user_id INTEGER"); } catch (e) { }

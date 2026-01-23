@@ -231,6 +231,11 @@
             background: #94a3b8;
         }
 
+        .status-evaluated::before {
+            background: #a855f7;
+            /* 紫色 */
+        }
+
         /* Task Title */
         .task-cell {
             width: 120px;
@@ -297,6 +302,11 @@
             background: #cbd5e1;
         }
 
+        .model-status.evaluated {
+            background: #a855f7;
+            /* 紫色 */
+        }
+
         /* Legend */
         .legend {
             display: flex;
@@ -342,6 +352,11 @@
 
         .legend-dot.not-started {
             background: #cbd5e1;
+        }
+
+        .legend-dot.evaluated {
+            background: #a855f7;
+            /* 紫色 */
         }
 
         /* Model column header */
@@ -495,7 +510,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* User badge */
@@ -545,6 +562,86 @@
             color: #1e40af;
             font-weight: 500;
         }
+
+        /* Tabs */
+        .tabs-nav {
+            display: flex;
+            gap: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            margin-bottom: 2rem;
+        }
+
+        .tab-btn {
+            padding: 1rem 0.5rem;
+            color: #64748b;
+            font-weight: 500;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            background: none;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+            font-size: 1rem;
+            margin-bottom: -1px;
+        }
+
+        .tab-btn:hover {
+            color: #334155;
+        }
+
+        .tab-btn.active {
+            color: #0f172a;
+            border-bottom-color: #0f172a;
+        }
+
+        .tab-pane {
+            display: none;
+        }
+
+        .tab-pane.active {
+            display: block;
+        }
+
+        /* Question List */
+        .question-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .question-item {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .q-content {
+            flex: 1;
+        }
+
+        .q-stem {
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+            color: #1e293b;
+        }
+
+        .q-meta {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.85rem;
+            color: #64748b;
+        }
+
+        .q-tag {
+            background: #f1f5f9;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+        }
     </style>
 </head>
 
@@ -554,132 +651,220 @@
         <span id="loading-spinner" style="display:none"></span>
         <span id="last-refresh" style="display:none"></span>
 
-        <!-- Stats Cards -->
-        <div class="stats-cards">
-            <div class="stat-card">
-                <div class="stat-card-label">总任务数</div>
-                <div class="stat-card-value" id="stat-total">0</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-card-label">运行中子任务</div>
-                <div class="stat-card-value running" id="stat-running">0</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-card-label">排队中子任务</div>
-                <div class="stat-card-value pending" id="stat-pending">0</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-card-label">已完成任务</div>
-                <div class="stat-card-value completed" id="stat-completed">0</div>
-            </div>
-            <div class="stat-card" style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);">
-                <div class="stat-card-label">最大并行子任务数</div>
-                <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
-                    <input type="number" id="max-parallel-input" min="1" max="50" value="5" 
-                           style="width: 60px; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 1rem; font-weight: 600;">
-                    <button class="btn btn-primary" onclick="updateMaxParallel()" style="padding: 0.5rem 0.75rem;">
-                        保存
-                    </button>
+        <!-- Tabs Nav -->
+        <div class="tabs-nav">
+            <button class="tab-btn active" onclick="switchTab('tasks')">任务列表</button>
+            <button class="tab-btn" onclick="switchTab('eval')">评测配置</button>
+        </div>
+
+        <!-- Task Management Tab -->
+        <div id="tab-tasks" class="tab-pane active">
+            <!-- Stats Cards -->
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <div class="stat-card-label">总任务数</div>
+                    <div class="stat-card-value" id="stat-total">0</div>
                 </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">运行中子任务</div>
+                    <div class="stat-card-value running" id="stat-running">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">排队中子任务</div>
+                    <div class="stat-card-value pending" id="stat-pending">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-card-label">已完成任务</div>
+                    <div class="stat-card-value completed" id="stat-completed">0</div>
+                </div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);">
+                    <div class="stat-card-label">最大并行子任务数</div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                        <input type="number" id="max-parallel-input" min="1" max="50" value="5"
+                            style="width: 60px; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 1rem; font-weight: 600;">
+                        <button class="btn btn-primary" onclick="updateMaxParallel()" style="padding: 0.5rem 0.75rem;">
+                            保存
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filters">
+                <div class="filter-group">
+                    <label>用户:</label>
+                    <select class="filter-select" id="filter-user" onchange="applyFilters()">
+                        <option value="">全部用户</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>状态:</label>
+                    <select class="filter-select" id="filter-status" onchange="applyFilters()">
+                        <option value="">全部状态</option>
+                        <option value="running">运行中</option>
+                        <option value="pending">排队中</option>
+                        <option value="completed">已完成</option>
+                        <option value="stopped">已中止</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>搜索:</label>
+                    <input type="text" class="filter-input" id="filter-search" placeholder="搜索任务标题或 Prompt..."
+                        oninput="applyFilters()">
+                </div>
+                <!-- Legend -->
+                <div class="legend">
+                    <div class="legend-item">
+                        <span class="legend-dot running"></span>
+                        <span>运行中</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot pending"></span>
+                        <span>排队中</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot completed"></span>
+                        <span>已完成</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot stopped"></span>
+                        <span>已中止</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-dot not-started"></span>
+                        <span>未启动</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Batch Actions -->
+            <div class="batch-actions" id="batch-actions">
+                <span id="selected-count">已选择 0 个任务</span>
+                <button class="btn btn-warning" onclick="batchStop()">批量中止</button>
+                <button class="btn btn-danger" onclick="batchDelete()">批量删除</button>
+                <button class="btn" onclick="clearSelection()">取消选择</button>
+            </div>
+
+            <!-- Table -->
+            <div class="table-container" style="overflow-x: auto;">
+                <table class="tasks-table">
+                    <thead id="tasks-thead">
+                        <tr>
+                            <th class="checkbox-cell">
+                                <input type="checkbox" class="task-checkbox" id="select-all"
+                                    onchange="toggleSelectAll()">
+                            </th>
+                            <th>任务</th>
+                            <th>用户</th>
+                            <!-- Model columns will be inserted here dynamically -->
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tasks-tbody">
+                        <tr>
+                            <td colspan="10" class="empty-state">
+                                <div class="loading-spinner"></div>
+                                <p>加载中...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <!-- Filters -->
-        <div class="filters">
-            <div class="filter-group">
-                <label>用户:</label>
-                <select class="filter-select" id="filter-user" onchange="applyFilters()">
-                    <option value="">全部用户</option>
-                </select>
+        <!-- Evaluation Config Tab -->
+        <div id="tab-eval" class="tab-pane">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h2 style="font-size: 1.25rem; font-weight: 600;">评测问卷配置</h2>
+                <button class="btn btn-primary" onclick="openQuestionModal()">+ 新建题目</button>
             </div>
-            <div class="filter-group">
-                <label>状态:</label>
-                <select class="filter-select" id="filter-status" onchange="applyFilters()">
-                    <option value="">全部状态</option>
-                    <option value="running">运行中</option>
-                    <option value="pending">排队中</option>
-                    <option value="completed">已完成</option>
-                    <option value="stopped">已中止</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>搜索:</label>
-                <input type="text" class="filter-input" id="filter-search" placeholder="搜索任务标题或 Prompt..." oninput="applyFilters()">
-            </div>
-            <!-- Legend -->
-            <div class="legend">
-                <div class="legend-item">
-                    <span class="legend-dot running"></span>
-                    <span>运行中</span>
-                </div>
-                <div class="legend-item">
-                    <span class="legend-dot pending"></span>
-                    <span>排队中</span>
-                </div>
-                <div class="legend-item">
-                    <span class="legend-dot completed"></span>
-                    <span>已完成</span>
-                </div>
-                <div class="legend-item">
-                    <span class="legend-dot stopped"></span>
-                    <span>已中止</span>
-                </div>
-                <div class="legend-item">
-                    <span class="legend-dot not-started"></span>
-                    <span>未启动</span>
-                </div>
-            </div>
-        </div>
 
-        <!-- Batch Actions -->
-        <div class="batch-actions" id="batch-actions">
-            <span id="selected-count">已选择 0 个任务</span>
-            <button class="btn btn-warning" onclick="batchStop()">批量中止</button>
-            <button class="btn btn-danger" onclick="batchDelete()">批量删除</button>
-            <button class="btn" onclick="clearSelection()">取消选择</button>
-        </div>
-
-        <!-- Table -->
-        <div class="table-container" style="overflow-x: auto;">
-            <table class="tasks-table">
-                <thead id="tasks-thead">
-                    <tr>
-                        <th class="checkbox-cell">
-                            <input type="checkbox" class="task-checkbox" id="select-all" onchange="toggleSelectAll()">
-                        </th>
-                        <th>任务</th>
-                        <th>用户</th>
-                        <!-- Model columns will be inserted here dynamically -->
-                        <th>创建时间</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody id="tasks-tbody">
-                    <tr>
-                        <td colspan="10" class="empty-state">
-                            <div class="loading-spinner"></div>
-                            <p>加载中...</p>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+            <div id="question-list" class="question-list">
+                <!-- Injected via JS -->
+                <div class="empty-state">
+                    <p>加载中...</p>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Prompt Modal -->
-    <div class="modal-overlay" id="prompt-modal">
+    <!-- Question Modal -->
+    <div class="modal-overlay" id="question-modal">
         <div class="modal">
             <div class="modal-header">
-                <h3>任务 Prompt</h3>
-                <button class="modal-close" onclick="closePromptModal()">&times;</button>
+                <h3 id="question-modal-title">新建题目</h3>
+                <button class="modal-close" onclick="closeQuestionModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <pre id="prompt-content"></pre>
+                <form id="question-form" onsubmit="handleQuestionSubmit(event)">
+                    <input type="hidden" id="q-id">
+
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">题干 (必填)</label>
+                        <input type="text" id="q-stem" class="filter-input" style="width:100%" required
+                            placeholder="例如：该模型的代码质量如何？">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">简称 (后台展示用)</label>
+                        <input type="text" id="q-short-name" class="filter-input" style="width:100%"
+                            placeholder="例如：代码质量">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">评分类型 (必填)</label>
+                        <select id="q-type" class="filter-select" style="width:100%" required
+                            onchange="toggleOptionsContainer()">
+                            <option value="stars_5">五星评分 (1-5)</option>
+                            <option value="stars_3">三星评分 (Good/Meh/Bad)</option>
+                        </select>
+                    </div>
+
+                    <div id="q-options-container" style="margin-bottom: 1rem; display:none;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">选项描述 (选填，不填展示默认文案)</label>
+                        <div id="q-options-inputs" style="display:flex; flex-direction:column; gap:0.5rem;">
+                            <!-- Dynamically injected -->
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">辅助说明</label>
+                        <textarea id="q-desc" class="filter-input" style="width:100%; min-height:80px;"
+                            placeholder="展示在题目下方的说明文字..."></textarea>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 1.5rem; display:flex; gap:2rem;">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                            <input type="checkbox" id="q-comment"> 允许评论
+                        </label>
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                            <input type="checkbox" id="q-required"> 设为必填
+                        </label>
+                    </div>
+
+                    <div style="display:flex; justify-content:flex-end; gap:1rem;">
+                        <button type="button" class="btn" onclick="closeQuestionModal()">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
             </div>
         </div>
-    </div>
 
-    <script src="task_manager.js"></script>
+        <!-- Prompt Modal -->
+        <div class="modal-overlay" id="prompt-modal">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>任务 Prompt</h3>
+                    <button class="modal-close" onclick="closePromptModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <pre id="prompt-content"></pre>
+                </div>
+            </div>
+        </div>
+
+        <script src="task_manager.js"></script>
 </body>
 
 </html>

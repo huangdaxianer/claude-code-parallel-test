@@ -12,11 +12,14 @@ document.addEventListener('DOMContentLoaded', () => {
     init();
 });
 
+let allQuestions = []; // Store questions
+
 function init() {
     // Load initial data
     fetchUsers();
     fetchQueueStatus();
     refreshTasks();
+    fetchQuestions(); // Load questions
 
     // Setup auto-refresh (every 3 seconds)
     refreshInterval = setInterval(() => {
@@ -44,7 +47,7 @@ async function fetchUsers() {
     try {
         const res = await fetch('/api/admin/users');
         const users = await res.json();
-        
+
         const select = document.getElementById('filter-user');
         users.forEach(user => {
             const option = document.createElement('option');
@@ -62,7 +65,7 @@ async function fetchQueueStatus() {
     try {
         const res = await fetch('/api/admin/queue-status');
         queueStatus = await res.json();
-        
+
         // Update the max parallel input
         const input = document.getElementById('max-parallel-input');
         if (input && document.activeElement !== input) {
@@ -77,19 +80,19 @@ async function fetchQueueStatus() {
 async function updateMaxParallel() {
     const input = document.getElementById('max-parallel-input');
     const value = parseInt(input.value, 10);
-    
+
     if (isNaN(value) || value < 1 || value > 50) {
         alert('并行数必须在 1-50 之间');
         return;
     }
-    
+
     try {
         const res = await fetch('/api/admin/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ maxParallelSubtasks: value })
         });
-        
+
         if (res.ok) {
             const config = await res.json();
             queueStatus.maxParallelSubtasks = config.maxParallelSubtasks;
@@ -111,7 +114,7 @@ async function refreshTasks() {
     try {
         const res = await fetch('/api/admin/tasks');
         allTasks = await res.json();
-        
+
         // Extract all unique model names from all tasks
         extractAllModelNames();
         updateTableHeader();
@@ -232,7 +235,7 @@ function renderTasks() {
     tbody.innerHTML = filteredTasks.map(task => {
         const isChecked = selectedTasks.has(task.taskId);
         const createdAt = formatDateTime(task.createdAt);
-        
+
         // Create a map of modelName -> status for quick lookup
         const modelStatusMap = {};
         (task.runs || []).forEach(run => {
@@ -312,6 +315,7 @@ function getStatusText(status) {
         'pending': '排队中',
         'running': '运行中',
         'completed': '已完成',
+        'evaluated': '已评价',
         'stopped': '已中止',
         'unknown': '未知'
     };
@@ -482,4 +486,193 @@ function showPrompt(taskId) {
 
 function closePromptModal() {
     document.getElementById('prompt-modal').classList.remove('show');
+}
+
+// ========== Evaluation Config Logic ==========
+
+function switchTab(tabId) {
+    // Update nav
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.tab-btn[onclick="switchTab('${tabId}')"]`).classList.add('active');
+
+    // Update panes
+    document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+    document.getElementById(`tab-${tabId}`).classList.add('active');
+}
+
+async function fetchQuestions() {
+    try {
+        const res = await fetch('/api/admin/questions');
+        allQuestions = await res.json();
+        renderQuestions();
+    } catch (e) {
+        console.error('Failed to fetch questions:', e);
+    }
+}
+
+function renderQuestions() {
+    const list = document.getElementById('question-list');
+    if (allQuestions.length === 0) {
+        list.innerHTML = '<div class="empty-state"><p>暂无题目，请点击右上角新建</p></div>';
+        return;
+    }
+
+    list.innerHTML = allQuestions.map(q => `
+        <div class="question-item">
+            <div class="q-content">
+                <div class="q-stem">
+                    ${escapeHtml(q.stem)}
+                    ${q.short_name ? `<span style="font-size:0.8rem; color:#64748b; font-weight:normal; margin-left:0.5rem;">(${escapeHtml(q.short_name)})</span>` : ''}
+                </div>
+                <div class="q-meta">
+                    <span class="q-tag">${q.scoring_type === 'stars_5' ? '五星评分' : '三星评分'}</span>
+                    ${q.is_required ? '<span class="q-tag" style="background:#fef3c7; color:#d97706">必填</span>' : '<span class="q-tag">选填</span>'}
+                    ${q.has_comment ? '<span class="q-tag">允许评论</span>' : ''}
+                    ${q.is_active ? '<span class="q-tag" style="background:#dcfce7; color:#166534">已启用</span>' : '<span class="q-tag" style="background:#f1f5f9; color:#64748b">已停用</span>'}
+                </div>
+                ${q.description ? `<div style="margin-top:0.5rem; color:#64748b; font-size:0.9rem;">${escapeHtml(q.description)}</div>` : ''}
+            </div>
+            <div style="display:flex; gap:0.5rem; flex-direction:column;">
+                <button class="btn" style="padding:0.3rem 0.6rem; font-size:0.8rem;" onclick='openQuestionModal(${JSON.stringify(q)})'>编辑</button>
+                <button class="btn ${q.is_active ? 'btn-danger' : 'btn-primary'}" style="padding:0.3rem 0.6rem; font-size:0.8rem;" onclick="toggleQuestionActive(${q.id}, ${!q.is_active})">
+                    ${q.is_active ? '停用' : '启用'}
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function openQuestionModal(question = null) {
+    const modal = document.getElementById('question-modal');
+    const title = document.getElementById('question-modal-title');
+
+    // Reset form
+    document.getElementById('question-form').reset();
+    document.getElementById('q-id').value = '';
+
+    if (question) {
+        title.textContent = '编辑题目';
+        document.getElementById('q-id').value = question.id;
+        document.getElementById('q-stem').value = question.stem;
+        document.getElementById('q-short-name').value = question.short_name || '';
+        document.getElementById('q-type').value = question.scoring_type;
+        document.getElementById('q-desc').value = question.description || '';
+        document.getElementById('q-comment').checked = !!question.has_comment;
+        document.getElementById('q-required').checked = !!question.is_required;
+
+        // Cannot change type of existing question to prevent data inconsistency? 
+        // For simplicity, we allow it, but in production might want to disable.
+    } else {
+        title.textContent = '新建题目';
+    }
+
+    toggleOptionsContainer(question ? JSON.parse(question.options_json || '[]') : []);
+    modal.classList.add('show');
+}
+
+function toggleOptionsContainer(existingOptions = []) {
+    const type = document.getElementById('q-type').value;
+    const container = document.getElementById('q-options-container');
+    const inputsDiv = document.getElementById('q-options-inputs');
+
+    inputsDiv.innerHTML = '';
+    const count = type === 'stars_5' ? 5 : 3;
+    container.style.display = 'block';
+
+    for (let i = 1; i <= count; i++) {
+        const div = document.createElement('div');
+        div.style.display = 'flex';
+        div.style.gap = '0.5rem';
+        div.style.alignItems = 'center';
+
+        const label = document.createElement('span');
+        label.textContent = `${i}分:`;
+        label.style.width = '40px';
+        label.style.fontSize = '0.9rem';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'filter-input';
+        input.style.flex = '1';
+        input.placeholder = `选项 ${i} 的说明...`;
+        input.value = existingOptions[i - 1] || '';
+        input.dataset.index = i - 1;
+
+        div.appendChild(label);
+        div.appendChild(input);
+        inputsDiv.appendChild(div);
+    }
+}
+
+function closeQuestionModal() {
+    document.getElementById('question-modal').classList.remove('show');
+}
+
+async function handleQuestionSubmit(e) {
+    e.preventDefault();
+
+    const id = document.getElementById('q-id').value;
+    const optionInputs = document.querySelectorAll('#q-options-inputs input');
+    const options = Array.from(optionInputs).map(input => input.value.trim());
+
+    const payload = {
+        stem: document.getElementById('q-stem').value,
+        short_name: document.getElementById('q-short-name').value,
+        scoring_type: document.getElementById('q-type').value,
+        description: document.getElementById('q-desc').value,
+        has_comment: document.getElementById('q-comment').checked,
+        is_required: document.getElementById('q-required').checked,
+        options_json: JSON.stringify(options)
+    };
+
+    try {
+        let res;
+        if (id) {
+            // Update
+            res = await fetch(`/api/admin/questions/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        } else {
+            // Create
+            res = await fetch('/api/admin/questions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        }
+
+        const data = await res.json();
+        if (data.success) {
+            closeQuestionModal();
+            fetchQuestions();
+        } else {
+            alert('保存失败: ' + (data.error || '未知错误'));
+        }
+    } catch (err) {
+        alert('请求失败');
+        console.error(err);
+    }
+}
+
+async function toggleQuestionActive(id, isActive) {
+    if (!confirm(`确定要${isActive ? '启用' : '停用'}该题目吗？`)) return;
+
+    try {
+        const res = await fetch(`/api/admin/questions/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_active: isActive })
+        });
+
+        if (res.ok) {
+            fetchQuestions();
+        } else {
+            alert('操作失败');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('请求失败');
+    }
 }

@@ -30,7 +30,7 @@ if (!savedUserStr) {
 }
 
 // Logout function
-window.logout = function() {
+window.logout = function () {
     localStorage.removeItem('claude_user');
     window.location.href = '/login.html';
 };
@@ -41,7 +41,7 @@ let currentRuns = [];
 let activeFolder = null;
 let lastTaskResult = null;
 let isCompareMode = false;
-let isStatsMode = true;
+let isStatsMode = false;
 let compareLeftRun = null;
 let compareRightRun = null;
 let activeMenuTaskId = null; // Track which task's menu is open
@@ -51,6 +51,7 @@ let batchPrompts = []; // 批量任务的 prompts 数组
 // 获取 Task ID (Initial)
 const urlParams = new URLSearchParams(window.location.search);
 let currentTaskId = urlParams.get('id');
+let initialModel = urlParams.get('model');
 
 // Global Interval ID for clearing
 let refreshIntervalId = null;
@@ -87,13 +88,13 @@ function init() {
     document.getElementById('csv-file-input').addEventListener('change', handleCsvUpload);
     document.getElementById('browse-csv-btn').addEventListener('click', triggerCsvBrowse);
     document.getElementById('clear-batch-btn').addEventListener('click', clearBatchTasks);
-    
+
     // 监听 prompt 输入框变化，更新按钮样式
     document.getElementById('task-prompt').addEventListener('input', updateStartButtonStyle);
 
     // Initial Task Load
     if (currentTaskId) {
-        loadTask(currentTaskId, false); // false = don't push state
+        loadTask(currentTaskId, false, initialModel); // false = don't push state
     }
 
     // Close modal on click outside
@@ -137,8 +138,9 @@ function init() {
     window.addEventListener('popstate', (event) => {
         const params = new URLSearchParams(window.location.search);
         const id = params.get('id');
+        const model = params.get('model');
         if (id) {
-            loadTask(id, false);
+            loadTask(id, false, model);
         } else {
             currentTaskId = null;
             // Reset UI to empty state could go here
@@ -146,20 +148,56 @@ function init() {
     });
 }
 
+function updateUrl(taskId, modelParam) {
+    if (!taskId) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('id', taskId);
+
+    if (modelParam) {
+        // If modelParam is a folder path (e.g. "TASKID/modelname"), extract just the modelname
+        let cleanModel = modelParam;
+        if (modelParam.includes('/')) {
+            const parts = modelParam.split('/');
+            cleanModel = parts[parts.length - 1];
+        }
+        url.searchParams.set('model', cleanModel);
+    } else {
+        url.searchParams.delete('model');
+    }
+    window.history.pushState({ path: url.toString() }, '', url.toString());
+}
+
 // Function to Switch Tasks without Reload
-function loadTask(id, pushState = true) {
+function loadTask(id, pushState = true, initialModel = null) {
     if (pushState) {
-        const newUrl = `?id=${id}`;
-        window.history.pushState({ path: newUrl }, '', newUrl);
+        updateUrl(id, initialModel);
     }
 
     currentTaskId = id;
 
     // Reset State
     currentRuns = [];
-    activeFolder = null;
-    isCompareMode = false;
-    isStatsMode = true; // Default back to Stats or stay? Usually reset is cleaner.
+
+    // Set initial mode based on initialModel
+    if (initialModel === 'stats' || !initialModel) {
+        isStatsMode = true;
+        isCompareMode = false;
+        activeFolder = null;
+    } else if (initialModel === 'compare') {
+        isStatsMode = false;
+        isCompareMode = true;
+        activeFolder = null;
+    } else {
+        isStatsMode = false;
+        isCompareMode = false;
+        // If initialModel is just a model name (e.g. "potato"), 
+        // prefix it with currentTaskId/ (e.g. "2P7L1Q/potato") to match folderName
+        if (initialModel.includes('/')) {
+            activeFolder = initialModel;
+        } else {
+            activeFolder = `${id}/${initialModel}`;
+        }
+    }
 
     // Clear Interval
     if (refreshIntervalId) clearInterval(refreshIntervalId);
@@ -290,23 +328,23 @@ function openNewTaskModal() {
     document.getElementById('browse-folder-btn').classList.remove('has-file');
     document.getElementById('browse-folder-btn').querySelector('.folder-name').textContent = '';
     selectedFolderPath = '';
-    
+
     // 重置批量任务状态
     batchPrompts = [];
     document.getElementById('single-task-area').style.display = 'block';
     document.getElementById('batch-preview-area').style.display = 'none';
-    
+
     // 显示上传按钮区域
     const uploadButtonsRow = document.querySelector('.upload-buttons-row');
     if (uploadButtonsRow) uploadButtonsRow.style.display = 'flex';
-    
+
     // 确保 CSV 按钮也显示
     const csvBtn = document.getElementById('browse-csv-btn');
     if (csvBtn) csvBtn.style.display = 'flex';
-    
+
     document.getElementById('csv-file-input').value = '';
     document.getElementById('browse-csv-btn').classList.remove('has-file');
-    
+
     // 重置 prompt 并更新按钮样式
     document.getElementById('task-prompt').value = '';
     updateStartButtonStyle();
@@ -352,11 +390,11 @@ function triggerFolderBrowse() {
         browseBtn.classList.remove('has-file');
         browseBtn.querySelector('.folder-name').textContent = '';
         document.getElementById('folder-input').value = '';
-        
+
         // 恢复上传批量任务按钮显示
         const csvBtn = document.getElementById('browse-csv-btn');
         if (csvBtn) csvBtn.style.display = 'flex';
-        
+
         return;
     }
     document.getElementById('folder-input').click();
@@ -441,7 +479,7 @@ async function handleFolderUpload(e) {
             browseBtn.classList.add('has-file');
             browseBtn.querySelector('.folder-name').textContent = folderName;
             iconSpan.textContent = '📁';
-            
+
             // 隐藏批量上传按钮
             if (csvBtn) csvBtn.style.display = 'none';
         } else {
@@ -468,11 +506,11 @@ function handleCsvUpload(e) {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = function(event) {
+    reader.onload = function (event) {
         const content = event.target.result;
         // 按行分割，过滤空行
         const lines = content.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-        
+
         if (lines.length === 0) {
             alert('CSV 文件为空或格式不正确');
             return;
@@ -480,11 +518,11 @@ function handleCsvUpload(e) {
 
         // 保存批量任务
         batchPrompts = lines;
-        
+
         // 显示批量预览区域
         showBatchPreview();
     };
-    reader.onerror = function() {
+    reader.onerror = function () {
         alert('读取文件失败');
     };
     reader.readAsText(file);
@@ -494,13 +532,13 @@ function showBatchPreview() {
     // 隐藏单任务区域，显示批量预览区域
     document.getElementById('single-task-area').style.display = 'none';
     document.getElementById('batch-preview-area').style.display = 'block';
-    
+
     // 隐藏上传按钮区域
     document.querySelector('.upload-buttons-row').style.display = 'none';
-    
+
     // 更新任务数量
     document.getElementById('batch-task-count').textContent = `已加载 ${batchPrompts.length} 个任务`;
-    
+
     // 渲染表格
     const tbody = document.getElementById('batch-preview-tbody');
     tbody.innerHTML = '';
@@ -512,7 +550,7 @@ function showBatchPreview() {
         `;
         tbody.appendChild(tr);
     });
-    
+
     // 更新按钮样式
     document.getElementById('browse-csv-btn').classList.add('has-file');
     updateStartButtonForBatch();
@@ -520,18 +558,18 @@ function showBatchPreview() {
 
 function clearBatchTasks() {
     batchPrompts = [];
-    
+
     // 显示单任务区域，隐藏批量预览区域
     document.getElementById('single-task-area').style.display = 'block';
     document.getElementById('batch-preview-area').style.display = 'none';
-    
+
     // 显示上传按钮区域
     document.querySelector('.upload-buttons-row').style.display = 'flex';
-    
+
     // 重置 CSV 输入
     document.getElementById('csv-file-input').value = '';
     document.getElementById('browse-csv-btn').classList.remove('has-file');
-    
+
     // 恢复按钮样式
     updateStartButtonStyle();
 }
@@ -574,21 +612,21 @@ async function startNewTask() {
 
     const btn = document.getElementById('add-task-btn');
     btn.disabled = true;
-    
+
     // 批量任务模式
     if (batchPrompts.length > 0) {
         btn.textContent = `启动中 (0/${batchPrompts.length})...`;
-        
+
         try {
             let successCount = 0;
             let firstTaskId = null;
-            
+
             for (let i = 0; i < batchPrompts.length; i++) {
                 const prompt = batchPrompts[i];
                 const newTaskId = Math.random().toString(36).substring(2, 8).toUpperCase();
-                
+
                 if (i === 0) firstTaskId = newTaskId;
-                
+
                 const newTask = {
                     baseDir: selectedFolderPath,
                     title: 'Initializing...',
@@ -612,7 +650,7 @@ async function startNewTask() {
                     btn.textContent = `启动中 (${successCount}/${batchPrompts.length})...`;
                 }
             }
-            
+
             alert(`成功启动 ${successCount} 个任务`);
             closeNewTaskModal();
             clearBatchTasks();
@@ -629,10 +667,10 @@ async function startNewTask() {
         }
         return;
     }
-    
+
     // 单任务模式
     let prompt = document.getElementById('task-prompt').value.trim();
-    
+
     // 如果没有输入 prompt，自动选择一个随机 prompt
     if (!prompt) {
         prompt = getRandomPrompt();
@@ -751,6 +789,7 @@ async function fetchTaskDetails() {
                 mainContent.classList.remove('hidden');
                 renderMainContent();
             }
+            autoOpenFeedbackSidebar(); // Auto-open feedback sidebar if task is completed/evaluated
         }
     } catch (err) {
         console.error('Failed to fetch details:', err);
@@ -762,11 +801,15 @@ function renderModelList() {
 
 
     // 1. Stats Button
-    // 1. Stats Button
     const statsBtn = document.createElement('div');
     statsBtn.className = `stats-btn ${isStatsMode ? 'active' : ''}`;
     statsBtn.innerHTML = `<span>📈</span> 数据统计`;
-    statsBtn.onclick = toggleStatsMode;
+    statsBtn.onclick = () => {
+        if (!isStatsMode) {
+            toggleStatsMode();
+            updateUrl(currentTaskId, 'stats');
+        }
+    };
     modelListEl.appendChild(statsBtn);
 
     // 2. Compare Button
@@ -777,7 +820,12 @@ function renderModelList() {
         const compareBtn = document.createElement('div');
         compareBtn.className = `compare-btn ${isCompareMode ? 'active' : ''}`;
         compareBtn.innerHTML = `<span>📊</span> 产物对比`;
-        compareBtn.onclick = toggleCompareMode;
+        compareBtn.onclick = () => {
+            if (!isCompareMode) {
+                toggleCompareMode();
+                updateUrl(currentTaskId, 'compare');
+            }
+        };
         modelListEl.appendChild(compareBtn);
     }
 
@@ -790,6 +838,8 @@ function renderModelList() {
             isCompareMode = false;
             isStatsMode = false;
             activeFolder = run.folderName;
+
+            updateUrl(currentTaskId, activeFolder);
 
             // Re-render ONLY tabs immediately to show active state
             renderModelList();
@@ -810,6 +860,9 @@ function renderModelList() {
             setTimeout(() => {
                 renderMainContent();
             }, 10);
+
+            // Auto-open feedback sidebar if status is completed/evaluated
+            autoOpenFeedbackSidebar();
         };
 
         let displayName = getModelDisplayName(run.modelName);
@@ -981,8 +1034,9 @@ function renderStatisticsView() {
         const map = {
             'pending': '排队中',
             'running': '运行中',
-            'completed': '完成',
-            'stopped': '中止'
+            'completed': '已完成',
+            'evaluated': '已反馈',
+            'stopped': '已中止'
         };
         return map[status] || status;
     };
@@ -1006,7 +1060,7 @@ function renderStatisticsView() {
 
         const tr = document.createElement('tr');
         const isPending = run.status === 'pending';
-        
+
         const formatVal = (val, fallback = '-') => {
             if (isPending) return '';
             if (val === null || val === undefined) return fallback;
@@ -1040,14 +1094,14 @@ function renderStatisticsView() {
             tbody.addEventListener('click', (e) => {
                 const btn = e.target.closest('.action-btn');
                 if (!btn) return;
-                
+
                 e.preventDefault();
                 e.stopPropagation();
-                
+
                 const action = btn.dataset.action;
                 const model = btn.dataset.model;
                 console.log('[StatsTable] Button clicked, action:', action, 'model:', model);
-                
+
                 if (action === 'preview') {
                     if (model) window.previewFromStats(model);
                 } else if (action === 'start' || action === 'stop') {
@@ -1065,11 +1119,11 @@ window.controlTask = async function (action, modelName) {
         console.log('[controlTask] No currentTaskId');
         return;
     }
-    
+
     console.log(`[controlTask] Action: ${action}, TaskId: ${currentTaskId}, Model: ${modelName}`);
 
     try {
-        const res = await fetch(`/api/tasks/${currentTaskId}/${action}`, { 
+        const res = await fetch(`/api/tasks/${currentTaskId}/${action}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ modelName })
@@ -1092,7 +1146,7 @@ window.previewFromStats = function (modelName) {
     // Exit stats mode
     isStatsMode = false;
     // Load specific model
-    loadTask(currentTaskId, modelName);
+    loadTask(currentTaskId, true, modelName);
 };
 
 function renderComparisonView() { // Revised for Split View
@@ -1193,7 +1247,7 @@ function updateComparisonSide(side) {
         iframe.style.display = 'none';
         iframe.dataset.src = '';
         emptyState.style.display = 'flex';
-        const statusMap = { 'pending': '排队中', 'running': '运行中', 'completed': '已完成', 'stopped': '已中止' };
+        const statusMap = { 'pending': '排队中', 'running': '运行中', 'completed': '已完成', 'evaluated': '已评价', 'stopped': '已中止' };
         emptyState.innerHTML = `<p>暂无预览<br><span style="font-size:0.8em;color:#cbd5e1;">${statusMap[run.status] || run.status}</span></p>`;
     }
 }
@@ -1798,3 +1852,266 @@ window.reloadPreview = function () {
         loadPreview(taskId, modelName, iframe, container);
     }
 };
+// ========== Feedback Logic ==========
+
+let feedbackQuestions = [];
+let currentFeedbackResponses = []; // To store user inputs
+
+function autoOpenFeedbackSidebar() {
+    const sidebar = document.getElementById('feedback-sidebar');
+    if (!sidebar) return;
+
+    if (!isStatsMode && !isCompareMode && activeFolder) {
+        openFeedbackSidebar();
+    }
+}
+
+let feedbackDebounceTimer = null;
+function debouncedSubmitFeedback() {
+    if (feedbackDebounceTimer) clearTimeout(feedbackDebounceTimer);
+    feedbackDebounceTimer = setTimeout(submitFeedback, 500);
+}
+
+async function openFeedbackSidebar() {
+    if (!currentTaskId || !activeFolder) return;
+
+    const sidebar = document.getElementById('feedback-sidebar');
+    const body = document.getElementById('feedback-body');
+
+    // Prevent re-loading if already open for the same run
+    if (sidebar.classList.contains('open') && sidebar.dataset.activeRun === activeFolder) {
+        return;
+    }
+
+    // We don't set dataset.activeRun here yet, wait until successful load
+    sidebar.classList.add('open');
+    body.innerHTML = '<div style="text-align:center; padding:2rem; color:#94a3b8;">加载中...</div>';
+
+    const run = currentRuns.find(r => r.folderName === activeFolder);
+    const shortModelName = run ? run.modelName : (activeFolder.includes('/') ? activeFolder.split('/').pop() : activeFolder);
+
+    try {
+        // 1. Fetch Questions
+        if (feedbackQuestions.length === 0) {
+            const qRes = await fetch('/api/feedback/questions');
+            feedbackQuestions = await qRes.json();
+        }
+
+        // 2. Check existing feedback - Use short model name
+        const checkRes = await fetch(`/api/feedback/check?taskId=${currentTaskId}&modelName=${encodeURIComponent(shortModelName)}`);
+        const checkData = await checkRes.json();
+        const existingMap = {};
+        if (checkData.exists) {
+            checkData.feedback.forEach(f => {
+                existingMap[f.question_id] = f;
+            });
+        }
+
+        // 3. Render Form
+        renderFeedbackForm(existingMap);
+
+        // Mark as loaded successfully for this run
+        sidebar.dataset.activeRun = activeFolder;
+
+    } catch (e) {
+        console.error("Failed to load feedback:", e);
+        body.innerHTML = '<div style="text-align:center; padding:2rem; color:#ef4444;">加载失败，请刷新重试</div>';
+    }
+}
+
+function closeFeedbackSidebar() {
+    // Persistent sidebar, no-op
+}
+
+function renderFeedbackForm(existingMap = {}) {
+    const container = document.getElementById('feedback-body');
+    if (feedbackQuestions.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:2rem; color:#94a3b8;">暂无评测题目</div>';
+        return;
+    }
+
+    let html = '';
+
+    feedbackQuestions.forEach(q => {
+        const existing = existingMap[q.id];
+        const score = existing ? existing.score : 0;
+        const comment = existing ? existing.comment : '';
+
+        html += `
+            <div class="feedback-item" data-qid="${q.id}">
+                <label class="feedback-label">
+                    ${escapeHtml(q.stem)}
+                    ${q.is_required ? '<span class="tag-required">必填</span>' : ''}
+                </label>
+                ${q.description ? `<div class="feedback-desc">${escapeHtml(q.description)}</div>` : ''}
+                
+                ${(function () {
+                const options = JSON.parse(q.options_json || '[]');
+                const hasOptions = options.length > 0 && options.some(o => o.trim() !== '');
+
+                if (hasOptions) {
+                    // Render Radio Options
+                    let optionsHtml = `<div class="radio-options" data-value="${score}">`;
+                    const labels = q.scoring_type === 'stars_5' ? ['非常差', '差', '一般', '好', '非常好'] : ['差', '一般', '好'];
+
+                    options.forEach((opt, idx) => {
+                        const val = idx + 1;
+                        optionsHtml += `
+                            <div class="radio-option ${score === val ? 'active' : ''}" data-val="${val}">
+                                <div class="radio-circle"></div>
+                                <div style="flex:1">
+                                    <div class="radio-label">${escapeHtml(opt || labels[idx] || val + '分')}</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    optionsHtml += `</div>`;
+                    return optionsHtml;
+                } else {
+                    // Render Star Rating
+                    return `
+                        <div class="star-rating" data-max="${q.scoring_type === 'stars_5' ? 5 : 3}" data-value="${score}">
+                            ${renderStars(q.scoring_type === 'stars_5' ? 5 : 3, score)}
+                        </div>
+                    `;
+                }
+            })()}
+                
+                ${q.has_comment ? `
+                    <textarea class="feedback-comment" placeholder="请输入评论（可选）" rows="2" 
+                        style="width:100%; border:1px solid #e2e8f0; border-radius:6px; padding:0.5rem; margin-top:0.5rem; font-size:0.9rem;"
+                    >${escapeHtml(comment || '')}</textarea>
+                ` : ''}
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+
+    // Attach event listeners for stars
+    container.querySelectorAll('.star-rating').forEach(el => {
+        const stars = el.querySelectorAll('.star');
+        stars.forEach(star => {
+            star.addEventListener('click', function () {
+                const val = parseInt(this.dataset.val);
+                updateStars(el, val);
+                submitFeedback(); // Real-time save
+            });
+        });
+    });
+
+    // Attach event listeners for radio options
+    container.querySelectorAll('.radio-options').forEach(el => {
+        const options = el.querySelectorAll('.radio-option');
+        options.forEach(opt => {
+            opt.addEventListener('click', function () {
+                const val = parseInt(this.dataset.val);
+                el.querySelectorAll('.radio-option').forEach(o => o.classList.remove('active'));
+                this.classList.add('active');
+                el.dataset.value = val;
+                submitFeedback(); // Real-time save
+            });
+        });
+    });
+
+    container.querySelectorAll('.feedback-comment').forEach(textarea => {
+        textarea.addEventListener('input', debouncedSubmitFeedback);
+    });
+}
+
+function renderStars(max, current) {
+    let html = '';
+    for (let i = 1; i <= max; i++) {
+        html += `<span class="star ${i <= current ? 'active' : ''}" data-val="${i}">★</span>`;
+    }
+    return html;
+}
+
+function updateStars(container, value) {
+    const stars = container.querySelectorAll('.star');
+    stars.forEach(s => {
+        const v = parseInt(s.dataset.val);
+        if (v <= value) s.classList.add('active');
+        else s.classList.remove('active');
+    });
+    container.dataset.value = value;
+}
+
+async function submitFeedback() {
+    if (!currentTaskId || !activeFolder) return;
+
+    const responses = [];
+    const items = document.querySelectorAll('.feedback-item');
+    let hasRequirementPending = false;
+
+    items.forEach(item => {
+        const qid = parseInt(item.dataset.qid);
+        const q = feedbackQuestions.find(i => i.id === qid);
+        const starsContainer = item.querySelector('.star-rating');
+        const radioContainer = item.querySelector('.radio-options');
+
+        let score = 0;
+        if (starsContainer) {
+            score = parseInt(starsContainer.dataset.value);
+            if (isNaN(score)) {
+                score = item.querySelectorAll('.star.active').length;
+            }
+        } else if (radioContainer) {
+            score = parseInt(radioContainer.dataset.value);
+        }
+
+        const commentEl = item.querySelector('.feedback-comment');
+        const comment = commentEl ? commentEl.value.trim() : '';
+
+        // Only save if either score or comment is provided
+        if (score > 0 || comment !== '') {
+            responses.push({
+                questionId: qid,
+                score: score,
+                comment: comment
+            });
+        }
+
+        if (q.is_required && score === 0) {
+            hasRequirementPending = true;
+        }
+    });
+
+    if (responses.length === 0) return;
+
+    const run = currentRuns.find(r => r.folderName === activeFolder);
+    const shortModelName = run ? run.modelName : (activeFolder.includes('/') ? activeFolder.split('/').pop() : activeFolder);
+
+    try {
+        const res = await fetch('/api/feedback/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                taskId: currentTaskId,
+                modelName: shortModelName,
+                responses
+            })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            // Refresh to update status dots and badges
+            fetchTaskDetails();
+        }
+    } catch (e) {
+        console.error('Auto-save feedback failed:', e);
+    }
+}
+
+// Utility
+function escapeHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+

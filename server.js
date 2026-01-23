@@ -16,11 +16,6 @@ const archiver = require('archiver');
 const app = express();
 const PORT = 3001;
 
-const server = app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-});
-server.timeout = 300000; // 5 minutes timeout for large uploads
-
 const SCRIPT_FILE = path.join(__dirname, 'batch_claude_parallel.sh');
 const TASKS_DIR = path.join(__dirname, '../tasks');
 const UPLOAD_DIR = path.join(TASKS_DIR, 'temp_uploads');
@@ -134,26 +129,26 @@ app.get('/', (req, res) => {
 // Login / Register User
 app.post('/api/login', (req, res) => {
     const { username } = req.body;
-    
+
     if (!username || typeof username !== 'string') {
         return res.status(400).json({ error: 'Username is required' });
     }
-    
+
     const trimmedUsername = username.trim();
-    
+
     // Validate username format
     if (!/^[a-zA-Z0-9_]+$/.test(trimmedUsername)) {
         return res.status(400).json({ error: 'Username can only contain letters, numbers and underscores' });
     }
-    
+
     if (trimmedUsername.length < 2 || trimmedUsername.length > 50) {
         return res.status(400).json({ error: 'Username must be between 2 and 50 characters' });
     }
-    
+
     try {
         // Check if user exists
         let user = db.prepare('SELECT id, username FROM users WHERE username = ?').get(trimmedUsername);
-        
+
         if (!user) {
             // Create new user
             const result = db.prepare('INSERT INTO users (username) VALUES (?)').run(trimmedUsername);
@@ -163,7 +158,7 @@ app.post('/api/login', (req, res) => {
         } else {
             console.log(`[Auth] User logged in: ${trimmedUsername} (ID: ${user.id})`);
         }
-        
+
         return res.json({ success: true, user });
     } catch (e) {
         console.error('Login error:', e);
@@ -266,7 +261,7 @@ app.get('/api/admin/config', (req, res) => {
 // 更新系统配置
 app.post('/api/admin/config', express.json(), (req, res) => {
     const { maxParallelSubtasks } = req.body;
-    
+
     if (maxParallelSubtasks !== undefined) {
         const value = parseInt(maxParallelSubtasks, 10);
         if (isNaN(value) || value < 1 || value > 50) {
@@ -274,13 +269,13 @@ app.post('/api/admin/config', express.json(), (req, res) => {
         }
         appConfig.maxParallelSubtasks = value;
     }
-    
+
     saveConfig(appConfig);
     console.log(`[Config] Updated config:`, appConfig);
-    
+
     // Trigger queue processing in case we increased parallel limit
     setTimeout(processQueue, 100);
-    
+
     res.json(appConfig);
 });
 
@@ -289,7 +284,7 @@ app.get('/api/admin/queue-status', (req, res) => {
     try {
         const runningSubtasks = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE status = 'running'").get().count;
         const pendingSubtasks = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE status = 'pending'").get().count;
-        
+
         res.json({
             maxParallelSubtasks: appConfig.maxParallelSubtasks,
             runningSubtasks,
@@ -301,12 +296,162 @@ app.get('/api/admin/queue-status', (req, res) => {
     }
 });
 
+// ========== Evaluation / Feedback API (Admin) ==========
+
+// Get all questions (Admin)
+app.get('/api/admin/questions', (req, res) => {
+    try {
+        const questions = db.prepare('SELECT * FROM feedback_questions ORDER BY created_at DESC').all();
+        res.json(questions);
+    } catch (e) {
+        console.error('Error fetching questions:', e);
+        res.status(500).json({ error: 'Failed to fetch questions' });
+    }
+});
+
+// Create new question (Admin)
+app.post('/api/admin/questions', (req, res) => {
+    const { stem, short_name, scoring_type, description, has_comment, is_required, options_json } = req.body;
+
+    if (!stem || !scoring_type) {
+        return res.status(400).json({ error: 'Missing required fields (stem, scoring_type)' });
+    }
+
+    try {
+        const stmt = db.prepare(`
+            INSERT INTO feedback_questions (stem, short_name, scoring_type, description, has_comment, is_required, options_json, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        `);
+        const result = stmt.run(stem, short_name || '', scoring_type, description || '', has_comment ? 1 : 0, is_required ? 1 : 0, options_json || null);
+
+        res.json({ success: true, id: result.lastInsertRowid });
+    } catch (e) {
+        console.error('Error creating question:', e);
+        res.status(500).json({ error: 'Failed to create question' });
+    }
+});
+
+// Update question (Admin) - Supports toggling active, required, and editing text
+app.put('/api/admin/questions/:id', (req, res) => {
+    const { id } = req.params;
+    const { stem, short_name, description, is_required, is_active, options_json } = req.body;
+
+    try {
+        // Build dynamic update query
+        const updates = [];
+        const params = [];
+
+        if (stem !== undefined) { updates.push('stem = ?'); params.push(stem); }
+        if (short_name !== undefined) { updates.push('short_name = ?'); params.push(short_name); }
+        if (description !== undefined) { updates.push('description = ?'); params.push(description); }
+        if (is_required !== undefined) { updates.push('is_required = ?'); params.push(is_required ? 1 : 0); }
+        if (is_active !== undefined) { updates.push('is_active = ?'); params.push(is_active ? 1 : 0); }
+        if (options_json !== undefined) { updates.push('options_json = ?'); params.push(options_json); }
+
+        if (updates.length === 0) {
+            return res.json({ success: true, message: 'No changes' });
+        }
+
+        params.push(id);
+        const sql = `UPDATE feedback_questions SET ${updates.join(', ')} WHERE id = ?`;
+        const result = db.prepare(sql).run(...params);
+
+        if (result.changes === 0) {
+            return res.status(404).json({ error: 'Question not found' });
+        }
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error updating question:', e);
+        res.status(500).json({ error: 'Failed to update question' });
+    }
+});
+
+// ========== Evaluation / Feedback API (Client) ==========
+
+// Get active questions for user
+app.get('/api/feedback/questions', (req, res) => {
+    try {
+        const questions = db.prepare(`
+            SELECT * FROM feedback_questions 
+            WHERE is_active = 1 
+            ORDER BY created_at ASC
+        `).all();
+        res.json(questions);
+    } catch (e) {
+        console.error('Error fetching questions for user:', e);
+        res.status(500).json({ error: 'Failed to fetch questions' });
+    }
+});
+
+// Check if feedback already exists for a subtask
+app.get('/api/feedback/check', (req, res) => {
+    const { taskId, modelName } = req.query;
+    if (!taskId || !modelName) return res.status(400).json({ error: 'Missing params' });
+
+    try {
+        const feedback = db.prepare('SELECT * FROM feedback_responses WHERE task_id = ? AND model_name = ?').all(taskId, modelName);
+        res.json({ exists: feedback.length > 0, feedback: feedback });
+    } catch (e) {
+        console.error('Error checking feedback:', e);
+        res.status(500).json({ error: 'Check failed' });
+    }
+});
+
+// Submit feedback
+app.post('/api/feedback/submit', (req, res) => {
+    const { taskId, modelName, responses } = req.body;
+    // responses: Array of { questionId, score, comment }
+
+    if (!taskId || !modelName || !Array.isArray(responses) || responses.length === 0) {
+        return res.status(400).json({ error: 'Invalid payload' });
+    }
+
+    try {
+        const insertStmt = db.prepare(`
+            INSERT OR REPLACE INTO feedback_responses (task_id, model_name, question_id, score, comment)
+            VALUES (?, ?, ?, ?, ?)
+        `);
+
+        db.transaction(() => {
+            for (const r of responses) {
+                insertStmt.run(taskId, modelName, r.questionId, r.score, r.comment || '');
+            }
+
+            // Check if all active required questions are answered
+            const requiredQuestions = db.prepare('SELECT id FROM feedback_questions WHERE is_active = 1 AND is_required = 1').all();
+            const currentResponses = db.prepare('SELECT question_id, score FROM feedback_responses WHERE task_id = ? AND model_name = ?').all(taskId, modelName);
+
+            const responseMap = {};
+            currentResponses.forEach(r => { responseMap[r.question_id] = r.score; });
+
+            const allRequiredMet = requiredQuestions.every(q => {
+                const score = responseMap[q.id];
+                return score !== undefined && score > 0;
+            });
+
+            const newStatus = allRequiredMet ? 'evaluated' : 'completed';
+
+            db.prepare(`
+                UPDATE model_runs SET status = ? 
+                WHERE task_id = ? AND model_name = ?
+            `).run(newStatus, taskId, modelName);
+        })();
+
+        console.log(`[Feedback] Submitted for ${taskId}/${modelName}. Status set to: ${allRequiredMet ? 'evaluated' : 'completed'}`);
+        res.json({ success: true, status: allRequiredMet ? 'evaluated' : 'completed' });
+    } catch (e) {
+        console.error('Error submitting feedback:', e);
+        res.status(500).json({ error: 'Failed to submit feedback' });
+    }
+});
+
 // ========== Task API (with user filtering) ==========
 
 // 获取所有任务 (从数据库读取，支持用户过滤)
 app.get('/api/tasks', (req, res) => {
     const { userId } = req.query;
-    
+
     try {
         let tasks;
         if (userId) {
@@ -316,7 +461,7 @@ app.get('/api/tasks', (req, res) => {
             // Return all tasks (for backward compatibility, though frontend should always pass userId)
             tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at DESC').all();
         }
-        
+
         return res.json(tasks.map(t => ({
             taskId: t.task_id,
             title: t.title,
@@ -454,7 +599,7 @@ async function processQueue() {
         for (const subtask of pendingSubtasks) {
             // Update subtask status to running
             db.prepare("UPDATE model_runs SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(subtask.id);
-            
+
             // Update parent task queue status to running if not already
             db.prepare("UPDATE task_queue SET status = 'running', started_at = COALESCE(started_at, CURRENT_TIMESTAMP) WHERE task_id = ?").run(subtask.task_id);
 
@@ -475,7 +620,7 @@ async function processQueue() {
 // Function to execute a single model subtask
 function executeSubtask(taskId, modelName) {
     const subtaskKey = `${taskId}/${modelName}`;
-    
+
     const SCRIPT_FILE = path.join(__dirname, 'batch_claude_parallel.sh');
     const child = spawn('bash', [SCRIPT_FILE, taskId, modelName], {
         env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' },
@@ -501,7 +646,7 @@ function executeSubtask(taskId, modelName) {
     child.on('exit', (code, signal) => {
         console.log(`[Subtask ${subtaskKey} EXIT] Process exited with code ${code} and signal ${signal}`);
         delete activeSubtaskProcesses[subtaskKey];
-        
+
         // Update subtask status based on exit code (if not already updated by ingest.js)
         const currentStatus = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_name = ?").get(taskId, modelName);
         if (currentStatus && currentStatus.status === 'running') {
@@ -509,7 +654,7 @@ function executeSubtask(taskId, modelName) {
             const newStatus = (code === 0) ? 'completed' : 'stopped';
             db.prepare("UPDATE model_runs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_name = ?").run(newStatus, taskId, modelName);
         }
-        
+
         checkAndUpdateTaskStatus(taskId);
         // Trigger queue processing to start next subtask
         setTimeout(processQueue, 100);
@@ -519,7 +664,7 @@ function executeSubtask(taskId, modelName) {
 // Check if all subtasks of a task are done and update task_queue status
 function checkAndUpdateTaskStatus(taskId) {
     const subtasks = db.prepare("SELECT status FROM model_runs WHERE task_id = ?").all(taskId);
-    
+
     const allCompleted = subtasks.every(s => s.status === 'completed');
     const allStopped = subtasks.every(s => s.status === 'stopped' || s.status === 'completed');
     const hasRunning = subtasks.some(s => s.status === 'running');
@@ -1108,6 +1253,7 @@ app.get('/api/task_details/:taskId', (req, res) => {
                 if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
                     const walkSync = (dir, filelist = []) => {
                         fs.readdirSync(dir).forEach(file => {
+                            if (file === 'node_modules' || file === '.git' || file === '.DS_Store') return;
                             const filepath = path.join(dir, file);
                             if (fs.statSync(filepath).isDirectory()) {
                                 walkSync(filepath, filelist);
@@ -1337,11 +1483,11 @@ app.get('/api/download_zip', (req, res) => {
 app.post('/api/tasks/:taskId/stop', async (req, res) => {
     const { taskId } = req.params;
     const { modelName } = req.body || {};
-    
+
     if (modelName) {
         // 按模型停止
         console.log(`[Control] Stopping model ${modelName} for task ${taskId}`);
-        
+
         // 1. Kill specific model's claude process
         const modelDir = path.join(TASKS_DIR, taskId, modelName);
         try {
@@ -1350,7 +1496,7 @@ app.post('/api/tasks/:taskId/stop', async (req, res) => {
             try {
                 execSync(`pkill -9 -f "${modelDir}" 2>/dev/null || true`, { timeout: 5000 });
             } catch (e) { /* ignore */ }
-            
+
             // 方法2: 使用 ps + grep + kill 更精确地查找并杀掉
             try {
                 const pids = execSync(`ps aux | grep -E "claude.*${taskId}.*${modelName}" | grep -v grep | awk '{print $2}'`, { timeout: 5000 }).toString().trim();
@@ -1362,25 +1508,25 @@ app.post('/api/tasks/:taskId/stop', async (req, res) => {
                     });
                 }
             } catch (e) { /* ignore */ }
-            
+
             // 方法3: 杀掉 ingest 进程
             try {
                 execSync(`pkill -9 -f "ingest.js ${taskId} ${modelName}" 2>/dev/null || true`, { timeout: 5000 });
             } catch (e) { /* ignore */ }
-            
+
             console.log(`[Control] Kill commands executed for model ${modelName}`);
         } catch (e) {
             console.log(`[Control] pkill for model ${modelName} completed (may have found no processes)`);
         }
-        
+
         // 2. Update only this model's status in DB
         try {
             db.prepare("UPDATE model_runs SET status = 'stopped' WHERE task_id = ? AND model_name = ? AND status = 'running'").run(taskId, modelName);
-            
+
             // Remove from active processes
             const subtaskKey = `${taskId}/${modelName}`;
             delete activeSubtaskProcesses[subtaskKey];
-            
+
             // Check and update parent task status
             checkAndUpdateTaskStatus(taskId);
         } catch (e) {
@@ -1410,7 +1556,7 @@ app.post('/api/tasks/:taskId/stop', async (req, res) => {
                 delete activeSubtaskProcesses[key];
             }
         }
-        
+
         // Also try to kill any loose claude processes for this task
         try {
             execSync(`pkill -f "claude.*${taskDir}" 2>/dev/null || true`, { timeout: 5000 });
@@ -1442,18 +1588,18 @@ app.post('/api/tasks/:taskId/start', (req, res) => {
         if (modelName) {
             // 针对特定模型的重启
             console.log(`[Control] Restarting model ${modelName} for task ${taskId}`);
-            
+
             const modelRun = db.prepare("SELECT id, status FROM model_runs WHERE task_id = ? AND model_name = ?").get(taskId, modelName);
             if (!modelRun) {
                 console.log(`[Control] Model ${modelName} not found`);
                 return res.status(404).json({ error: `Model ${modelName} not found for task ${taskId}` });
             }
-            
+
             if (modelRun.status === 'running') {
                 console.log(`[Control] Model ${modelName} is still running`);
                 return res.status(400).json({ error: `Model ${modelName} is already running` });
             }
-            
+
             console.log(`[Control] Model ${modelName} found with id ${modelRun.id}, status: ${modelRun.status}`);
 
             // 1. 删除该模型的 log_entries 记录
@@ -1676,3 +1822,9 @@ process.on('uncaughtException', (error) => {
     console.error('Uncaught Exception:', error);
     if (!isProcessingQueue) setTimeout(processQueue, 1000);
 });
+
+// Start server AFTER all routes are defined
+const server = app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+});
+server.timeout = 300000; // 5 minutes timeout for large uploads

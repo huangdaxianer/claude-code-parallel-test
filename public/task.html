@@ -432,6 +432,16 @@
             border-radius: 50%;
         }
 
+        .model-tab.status-evaluated::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #a855f7;
+            /* 紫色 */
+            border-radius: 50%;
+        }
+
         .model-tab:hover {
             background: #e2e8f0;
             color: #1e293b;
@@ -623,6 +633,11 @@
 
         .status-badge.status-stopped::before {
             background-color: #f97316;
+        }
+
+        .status-badge.status-evaluated::before {
+            background-color: #a855f7;
+            /* 紫色 */
         }
 
         /* Comparison View */
@@ -1583,7 +1598,9 @@
             background-color: #f97316;
         }
 
-        /* orange */
+        .status-evaluated {
+            background-color: #a855f7;
+        }
 
         @keyframes spin {
 
@@ -1860,6 +1877,173 @@
             letter-spacing: -0.025em;
             color: #0f172a;
         }
+
+        /* Feedback Sidebar */
+        .feedback-sidebar {
+            width: 0;
+            height: 100%;
+            background: white;
+            border-left: 0 solid #e2e8f0;
+            z-index: 20;
+            transition: none;
+            /* Removed transition to prevent slide-in animation */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .feedback-sidebar.open {
+            width: 400px;
+            border-left-width: 1px;
+        }
+
+        .feedback-header {
+            height: 60px;
+            padding: 0 1.5rem;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .feedback-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+        }
+
+        .feedback-footer {
+            padding: 1.5rem;
+            border-top: 1px solid #e2e8f0;
+            background: #f8fafc;
+            flex-shrink: 0;
+        }
+
+        /* Star Rating */
+        .star-rating {
+            display: flex;
+            gap: 0.25rem;
+            font-size: 1.5rem;
+            color: #cbd5e1;
+            cursor: pointer;
+            margin: 0.5rem 0;
+        }
+
+        .star-rating .star {
+            transition: color 0.1s;
+        }
+
+        .star-rating .star.active {
+            color: #fbbf24;
+        }
+
+        /* Radio Options Styles */
+        .radio-options {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .radio-option {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #fff;
+        }
+
+        .radio-option:hover {
+            border-color: #cbd5e1;
+            background: #f8fafc;
+        }
+
+        .radio-option.active {
+            border-color: #2563eb;
+            background: #eff6ff;
+        }
+
+        .radio-circle {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #cbd5e1;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+
+        .radio-option.active .radio-circle {
+            border-color: #2563eb;
+        }
+
+        .radio-option.active .radio-circle::after {
+            content: '';
+            width: 10px;
+            height: 10px;
+            background: #2563eb;
+            border-radius: 50%;
+        }
+
+        .radio-label {
+            font-size: 0.9rem;
+            color: #1e293b;
+            font-weight: 500;
+        }
+
+        .radio-desc {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-top: 0.1rem;
+        }
+
+        .feedback-item {
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .feedback-item:last-child {
+            border-bottom: none;
+        }
+
+        .feedback-label {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #1e293b;
+            display: block;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .feedback-desc {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-bottom: 0.75rem;
+            line-height: 1.5;
+        }
+
+        .tag-required {
+            font-size: 0.75rem;
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 0.1rem 0.4rem;
+            border-radius: 4px;
+        }
+
+        /* Purple Dot for Feedback Provided */
+        .status-evaluated {
+            background-color: #a855f7;
+        }
     </style>
 </head>
 
@@ -1875,7 +2059,7 @@
                 </svg>
             </button>
             <div class="logo">
-                <h1>Web Coding</h1>
+                <h1>方舟众测平台</h1>
             </div>
         </div>
 
@@ -2015,6 +2199,7 @@
                             <button class="action-btn" onclick="openIncrementalTaskModal()" title="基于当前结果继续开发">
                                 <span>✨</span> 增量开发
                             </button>
+
                         </div>
                     </div>
 
@@ -2082,6 +2267,18 @@
                             allow="accelerometer; camera; encrypted-media; display-capture; geolocation; gyroscope; microphone; midi; clipboard-read; clipboard-write; web-share; serial; xr-spatial-tracking"
                             allowfullscreen allowpaymentrequest></iframe>
                     </div>
+                </div>
+
+                <!-- Feedback Sidebar (Now Inline) -->
+                <div id="feedback-sidebar" class="feedback-sidebar">
+                    <div class="feedback-header">
+                        <h3 style="font-size:1.1rem; font-weight:600;">反馈</h3>
+                    </div>
+                    <div id="feedback-body" class="feedback-body">
+                        <!-- Questions injected here -->
+                        <div style="text-align:center; padding:2rem; color:#94a3b8;">加载中...</div>
+                    </div>
+
                 </div>
             </main>
 
