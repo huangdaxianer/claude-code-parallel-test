@@ -1396,91 +1396,85 @@ app.get('/api/download_zip', (req, res) => {
         return res.status(403).send('Access denied');
     }
 
-
     if (!fs.existsSync(folderPath)) {
         console.error(`[ZIP Error] Folder not found: ${folderPath}`);
         return res.status(404).send('Folder not found');
     }
 
-    try {
-        const archive = archiver('zip', {
-            zlib: { level: 1 } // Use lower compression level for speed
-        });
+    // Use temp file approach for stable downloads
+    const downloadName = folderName.replace(/[\/\\]/g, '_') + '.zip';
+    const tempZipPath = path.join(TASKS_DIR, 'temp_uploads', `${downloadName}_${Date.now()}`);
 
-        // Listen for all archive data to be written
-        res.on('close', function () {
-            // Client disconnected
-        });
+    // Ensure temp dir exists
+    const tempDir = path.dirname(tempZipPath);
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
-        res.on('end', function () {
-            console.log('[ZIP] Data has been drained');
-        });
+    console.log(`[ZIP] Writing to temp file: ${tempZipPath}`);
 
-        archive.on('warning', function (err) {
-            if (err.code === 'ENOENT') {
-                console.warn('[ZIP Warning]', err);
-            } else {
-                console.error('[ZIP Error from Warning]', err);
-                if (!res.headersSent) res.status(500).send({ error: err.message });
+    const output = fs.createWriteStream(tempZipPath);
+    const archive = archiver('zip', {
+        zlib: { level: 1 } // Use lower compression level for speed
+    });
+
+    output.on('close', function () {
+        console.log(`[ZIP] Archive created: ${archive.pointer()} bytes`);
+
+        // Send file with Content-Length header
+        res.download(tempZipPath, downloadName, (err) => {
+            if (err) {
+                console.error('[ZIP] Download send error:', err);
+                if (!res.headersSent) res.status(500).send({ error: 'Download failed' });
             }
-        });
 
-        archive.on('error', function (err) {
-            console.error('[ZIP Error]', err);
-            if (!res.headersSent) res.status(500).send({ error: err.message });
-        });
-
-        // Set headers
-        const downloadName = folderName.replace(/[\/\\]/g, '_') + '.zip';
-        res.attachment(downloadName);
-
-        // Pipe archive data to the result response
-        archive.pipe(res);
-
-        // Append files using glob
-        console.log(`[ZIP] Archiving directory: ${folderPath}`);
-
-        const ignoreList = (req.query.full === 'true') ?
-            ['**/.DS_Store'] : // Full download: only ignore OS files
-            [
-                '**/node_modules/**', // Ignore contents
-                '**/node_modules',    // Ignore the folder itself
-                '**/.git/**',
-                '**/.git',
-                '**/.DS_Store'
-            ]; // Core download: ignore deps and git
-
-        // glob pattern to include all files
-        archive.glob('**/*', {
-            cwd: folderPath,
-            ignore: ignoreList,
-            dot: true, // include dotfiles like .env
-            follow: false // Do not follow symlinks to avoid loops or massive external files
-        });
-
-        archive.finalize();
-
-    } catch (e) {
-        console.error('[ZIP Exception]', e);
-
-        if (fs.existsSync(taskDir)) {
+            // Clean up temp file
             try {
-                fs.rmSync(taskDir, { recursive: true, force: true });
+                if (fs.existsSync(tempZipPath)) {
+                    fs.unlinkSync(tempZipPath);
+                    console.log(`[ZIP] Temp file deleted: ${tempZipPath}`);
+                }
             } catch (e) {
-                console.error('Error deleting task directory:', e);
+                console.error(`[ZIP] Failed to delete temp file:`, e);
             }
-        }
-        if (fs.existsSync(specificPromptFile)) {
-            try {
-                fs.unlinkSync(specificPromptFile);
-            } catch (e) {
-                console.error('Error deleting prompt file:', e);
-            }
-        }
+        });
+    });
 
+    archive.on('warning', function (err) {
+        if (err.code === 'ENOENT') {
+            console.warn('[ZIP Warning]', err);
+        } else {
+            console.error('[ZIP Error from Warning]', err);
+        }
+    });
 
-        res.json({ success: true });
-    }
+    archive.on('error', function (err) {
+        console.error('[ZIP Error]', err);
+        if (!res.headersSent) res.status(500).send({ error: err.message });
+        try { if (fs.existsSync(tempZipPath)) fs.unlinkSync(tempZipPath); } catch (e) { }
+    });
+
+    archive.pipe(output);
+
+    // Append files using glob
+    console.log(`[ZIP] Archiving directory: ${folderPath}`);
+
+    const ignoreList = (req.query.full === 'true') ?
+        ['**/.DS_Store'] : // Full download: only ignore OS files
+        [
+            '**/node_modules/**',
+            '**/node_modules',
+            '**/.git/**',
+            '**/.git',
+            '**/.DS_Store'
+        ]; // Core download: ignore deps and git
+
+    archive.glob('**/*', {
+        cwd: folderPath,
+        ignore: ignoreList,
+        dot: true,
+        follow: false
+    });
+
+    archive.finalize();
 });
 
 // 停止任务（支持按模型停止）
