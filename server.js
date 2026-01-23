@@ -1696,6 +1696,7 @@ app.delete('/api/tasks/:taskId', (req, res) => {
 });
 
 // 下载任务轨迹 (打包任务目录)
+// Download Task Trajectory (Zip task directory)
 app.get('/api/tasks/:taskId/download', (req, res) => {
     const { taskId } = req.params;
     const taskDir = path.join(TASKS_DIR, taskId);
@@ -1709,22 +1710,33 @@ app.get('/api/tasks/:taskId/download', (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="task_${taskId}.zip"`);
 
     const archive = archiver('zip', {
-        zlib: { level: 9 } // Maximum compression
+        zlib: { level: 1 } // Use lower compression level for speed
     });
 
     // Handle archive errors
     archive.on('error', (err) => {
         console.error('[Download] Archive error:', err);
-        // We can't really send a 500 here if headers were already sent,
-        // but express handles piped errors decently.
-        res.status(500).send({ error: err.message });
+        if (!res.headersSent) res.status(500).send({ error: err.message });
     });
 
     // Pipe archive data to the response
     archive.pipe(res);
 
-    // Append files from task directory
-    archive.directory(taskDir, false);
+    // Append files excluding node_modules and hidden files
+    console.log(`[Download] Archiving task directory: ${taskDir}`);
+
+    archive.glob('**/*', {
+        cwd: taskDir,
+        ignore: [
+            '**/node_modules/**',
+            '**/node_modules',
+            '**/.git/**',
+            '**/.git',
+            '**/.DS_Store'
+        ],
+        dot: true,
+        follow: false
+    });
 
     // Finalize the archive
     archive.finalize();
