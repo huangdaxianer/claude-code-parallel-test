@@ -1700,13 +1700,14 @@ function syntaxHighlight(json) {
 
 
 
-function downloadFiles() {
+function downloadFiles(isFull = false) {
     if (!activeFolder) {
         alert('No active folder selected.');
         return;
     }
     // Trigger download
-    window.location.href = `/api/download_zip?folderName=${encodeURIComponent(activeFolder)}`;
+    const url = `/api/download_zip?folderName=${encodeURIComponent(activeFolder)}${isFull ? '&full=true' : ''}`;
+    window.location.href = url;
 }
 
 function copyPrompt() {

@@ -1437,19 +1437,23 @@ app.get('/api/download_zip', (req, res) => {
         // Pipe archive data to the result response
         archive.pipe(res);
 
-        // Append files using glob to EXCLUDE node_modules and .git
+        // Append files using glob
         console.log(`[ZIP] Archiving directory: ${folderPath}`);
 
-        // glob pattern to include all files
-        archive.glob('**/*', {
-            cwd: folderPath,
-            ignore: [
+        const ignoreList = (req.query.full === 'true') ?
+            ['**/.DS_Store'] : // Full download: only ignore OS files
+            [
                 '**/node_modules/**', // Ignore contents
                 '**/node_modules',    // Ignore the folder itself
                 '**/.git/**',
                 '**/.git',
                 '**/.DS_Store'
-            ],
+            ]; // Core download: ignore deps and git
+
+        // glob pattern to include all files
+        archive.glob('**/*', {
+            cwd: folderPath,
+            ignore: ignoreList,
             dot: true, // include dotfiles like .env
             follow: false // Do not follow symlinks to avoid loops or massive external files
         });
@@ -1752,18 +1756,22 @@ app.get('/api/tasks/:taskId/download', (req, res) => {
 
     archive.pipe(output);
 
-    // Append files excluding node_modules and hidden files
+    // Append files
     console.log(`[Download] Archiving task directory: ${taskDir}`);
 
-    archive.glob('**/*', {
-        cwd: taskDir,
-        ignore: [
+    const ignoreList = (req.query.full === 'true') ?
+        ['**/.DS_Store'] : // Full download: only ignore OS files
+        [
             '**/node_modules/**',
             '**/node_modules',
             '**/.git/**',
             '**/.git',
             '**/.DS_Store'
-        ],
+        ]; // Core download: ignore deps and git
+
+    archive.glob('**/*', {
+        cwd: taskDir,
+        ignore: ignoreList,
         dot: true,
         follow: false
     });
