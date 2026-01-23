@@ -1940,8 +1940,8 @@ function renderFeedbackForm(existingMap = {}) {
         html += `
             <div class="feedback-item" data-qid="${q.id}">
                 <label class="feedback-label">
+                    ${q.is_required ? '<span class="required-star">*</span>' : ''}
                     ${escapeHtml(q.stem)}
-                    ${q.is_required ? '<span class="tag-required">必填</span>' : ''}
                 </label>
                 ${q.description ? `<div class="feedback-desc">${escapeHtml(q.description)}</div>` : ''}
                 

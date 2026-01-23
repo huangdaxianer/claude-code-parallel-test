@@ -2032,12 +2032,15 @@
             line-height: 1.5;
         }
 
-        .tag-required {
-            font-size: 0.75rem;
-            background: #fee2e2;
-            color: #dc2626;
-            padding: 0.1rem 0.4rem;
-            border-radius: 4px;
+        .required-star {
+            color: #ef4444;
+            font-weight: bold;
+            margin-right: 4px;
+            font-size: 1.2em;
+            /* Slightly larger to be visible */
+            line-height: 1;
+            display: inline-block;
+            vertical-align: middle;
         }
 
         /* Purple Dot for Feedback Provided */
@@ -2189,8 +2192,8 @@
                         <div class="tabs">
                             <button class="tab active" data-tab="trajectory"
                                 onclick="switchTab('trajectory')">执行轨迹</button>
-                            <button class="tab" data-tab="files" onclick="switchTab('files')">产物</button>
-                            <button class="tab" data-tab="preview" onclick="switchTab('preview')">预览</button>
+                            <button class="tab" data-tab="files" onclick="switchTab('files')">生成产物</button>
+                            <button class="tab" data-tab="preview" onclick="switchTab('preview')">在线预览（Beta）</button>
                         </div>
                         <div style="display: flex; gap: 0.5rem;">
                             <button class="action-btn" onclick="downloadFiles()" title="下载当前产物">
