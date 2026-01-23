@@ -1334,13 +1334,30 @@ function renderMainContent() {
 
                     for (let i = startIndex; i < currentCount; i++) {
                         const event = events[i];
-                        if (event.type === 'TXT') {
+                        const textTypes = ['TXT', 'USER'];
+
+                        if (textTypes.includes(event.type)) {
                             const div = document.createElement('div');
                             div.className = 'text-log-entry markdown-body';
+                            div.style.marginBottom = '0.7rem';
+
+                            let contentHtml = '';
                             try {
-                                div.innerHTML = marked.parse(event.preview_text);
+                                contentHtml = marked.parse(event.preview_text);
                             } catch (e) {
-                                div.textContent = event.preview_text;
+                                contentHtml = escapeHtml(event.preview_text);
+                            }
+
+                            // For USER, add a small inline tag if it's not the plain TXT type
+                            if (event.type !== 'TXT') {
+                                div.innerHTML = `
+                                    <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
+                                        <span class="json-type-badge ${event.status_class || 'type-content'}" style="margin-top: 0.2rem; flex-shrink: 0; min-width: 4rem; text-align: center; margin-right: 0;">${event.type}</span>
+                                        <div style="flex: 1;">${contentHtml}</div>
+                                    </div>
+                                `;
+                            } else {
+                                div.innerHTML = contentHtml;
                             }
                             fragment.appendChild(div);
                         } else {

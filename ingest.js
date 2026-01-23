@@ -93,7 +93,7 @@ function flush() {
         // Re-check if manually stopped - if so, don't overwrite status
         const currentDb = db.prepare('SELECT status FROM model_runs WHERE id = ?').get(runId);
         const statusToWrite = (currentDb && currentDb.status === 'stopped') ? 'stopped' : stats.status;
-        
+
         updateStats.run(
             statusToWrite,
             stats.duration,
@@ -203,9 +203,16 @@ function processToolUse(toolObj, rawPart) {
     const toolUseId = toolObj.id;
     let typeClass = (['Read', 'EnterPlanMode', 'ExitPlanMode'].includes(toolName)) ? 'type-success' : 'type-tool';
     let previewText = '';
-
     const input = toolObj.input || {};
-    if (toolName === 'Bash' && input.command) previewText = input.command;
+    let finalToolName = toolName;
+
+    if (toolName === 'Task') {
+        finalToolName = 'SUBAGENT';
+        previewText = input.description || input.prompt || '';
+    } else if (toolName === 'TaskOutput') {
+        finalToolName = 'SUBAGENT_RESULT';
+        previewText = input.content || '';
+    } else if (toolName === 'Bash' && input.command) previewText = input.command;
     else if (['Write', 'Edit', 'Read'].includes(toolName) && input.file_path) previewText = input.file_path.split('/').pop();
     else if (toolName === 'ExitPlanMode' && input.plan) previewText = input.plan;
     else if (toolName === 'AskUserQuestion') {
@@ -221,7 +228,7 @@ function processToolUse(toolObj, rawPart) {
     } else previewText = JSON.stringify(input);
 
     return {
-        type: toolName,
+        type: finalToolName,
         toolName: toolName,
         toolUseId: toolUseId,
         typeClass: typeClass,

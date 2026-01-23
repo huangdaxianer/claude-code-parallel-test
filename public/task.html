@@ -853,60 +853,73 @@
             padding: 2rem;
             font-family: 'Menlo', 'Monaco', monospace;
             font-size: 0.9rem;
-            line-height: 1.6;
+            line-height: 1.5;
             color: #334155;
             white-space: pre-wrap;
             background: #ffffff;
         }
 
         /* Markdown Styles */
-        .log-display.markdown-view {
-            white-space: normal;
+        .markdown-view,
+        .markdown-body {
+            white-space: normal !important;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             color: #1e293b;
+            line-height: 2;
         }
 
-        .log-display.markdown-view h1,
-        .log-display.markdown-view h2 {
+        .markdown-view h1,
+        .markdown-view h2,
+        .markdown-body h1,
+        .markdown-body h2 {
             font-weight: 700;
-            margin-top: 2rem;
-            margin-bottom: 1rem;
-            font-size: 1.5rem;
+            margin: 0 !important;
+            padding: 0 !important;
+            font-size: 1.2rem;
             color: #0f172a;
             border-bottom: 1px solid #e2e8f0;
-            padding-bottom: 0.5rem;
             letter-spacing: -0.02em;
         }
 
-        .log-display.markdown-view h3 {
+        .markdown-view h3,
+        .markdown-body h3 {
             font-size: 1.1rem;
-            margin-top: 1.5rem;
-            margin-bottom: 0.75rem;
+            margin: 0 !important;
+            padding: 0 !important;
             font-weight: 600;
             color: #334155;
         }
 
-        .log-display.markdown-view p {
-            margin-bottom: 1rem;
-            line-height: 1.7;
+        .markdown-view p,
+        .markdown-body p {
+            margin: 0 !important;
+            padding: 0 !important;
         }
 
-        .log-display.markdown-view ul,
-        .log-display.markdown-view ol {
-            margin-bottom: 1.5rem;
-            padding-left: 1.5rem;
-            color: #475569;
+        .markdown-view ul,
+        .markdown-view ol,
+        .markdown-body ul,
+        .markdown-body ol {
+            margin: 0 !important;
+            padding: 0 0 0 1.15rem !important;
+            color: #334155;
         }
 
-        .log-display.markdown-view li {
-            margin-bottom: 0.5rem;
+        .markdown-view li,
+        .markdown-body li {
+            margin: 0 !important;
+            padding: 0 !important;
         }
 
-        .log-display.markdown-view li p {
-            margin-bottom: 0.5rem;
+        /* Prevent double spacing when paragraphs are inside list items */
+        .markdown-view li p,
+        .markdown-body li p {
+            margin-bottom: 0;
+            margin-top: 0;
         }
 
-        .log-display.markdown-view code {
+        .markdown-view code,
+        .markdown-body code {
             font-family: 'Menlo', 'Monaco', monospace;
             font-size: 0.85em;
             background: #f1f5f9;
@@ -916,17 +929,19 @@
             border: 1px solid #e2e8f0;
         }
 
-        .log-display.markdown-view pre {
+        .markdown-view pre,
+        .markdown-body pre {
             background: #1e293b;
             color: #f8fafc;
             padding: 1rem;
             border-radius: 0.5rem;
             overflow-x: auto;
-            margin: 1.5rem 0;
+            margin: 1rem 0;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
-        .log-display.markdown-view pre code {
+        .markdown-view pre code,
+        .markdown-body pre code {
             background: transparent;
             color: inherit;
             padding: 0;
@@ -934,15 +949,21 @@
             font-size: 0.85em;
         }
 
-        .log-display.markdown-view blockquote {
+        .markdown-view blockquote,
+        .markdown-body blockquote {
             border-left: 4px solid #3b82f6;
-            margin: 1.5rem 0;
-            padding-left: 1rem;
+            margin: 1rem 0;
+            padding: 0.75rem 1rem;
             color: #64748b;
             font-style: italic;
             background: #eff6ff;
-            padding: 1rem;
             border-radius: 0 0.5rem 0.5rem 0;
+        }
+
+        /* Remove margin from last children to keep things tight */
+        .markdown-view *:last-child,
+        .markdown-body *:last-child {
+            margin-bottom: 0 !important;
         }
 
         /* File List */
@@ -1613,7 +1634,7 @@
         /* JSON Log Stylings */
         .json-log-entry {
             margin-top: 0;
-            margin-bottom: 0.35rem;
+            margin-bottom: 0.7rem;
             border: 1px solid #e2e8f0;
             border-radius: 0.5rem;
             overflow: hidden;
@@ -1764,18 +1785,11 @@
             color: #1e293b;
             font-family: 'Inter', sans-serif;
             font-size: 0.95rem;
-            line-height: 1.6;
+            line-height: 2;
             white-space: pre-wrap;
         }
 
-        .text-log-entry.markdown-body p {
-            margin-top: 0;
-            margin-bottom: 0.5rem;
-        }
 
-        .text-log-entry.markdown-body p:last-child {
-            margin-bottom: 0;
-        }
 
         @keyframes fadeIn {
             from {
