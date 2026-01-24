@@ -40,25 +40,21 @@
 
         if (statusBar) {
             statusBar.style.display = 'flex';
-            statusDot.className = 'status-dot status-pending';
-            statusText.textContent = 'Launching Claude Code...';
+            statusDot.className = 'status-dot status-starting'; // Blue
+            statusText.textContent = '初始化中...';
             urlDisplay.textContent = '-';
             if (countdownEl) countdownEl.style.display = 'none';
         }
 
         if (progressDiv) {
             progressDiv.style.display = 'block';
-            progressDiv.innerHTML = '<div style="color:#aaa">Waiting for Claude Code...</div>';
+            progressDiv.innerHTML = '<div style="color:#aaa">等待服务响应...</div>';
         }
-
-        // 创建加载覆盖层
-        const existingOverlay = container.querySelector('.preview-loading-overlay');
-        if (existingOverlay) existingOverlay.remove();
 
         const overlay = document.createElement('div');
         overlay.className = 'preview-loading-overlay';
         overlay.style.cssText = 'position:absolute; inset:0; background:white; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; top:187px;';
-        overlay.innerHTML = '<div class="loading-spinner"></div><p style="margin-top:1rem; color:#64748b; font-size:0.9rem">Claude Code is setting up the environment...</p>';
+        overlay.innerHTML = '<div class="loading-spinner"></div><p style="margin-top:1rem; color:#64748b; font-size:0.9rem">预览服务启动中，请稍候...</p>';
 
         if (getComputedStyle(container).position === 'static') {
             container.style.position = 'relative';
@@ -69,13 +65,23 @@
         try {
             const data = await App.api.startPreview(taskId, modelName);
 
-            // 启动倒计时 (5分钟)
-            startCountdown(5 * 60);
-
             // 轮询状态
             pollInterval = setInterval(async () => {
                 try {
                     const info = await App.api.getPreviewStatus(taskId, modelName);
+
+                    // 同步倒计时 (只要后端提供了剩余秒数就展示)
+                    if (info.remainingSeconds !== undefined && countdownEl) {
+                        // 只有在 ready 状态或 error 状态（进入了清理倒计时）才显示
+                        if (info.status === 'ready' || info.status === 'error') {
+                            countdownEl.style.display = 'inline';
+                            const m = Math.floor(info.remainingSeconds / 60);
+                            const s = info.remainingSeconds % 60;
+                            countdownEl.textContent = `(${m}:${s.toString().padStart(2, '0')})`;
+                        } else {
+                            countdownEl.style.display = 'none';
+                        }
+                    }
 
                     // 更新日志
                     if (info.logs && progressDiv) {
@@ -83,6 +89,19 @@
                             `<div style="margin-bottom:4px; font-family: monospace; font-size: 0.85rem;"><span style="color:#999; margin-right:8px">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
                         ).join('');
                         progressDiv.scrollTop = progressDiv.scrollHeight;
+
+                        // 动态更新状态栏文本为最新消息
+                        if (info.logs.length > 0) {
+                            // Find the last relevant message to display as status
+                            const relevantLogs = info.logs.filter(l => !l.msg.startsWith('[Debug]'));
+                            const latestLog = relevantLogs.length > 0 ? relevantLogs[relevantLogs.length - 1] : info.logs[info.logs.length - 1];
+                            statusText.textContent = latestLog.msg;
+
+                            // Optional: Add simple animation class to indicate update
+                            statusText.style.animation = 'none';
+                            statusText.offsetHeight; /* trigger reflow */
+                            statusText.style.animation = 'fadeInDown 0.3s ease';
+                        }
                     }
 
                     // 准备好了
@@ -101,8 +120,8 @@
                         if (progressDiv) progressDiv.style.display = 'none';
 
                         if (statusBar) {
-                            statusDot.className = 'status-dot status-completed';
-                            statusText.textContent = 'Preview Active';
+                            statusDot.className = 'status-dot status-success'; // Green
+                            statusText.textContent = '预览运行中';
                             urlDisplay.textContent = info.url;
                         }
                     } else if (info.status === 'error') {
@@ -125,28 +144,10 @@
     };
 
     /**
-     * 倒计时逻辑
+     * 倒计时逻辑 (弃用，改为由轮询同步后端时间)
      */
     function startCountdown(seconds) {
-        if (countdownInterval) clearInterval(countdownInterval);
-        const countdownEl = document.getElementById('preview-countdown');
-        if (!countdownEl) return;
-
-        countdownEl.style.display = 'inline';
-
-        const update = () => {
-            const m = Math.floor(seconds / 60);
-            const s = seconds % 60;
-            countdownEl.textContent = `(${m}:${s.toString().padStart(2, '0')})`;
-            if (seconds <= 0) {
-                clearInterval(countdownInterval);
-                countdownEl.textContent = '(Expired)';
-                App.preview.cleanup();
-            }
-            seconds--;
-        };
-        update();
-        countdownInterval = setInterval(update, 1000);
+        // ... 被同步逻辑替代
     }
 
     /**

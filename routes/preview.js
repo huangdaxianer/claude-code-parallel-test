@@ -25,6 +25,31 @@ router.get('/project/type/:taskId/:modelName', async (req, res) => {
     res.json({ type, previewable });
 });
 
+// 静态文件代理服务
+router.use('/view/:taskId/:modelName', (req, res, next) => {
+    const { taskId, modelName } = req.params;
+    // req.path will contain the rest of the path after mounting point
+    const filePath = req.path;
+
+    // Determine absolute path
+    const projectPath = path.join(config.TASKS_DIR, taskId, modelName);
+    const absolutePath = path.join(projectPath, filePath);
+
+    // Prevent directory traversal
+    if (!absolutePath.startsWith(projectPath)) {
+        return res.status(403).send('Access Denied');
+    }
+
+    if (fs.existsSync(absolutePath)) {
+        // Only sending file if it exists, otherwise pass to 404
+        return res.sendFile(absolutePath);
+    }
+
+    // If not found as file, it might be a directory or next route?
+    // For this use case, we just 404 if file is missing in this static view scope
+    res.status(404).send('File not found');
+});
+
 // 启动预览
 router.post('/start', async (req, res) => {
     const { taskId, modelName } = req.body;
@@ -49,7 +74,28 @@ router.post('/start', async (req, res) => {
         return res.status(404).json({ error: 'Project directory not found' });
     }
 
-    // 3. 分配端口
+    // 3. 检测项目类型
+    const projectType = await previewService.detectProjectType(projectPath);
+
+    // 如果是纯 HTML 项目，直接返回静态服务 URL，不启动 Claude Code
+    if (projectType === 'html') {
+        const files = fs.readdirSync(projectPath);
+        const indexFile = files.find(f => f.toLowerCase() === 'index.html') || files.find(f => f.endsWith('.html'));
+
+        if (indexFile) {
+            const staticUrl = `/api/preview/view/${taskId}/${modelName}/${indexFile}`;
+            previewService.runningPreviews[folderName] = {
+                status: 'ready',
+                type: 'static',
+                url: staticUrl,
+                logs: [{ msg: '检测到静态页面，直接预览...', ts: Date.now() }],
+                startTime: Date.now()
+            };
+            return res.json({ status: 'ready', url: staticUrl });
+        }
+    }
+
+    // 4. 分配端口 (仅非静态项目需要)
     let allocatedPort;
     try {
         allocatedPort = await previewService.findFreePort();
@@ -57,12 +103,12 @@ router.post('/start', async (req, res) => {
         return res.status(500).json({ error: 'No free ports available' });
     }
 
-    // 4. 初始化状态
+    // 5. 初始化状态
     previewService.runningPreviews[folderName] = {
         status: 'starting',
         port: allocatedPort,
         url: `http://localhost:${allocatedPort}`,
-        logs: [{ msg: `Initializing Claude Code preview on port ${allocatedPort}...`, ts: Date.now() }],
+        logs: [{ msg: '正在分配端口', ts: Date.now() }],
         startTime: Date.now()
     };
 
@@ -72,21 +118,34 @@ router.post('/start', async (req, res) => {
         }
     };
 
-    // 5. 设置 5 分钟超时
-    const timeoutMsg = "Preview timeout (5 minutes). Closing environment.";
-    const timeoutId = setTimeout(async () => {
-        console.log(`[Preview] Timeout reached for ${folderName}`);
-        const info = previewService.runningPreviews[folderName];
-        if (info) {
-            addLog(timeoutMsg);
-            if (info.proc && info.proc.pid) {
-                await previewService.killProcessTree(info.proc.pid);
-            }
-            delete previewService.runningPreviews[folderName];
-        }
-    }, 5 * 60 * 1000);
+    // 6. 设置初始超时 (安装/启动阶段给 10 分钟)
+    const setupTimeoutLimit = 10 * 60 * 1000;
+    const runtimeTimeoutLimit = 5 * 60 * 1000; // 启动后给 5 分钟
 
-    previewService.runningPreviews[folderName].timeoutId = timeoutId;
+    const setKillTimeout = (durationMs, reason) => {
+        const info = previewService.runningPreviews[folderName];
+        if (info && info.timeoutId) clearTimeout(info.timeoutId);
+
+        const timeoutId = setTimeout(async () => {
+            console.log(`[Preview] Timeout reached for ${folderName}: ${reason}`);
+            const currentInfo = previewService.runningPreviews[folderName];
+            if (currentInfo) {
+                addLog(`Preview timeout: ${reason}. Closing environment.`);
+                if (currentInfo.proc && currentInfo.proc.pid) {
+                    await previewService.killProcessTree(currentInfo.proc.pid);
+                }
+                delete previewService.runningPreviews[folderName];
+            }
+        }, durationMs);
+
+        if (previewService.runningPreviews[folderName]) {
+            previewService.runningPreviews[folderName].timeoutId = timeoutId;
+            previewService.runningPreviews[folderName].expiresAt = Date.now() + durationMs;
+        }
+    };
+
+    // 初始设置 Setup 超时
+    setKillTimeout(setupTimeoutLimit, "Setup Phase Timeout");
 
     // 6. 查找 Claude 二进制文件
     let claudeBin = 'claude';
@@ -108,25 +167,21 @@ router.post('/start', async (req, res) => {
     }
 
     // 7. 启动 Claude Code
-    const prompt = `请你启动该项目的前端预览，使用 ${allocatedPort} 端口。请确保服务能够正常访问。如果是静态页面也可以直接告知。`;
+    const prompt = `请你启动该项目的前端预览，使用 ${allocatedPort} 端口。请确保服务能够正常访问。如果是静态页面也可以直接告知，禁止查看非本文件夹的项目内容，禁止改动文件。`;
 
     // 增加调试信息打印
-    addLog(`[Debug] Prompt: ${prompt}`);
-    addLog(`[Debug] Project Path: ${projectPath}`);
-    addLog(`[Debug] Allocated Port: ${allocatedPort}`);
+    addLog(`端口分配成功`);
 
     console.log(`[Preview] Starting Claude Code for ${folderName} on port ${allocatedPort}`);
 
     const claudeModel = 'tomato'; // 强制使用 tomato 模型
     const args = [
         '--model', claudeModel,
-        '--allowedTools', 'Read(./**),Edit(./**),Bash(./**)',
+        '--allowedTools', 'Read(./**),Bash(./**)',
         '--dangerously-skip-permissions',
         '--output-format', 'stream-json',
         '--verbose'
     ];
-
-    addLog(`[Debug] Executing: ${claudeBin} ${args.join(' ')}`);
 
     const child = spawn(claudeBin, args, {
         cwd: projectPath,
@@ -135,7 +190,7 @@ router.post('/start', async (req, res) => {
     });
 
     previewService.runningPreviews[folderName].proc = child;
-    addLog(`Claude Code process started with PID ${child.pid}`);
+    addLog(`尝试启动服务`);
 
     child.stdin.write(prompt + "\n");
     child.stdin.end();
@@ -144,48 +199,53 @@ router.post('/start', async (req, res) => {
     let buffer = '';
     child.stdout.on('data', (data) => {
         const raw = data.toString();
-        // 如果是 JSON 流，尝试分行解析，但如果解析失败或者不是标准的 JSON 行，也记录下来
         buffer += raw;
         const lines = buffer.split('\n');
         buffer = lines.pop();
 
         lines.forEach(line => {
             if (!line.trim()) return;
-            addLog(`[stdout] ${line}`); // 记录原始输出以便调试
 
             try {
                 const obj = JSON.parse(line);
-                // 处理 assistant 的回复文本
+
+                // 1. 处理直接的 tool_use
+                if (obj.type === 'tool_use' && obj.name === 'Bash') {
+                    if (obj.input && obj.input.description) {
+                        addLog(obj.input.description);
+                    }
+                }
+
+                // 2. 处理 assistant 消息中的 tool_use (常见格式)
                 if (obj.type === 'assistant' && obj.message && Array.isArray(obj.message.content)) {
                     obj.message.content.forEach(block => {
-                        if (block.type === 'text') addLog(`>> ${block.text}`);
-                        if (block.type === 'thought') addLog(`>> *Thought: ${block.thought.slice(0, 200)}...*`);
+                        if (block.type === 'tool_use' && block.name === 'Bash') {
+                            if (block.input && block.input.description) {
+                                addLog(block.input.description);
+                            }
+                        }
                     });
                 }
 
-                // 处理工具调用
-                if (obj.type === 'tool_use') {
-                    addLog(`>> Tool: ${obj.name} input: ${JSON.stringify(obj.input)}`);
-                }
-
-                // 处理最终结果
+                // 3. 处理最终结果 (保留状态更新，但不打印 JSON)
                 if (obj.type === 'result') {
                     if (obj.is_error) {
-                        addLog(`>> [Error Result] ${obj.error?.message || 'Unknown error'}`);
+                        addLog(`Error: ${obj.error?.message || 'Unknown error'}`);
                         previewService.runningPreviews[folderName].status = 'error';
+                        setKillTimeout(2 * 60 * 1000, "Error state cleanup");
                     } else {
-                        addLog(">> [Success Result] Claude Code cleanup/exit signal received.");
+                        addLog(">> Setup complete. Preview runtime starts now.");
                         previewService.runningPreviews[folderName].status = 'ready';
+                        setKillTimeout(runtimeTimeoutLimit, "Runtime Limit Exceeded");
                     }
                 }
             } catch (e) {
-                // Ignore parse errors as we already logged the raw line
+                // 非 JSON 或解析失败的消息一律不打印，保持界面干净
             }
         });
     });
 
     child.stderr.on('data', (data) => {
-        addLog(`[stderr] ${data.toString().trim()}`);
     });
 
     child.on('exit', (code) => {
@@ -233,6 +293,10 @@ router.get('/status/:taskId/:modelName', (req, res) => {
 
     if (previewInfo) {
         const { proc, timeoutId, ...infoToSend } = previewInfo;
+        // 计算剩余秒数
+        if (previewInfo.expiresAt) {
+            infoToSend.remainingSeconds = Math.max(0, Math.floor((previewInfo.expiresAt - Date.now()) / 1000));
+        }
         res.json(infoToSend);
     } else {
         res.status(404).json({ status: 'not_running', logs: [{ msg: 'Preview not running.', ts: Date.now() }] });
