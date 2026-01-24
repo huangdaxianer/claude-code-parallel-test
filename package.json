@@ -21,6 +21,7 @@
   "homepage": "https://github.com/huangdaxianer/claude-code-parallel-test#readme",
   "description": "",
   "dependencies": {
+    "@anthropic-ai/claude-code": "^2.1.19",
     "archiver": "^7.0.1",
     "better-sqlite3": "^12.6.0",
     "body-parser": "^2.2.2",
