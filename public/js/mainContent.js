@@ -25,7 +25,7 @@
 
             if (lastRenderedFolder !== App.state.activeFolder) {
                 App.elements.logDisplayEl.dataset.lineCount = '0';
-                App.elements.logDisplayEl.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p style="margin-top: 1rem;">Loading events...</p></div>';
+                App.elements.logDisplayEl.innerHTML = '<div class="empty-state"><p style="margin-top: 1rem;">正在加载...</p></div>';
                 App.elements.logDisplayEl.dataset.renderedFolder = App.state.activeFolder;
             }
 
@@ -34,8 +34,15 @@
                     const events = data.events || [];
                     const currentCount = events.length;
 
-                    if (currentCount > lastRenderedCount || lastRenderedFolder !== App.state.activeFolder) {
-                        if (lastRenderedCount === 0 || lastRenderedFolder !== App.state.activeFolder) {
+                    // 即使 currentCount 为 0，如果是第一次渲染该目录（当前显示正在加载），也需要更新 UI
+                    const isFirstRenderForFolder = App.elements.logDisplayEl.innerHTML.includes('正在加载');
+
+                    if (currentCount > lastRenderedCount || isFirstRenderForFolder) {
+                        if (lastRenderedCount === 0 || isFirstRenderForFolder) {
+                            if (currentCount === 0) {
+                                App.elements.logDisplayEl.innerHTML = '<div class="empty-state"><p>暂无执行轨迹</p></div>';
+                                return;
+                            }
                             App.elements.logDisplayEl.innerHTML = '';
                         }
 
@@ -152,7 +159,7 @@
                 .replace(/}\s*{/g, '}\n{');
 
             if (!logText.trim()) {
-                App.elements.logDisplayEl.innerHTML = '<div class="empty-state"><p>Waiting for output...</p></div>';
+                App.elements.logDisplayEl.innerHTML = '<div class="empty-state"><p>暂无执行轨迹</p></div>';
             } else {
                 const isScrolled = App.elements.logDisplayEl.scrollHeight - App.elements.logDisplayEl.scrollTop <= App.elements.logDisplayEl.clientHeight + 100;
                 try {

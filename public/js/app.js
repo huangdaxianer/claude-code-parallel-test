@@ -117,8 +117,8 @@
         const statsTableBody = document.getElementById('stats-table-body');
 
         if (topBar) topBar.style.display = 'flex';
-        if (App.elements.modelListEl) App.elements.modelListEl.innerHTML = '<div style="padding: 1rem;">Loading...</div>';
-        if (promptDisplay) promptDisplay.textContent = 'Loading...';
+        if (App.elements.modelListEl) App.elements.modelListEl.innerHTML = '<div style="padding: 1rem;">正在加载...</div>';
+        if (promptDisplay) promptDisplay.textContent = '正在加载...';
         if (App.elements.logDisplayEl) App.elements.logDisplayEl.innerHTML = '';
         if (statsTableBody) statsTableBody.innerHTML = '';
 
@@ -146,6 +146,16 @@
 
         App.initElements();
 
+        // 获取 URL 参数（新格式：user/task/model）
+        const urlParams = new URLSearchParams(window.location.search);
+        const taskId = urlParams.get('task');
+        const model = urlParams.get('model');
+
+        // 如果 URL 中有任务 ID，先设置到状态中，防止 fetchTaskHistory 自动加载第一个任务
+        if (taskId) {
+            App.state.currentTaskId = taskId;
+        }
+
         // 显示用户名
         const usernameDisplay = document.getElementById('username-display');
         if (usernameDisplay && App.state.currentUser) {
@@ -172,11 +182,6 @@
         // prompt 输入监听
         document.getElementById('task-prompt').addEventListener('input', App.modal.updateStartButtonStyle);
 
-        // 获取 URL 参数（新格式：user/task/model）
-        const urlParams = new URLSearchParams(window.location.search);
-        const taskId = urlParams.get('task'); // 改为 task
-        const model = urlParams.get('model');
-
         // 验证任务和模型
         if (taskId) {
             try {
@@ -185,6 +190,7 @@
                 if (!taskValidation.exists) {
                     App.toast.show('任务不存在或无权访问');
                     // 清除 URL 参数，显示用户主页
+                    App.state.currentTaskId = null;
                     App.updateUrl(null, null);
                 } else {
                     // 任务存在，加载任务

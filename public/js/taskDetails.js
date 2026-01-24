@@ -15,7 +15,7 @@
             const data = await App.api.getTaskDetails(App.state.currentTaskId);
 
             if (!data.runs || data.runs.length === 0) {
-                App.elements.modelListEl.innerHTML = '<div style="padding:1rem; color:#94a3b8; font-size:0.9rem;">Waiting for task execution...</div>';
+                App.elements.modelListEl.innerHTML = '<div style="padding:1rem; color:#94a3b8; font-size:0.9rem;">正在启动任务...</div>';
                 return;
             }
 
@@ -133,7 +133,7 @@
                 document.getElementById('statistics-view').classList.remove('active');
                 document.getElementById('main-content').classList.remove('hidden');
 
-                App.elements.logDisplayEl.innerHTML = '<div class="empty-state"><div class="loading-spinner"></div><p style="margin-top: 1rem; font-size: 0.9rem;">Loading logs...</p></div>';
+                App.elements.logDisplayEl.innerHTML = '<div class="empty-state"><p style="margin-top: 1rem; font-size: 0.9rem;">正在加载...</p></div>';
                 App.elements.logDisplayEl.dataset.lineCount = '0';
                 App.elements.logDisplayEl.dataset.renderedFolder = App.state.activeFolder;
 

@@ -65,7 +65,10 @@
             });
 
             // 自动加载第一个任务
-            if (!App.state.currentTaskId && tasks.length > 0) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlTaskId = urlParams.get('task');
+
+            if (!App.state.currentTaskId && !urlTaskId && tasks.length > 0) {
                 App.loadTask(tasks[0].taskId, true);
             } else if (tasks.length === 0) {
                 document.querySelector('.top-bar').style.display = 'none';
