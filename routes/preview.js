@@ -92,6 +92,12 @@ router.post('/start', async (req, res) => {
     const folderName = `${taskId}/${modelName}`;
     const projectPath = path.join(config.TASKS_DIR, taskId, modelName);
 
+    const addLog = (msg) => {
+        if (previewService.runningPreviews[folderName]) {
+            previewService.runningPreviews[folderName].logs.push({ msg, ts: Date.now() });
+        }
+    };
+
     // 1. 如果已经在运行，先彻底关闭
     if (previewService.runningPreviews[folderName]) {
         const info = previewService.runningPreviews[folderName];
@@ -168,11 +174,7 @@ router.post('/start', async (req, res) => {
         startTime: Date.now()
     };
 
-    const addLog = (msg) => {
-        if (previewService.runningPreviews[folderName]) {
-            previewService.runningPreviews[folderName].logs.push({ msg, ts: Date.now() });
-        }
-    };
+
 
     // 6. 设置初始超时 (安装/启动阶段给 10 分钟)
     // 注意：Runtime 阶段现在由 Heartbeat 监控，不再设置硬性超时
