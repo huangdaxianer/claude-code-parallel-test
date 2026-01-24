@@ -8,7 +8,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-// 运行中的预览 Map<folderName, { proc, port, url, lastAccess, status, logs }>
+// 运行中的预览 Map<folderName, { proc, port, url, lastAccess, status, logs, timeoutId }>
 const runningPreviews = {};
 
 // 已分配的端口集合
@@ -43,16 +43,38 @@ async function findFreePort(start = 4000, end = 5000) {
     throw new Error('No free ports available');
 }
 
-// 递归获取子进程 PID
+// 递归获取所有子进程 PID
+async function getAllPids(pid) {
+    const pids = [pid];
+    try {
+        const children = await getChildPids(pid);
+        for (const child of children) {
+            const grandChildren = await getAllPids(child);
+            pids.push(...grandChildren);
+        }
+    } catch (e) { }
+    return Array.from(new Set(pids));
+}
+
+// 彻底杀死进程树
+async function killProcessTree(pid) {
+    console.log(`[Preview] Killing process tree for PID ${pid}`);
+    const pids = await getAllPids(pid);
+    // 从后往前杀（叶子节点先杀）
+    for (const p of pids.reverse()) {
+        try {
+            process.kill(p, 'SIGKILL');
+        } catch (e) { }
+    }
+}
+
+// 递归获取子进程 PID (pgrep -P)
 function getChildPids(pid) {
     return new Promise((resolve) => {
         exec(`pgrep -P ${pid}`, (err, stdout) => {
             if (err || !stdout) return resolve([]);
             const pids = stdout.trim().split(/\s+/).map(p => parseInt(p, 10));
-            Promise.all(pids.map(getChildPids)).then(grandChildren => {
-                const all = [...pids, ...grandChildren.flat()];
-                resolve(all);
-            });
+            resolve(pids);
         });
     });
 }
@@ -152,6 +174,8 @@ module.exports = {
     checkPort,
     findFreePort,
     getChildPids,
+    getAllPids,
+    killProcessTree,
     getListeningPorts,
     probePort,
     detectStartCommand,

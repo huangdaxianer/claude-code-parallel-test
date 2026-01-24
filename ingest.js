@@ -336,8 +336,7 @@ rl.on('line', (line) => {
                         const TASKS_DIR = path.join(__dirname, '../tasks'); // re-declare to be safe or use global if available (it is global at line 5)
                         const projectPath = path.join(TASKS_DIR, taskId, modelName);
                         try {
-                            const type = detectProjectType(projectPath);
-                            const isPreviewable = (type === 'node' || type === 'html') ? 1 : 0;
+                            const isPreviewable = 1;
                             db.prepare('UPDATE model_runs SET previewable = ? WHERE id = ?').run(isPreviewable, runId);
                         } catch (e) {
                             console.error('[Ingest] Failed to update previewable status:', e);
@@ -410,8 +409,7 @@ rl.on('close', () => {
         const projectPath = path.join(TASKS_DIR, taskId, modelName);
 
         try {
-            const type = detectProjectType(projectPath);
-            const isPreviewable = (type === 'node' || type === 'html') ? 1 : 0;
+            const isPreviewable = 1;
 
             db.prepare('UPDATE model_runs SET previewable = ? WHERE id = ?').run(isPreviewable, runId);
             // console.log(`[Ingest] Project type: ${type}, Previewable: ${isPreviewable}`);

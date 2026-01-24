@@ -130,6 +130,18 @@
     };
 
     /**
+     * 停止预览
+     */
+    App.api.stopPreview = async function (taskId, modelName) {
+        const res = await fetch('/api/preview/stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ taskId, modelName })
+        });
+        return res.json();
+    };
+
+    /**
      * 验证用户是否存在
      */
     App.api.verifyUser = async function (username) {
