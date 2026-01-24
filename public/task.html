@@ -2066,10 +2066,80 @@
         .status-evaluated {
             background-color: #a855f7;
         }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast {
+            min-width: 300px;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+            animation: slideIn 0.3s ease-out;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .toast-error {
+            background: #ef4444;
+            color: white;
+        }
+
+        .toast-warning {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .toast-success {
+            background: #10b981;
+            color: white;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .toast.fade-out {
+            animation: fadeOut 0.3s ease-out forwards;
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                transform: translateX(0);
+            }
+
+            to {
+                opacity: 0;
+                transform: translateX(400px);
+            }
+        }
     </style>
 </head>
 
 <body>
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
     <div class="app-layout" id="app-layout">
         <div class="sidebar-header">
             <button id="sidebar-toggle" class="icon-btn-ghost">
@@ -2423,7 +2493,24 @@
         </div>
     </div>
 
-    <script src="task.js"></script>
+    <!-- 模块化 JS 文件 -->
+    <script src="js/toast.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/taskHistory.js"></script>
+    <script src="js/taskModal.js"></script>
+    <script src="js/taskDetails.js"></script>
+    <script src="js/views/statsView.js"></script>
+    <script src="js/views/compareView.js"></script>
+    <script src="js/mainContent.js"></script>
+    <script src="js/preview.js"></script>
+    <script src="js/feedback.js"></script>
+    <script>
+        // 初始化应用
+        document.addEventListener('DOMContentLoaded', App.init);
+    </script>
 </body>
 
 </html>
