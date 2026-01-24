@@ -121,6 +121,11 @@
             const tab = document.createElement('div');
             tab.className = `model-tab ${isSelected ? 'active' : ''}`;
             tab.onclick = () => {
+                // Determine if we are switching away from a running preview
+                if (App.state.activeFolder !== run.folderName) {
+                    App.preview.cleanup(); // Stop heartbeat for the old preview
+                }
+
                 App.state.isCompareMode = false;
                 App.state.isStatsMode = false;
                 App.state.activeFolder = run.folderName;

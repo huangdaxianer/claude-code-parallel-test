@@ -8,8 +8,63 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-// 运行中的预览 Map<folderName, { proc, port, url, lastAccess, status, logs, timeoutId }>
+// 运行中的预览 Map<folderName, { proc, port, url, lastAccess, status, logs, timeoutId, lastHeartbeat }>
 const runningPreviews = {};
+
+// 更新心跳
+function updateHeartbeat(folderName) {
+    if (runningPreviews[folderName]) {
+        runningPreviews[folderName].lastHeartbeat = Date.now();
+        // 如果有原来的超时逻辑，可以在这里清除或重置，但现在的需求是基于心跳保活
+        // 我们假设前端会持续发送心跳
+    }
+}
+
+// 启动心跳监控 (每1秒检查一次)
+function startHeartbeatMonitor() {
+    setInterval(async () => {
+        const now = Date.now();
+        for (const [folderName, info] of Object.entries(runningPreviews)) {
+            const timeSinceHeartbeat = now - (info.lastHeartbeat || info.startTime || now);
+
+            // 1. 如果是 Ready 状态，检测心跳 (5s 无心跳则清理)
+            if (info.status === 'ready') {
+                if (timeSinceHeartbeat > 5000) { // 5s timeout
+                    console.log(`[PreviewMonitor] Kill stale READY preview ${folderName} (No heartbeat for ${Math.floor(timeSinceHeartbeat / 1000)}s)`);
+                    await forceCleanup(folderName);
+                }
+            }
+            // 2. 如果是 Starting 状态，给予较长宽限期 (10分钟)，防止安装过程被误杀
+            // 注意：前端在 starting 阶段通常不发心跳 (因为还没轮询到 ready)，或者轮询到了但还没 ready
+            // 所以 starting 阶段主要靠总时长限制
+            else if (info.status === 'starting') {
+                const timeSinceStart = now - info.startTime;
+                if (timeSinceStart > 600000) { // 10 mins
+                    console.log(`[PreviewMonitor] Kill stale STARTING preview ${folderName} (Timeout 10m)`);
+                    await forceCleanup(folderName);
+                }
+            }
+        }
+    }, 1000); // Check every 1s
+}
+
+async function forceCleanup(folderName) {
+    const info = runningPreviews[folderName];
+    if (info) {
+        // 1. Kill by PID (if attached)
+        if (info.proc && info.proc.pid) {
+            await killProcessTree(info.proc.pid);
+        }
+        // 2. Kill by Port (if detached)
+        if (info.port) {
+            await killProcessOnPort(info.port);
+        }
+        delete runningPreviews[folderName];
+    }
+}
+
+// Start the monitor immediately
+startHeartbeatMonitor();
 
 // 已分配的端口集合
 const allocatedPorts = new Set();
@@ -66,6 +121,24 @@ async function killProcessTree(pid) {
             process.kill(p, 'SIGKILL');
         } catch (e) { }
     }
+}
+
+// 杀死指定端口的进程
+function killProcessOnPort(port) {
+    return new Promise((resolve) => {
+        if (!port) return resolve();
+        console.log(`[Preview] Killing process on port ${port}`);
+        exec(`lsof -t -i:${port}`, (err, stdout) => {
+            if (err || !stdout) return resolve();
+            const pids = stdout.trim().split(/\s+/);
+            for (const pid of pids) {
+                try {
+                    process.kill(pid, 'SIGKILL');
+                } catch (e) { }
+            }
+            resolve();
+        });
+    });
 }
 
 // 递归获取子进程 PID (pgrep -P)
@@ -176,8 +249,11 @@ module.exports = {
     getChildPids,
     getAllPids,
     killProcessTree,
+    killProcessOnPort,
     getListeningPorts,
     probePort,
     detectStartCommand,
-    detectProjectType
+    detectStartCommand,
+    detectProjectType,
+    updateHeartbeat
 };

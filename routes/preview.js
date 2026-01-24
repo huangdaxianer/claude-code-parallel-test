@@ -9,6 +9,40 @@ const { exec, spawn } = require('child_process');
 const config = require('../config');
 const previewService = require('../services/previewService');
 
+function getFileStructure(dir, depth = 0, maxDepth = 3) {
+    let result = '';
+    const prefix = '  '.repeat(depth);
+    try {
+        const items = fs.readdirSync(dir, { withFileTypes: true });
+        // 排序：文件夹在前，文件在后
+        items.sort((a, b) => {
+            if (a.isDirectory() && !b.isDirectory()) return -1;
+            if (!a.isDirectory() && b.isDirectory()) return 1;
+            return a.name.localeCompare(b.name);
+        });
+
+        for (const item of items) {
+            // 忽略隐藏文件和常见的大目录
+            if (item.name.startsWith('.') ||
+                ['node_modules', 'dist', 'build', 'coverage', 'target', '__pycache__'].includes(item.name)) {
+                continue;
+            }
+
+            if (item.isDirectory()) {
+                result += `${prefix}${item.name}/\n`;
+                if (depth < maxDepth) {
+                    result += getFileStructure(path.join(dir, item.name), depth + 1, maxDepth);
+                }
+            } else {
+                result += `${prefix}${item.name}\n`;
+            }
+        }
+    } catch (e) {
+        // 忽略错误
+    }
+    return result;
+}
+
 // 获取项目类型
 router.get('/project/type/:taskId/:modelName', async (req, res) => {
     const { taskId, modelName } = req.params;
@@ -119,8 +153,8 @@ router.post('/start', async (req, res) => {
     };
 
     // 6. 设置初始超时 (安装/启动阶段给 10 分钟)
+    // 注意：Runtime 阶段现在由 Heartbeat 监控，不再设置硬性超时
     const setupTimeoutLimit = 10 * 60 * 1000;
-    const runtimeTimeoutLimit = 5 * 60 * 1000; // 启动后给 5 分钟
 
     const setKillTimeout = (durationMs, reason) => {
         const info = previewService.runningPreviews[folderName];
@@ -167,7 +201,8 @@ router.post('/start', async (req, res) => {
     }
 
     // 7. 启动 Claude Code
-    const prompt = `请你启动该项目的前端预览，使用 ${allocatedPort} 端口。请确保服务能够正常访问。如果是静态页面也可以直接告知，禁止查看非本文件夹的项目内容，禁止改动文件。`;
+    const fileStructure = getFileStructure(projectPath);
+    const prompt = `现在请你启动该项目的前端预览。使用 ${allocatedPort} 端口。请确保服务能够正常访问。如果是静态页面也请将页面预览启动到该端口。如果该端口被占用，请尝试终止占用该端口的任务。你如果需要安装依赖，请使用虚拟环境。禁止使用其它端口，禁止查看非本文件夹的内容，禁止改动文件。你工作目录下的文件结构是\n${fileStructure},`;
 
     // 增加调试信息打印
     addLog(`端口分配成功`);
@@ -183,22 +218,42 @@ router.post('/start', async (req, res) => {
         '--verbose'
     ];
 
+    console.log(`[Preview] Executing: ${claudeBin} ${args.join(' ')}`);
+
     const child = spawn(claudeBin, args, {
         cwd: projectPath,
         env: { ...process.env, PORT: allocatedPort, HOST: '0.0.0.0' },
         stdio: ['pipe', 'pipe', 'pipe']
     });
 
+    child.on('error', (err) => {
+        console.error(`[Preview] Failed to start subprocess: ${err}`);
+        addLog(`Error: Failed to launch Claude Code: ${err.message}`);
+        previewService.runningPreviews[folderName].status = 'error';
+    });
+
     previewService.runningPreviews[folderName].proc = child;
     addLog(`尝试启动服务`);
 
-    child.stdin.write(prompt + "\n");
-    child.stdin.end();
+    // Give it a tick to start
+    setTimeout(() => {
+        if (child.stdin && child.stdin.writable) {
+            try {
+                child.stdin.write(prompt + "\n");
+                child.stdin.end();
+            } catch (e) {
+                console.error(`[Preview] Write to stdin failed: ${e}`);
+            }
+        }
+    }, 100);
 
     // 8. 解析输出内容
     let buffer = '';
     child.stdout.on('data', (data) => {
         const raw = data.toString();
+        // Print raw output to server console
+        process.stdout.write(`[ClaudeCode][STDOUT] ${raw}`);
+
         buffer += raw;
         const lines = buffer.split('\n');
         buffer = lines.pop();
@@ -234,9 +289,38 @@ router.post('/start', async (req, res) => {
                         previewService.runningPreviews[folderName].status = 'error';
                         setKillTimeout(2 * 60 * 1000, "Error state cleanup");
                     } else {
-                        addLog(">> Setup complete. Preview runtime starts now.");
-                        previewService.runningPreviews[folderName].status = 'ready';
-                        setKillTimeout(runtimeTimeoutLimit, "Runtime Limit Exceeded");
+                        addLog("验证网页可用性");
+
+                        (async () => {
+                            try {
+                                const checkInfo = previewService.runningPreviews[folderName];
+                                if (!checkInfo) return; // Removed during waiting
+
+                                const { serviceType, score } = await previewService.probePort(allocatedPort);
+                                console.log(`[Preview] Probe port ${allocatedPort} result: ${serviceType}, score=${score}`);
+
+                                if (score > 0) {
+                                    addLog(">> Verification successful. Preview runtime starts now.");
+                                    if (previewService.runningPreviews[folderName]) {
+                                        previewService.runningPreviews[folderName].status = 'ready';
+                                        previewService.runningPreviews[folderName].lastHeartbeat = Date.now();
+                                    }
+                                } else {
+                                    addLog(">> Verification failed: Port is not accessible or returns error.");
+                                    if (previewService.runningPreviews[folderName]) {
+                                        // Special status to trigger "Preview not running" UI
+                                        previewService.runningPreviews[folderName].status = 'not_running';
+                                        previewService.runningPreviews[folderName].logs.push({ msg: 'Preview not running. Validation failed.', ts: Date.now() });
+                                    }
+                                }
+                            } catch (e) {
+                                console.error(`[Preview] Verification error: ${e}`);
+                                if (previewService.runningPreviews[folderName]) {
+                                    previewService.runningPreviews[folderName].status = 'not_running';
+                                    previewService.runningPreviews[folderName].logs.push({ msg: 'Preview not running. Verification error.', ts: Date.now() });
+                                }
+                            }
+                        })();
                     }
                 }
             } catch (e) {
@@ -246,10 +330,10 @@ router.post('/start', async (req, res) => {
     });
 
     child.stderr.on('data', (data) => {
+        process.stderr.write(`[ClaudeCode][STDERR] ${data.toString()}`);
     });
 
     child.on('exit', (code) => {
-        console.log(`[Preview] Claude Code (PID ${child.pid}) exited with code ${code}`);
         if (previewService.runningPreviews[folderName]) {
             if (code !== 0 && code !== null) {
                 addLog(`Claude Code process exited with code ${code}.`);
@@ -258,6 +342,7 @@ router.post('/start', async (req, res) => {
             // 如果 Claude 正常退出且没有报错，我们假设它已经启动了服务
             if (previewService.runningPreviews[folderName].status === 'starting') {
                 previewService.runningPreviews[folderName].status = 'ready';
+                previewService.runningPreviews[folderName].lastHeartbeat = Date.now(); // Reset heartbeat timer on ready
             }
         }
     });
@@ -274,14 +359,32 @@ router.post('/stop', async (req, res) => {
     if (info) {
         console.log(`[Preview] Stopping ${folderName} on user request`);
         if (info.timeoutId) clearTimeout(info.timeoutId);
+
+        // 1. First try to kill by process tree
         if (info.proc && info.proc.pid) {
             await previewService.killProcessTree(info.proc.pid);
         }
+
+        // 2. Also try to kill by port to be safe (if port was allocated)
+        if (info.port) {
+            await previewService.killProcessOnPort(info.port);
+        }
+
         delete previewService.runningPreviews[folderName];
         res.json({ success: true });
     } else {
         res.status(404).json({ error: 'Preview not running' });
     }
+});
+
+// 心跳检测接口
+router.post('/heartbeat', (req, res) => {
+    const { taskId, modelName } = req.body;
+    if (!taskId || !modelName) return res.status(400).json({ error: 'Missing params' });
+
+    const folderName = `${taskId}/${modelName}`;
+    previewService.updateHeartbeat(folderName);
+    res.json({ success: true });
 });
 
 // 获取预览状态和日志

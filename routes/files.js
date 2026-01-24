@@ -46,12 +46,15 @@ router.get('/task_details/:taskId', (req, res) => {
                     generatedFiles = walkSync(folderPath);
                 }
 
+                // Check if any files exist (ignoring strict HTML check to support backend-rendered apps)
+                const hasFiles = generatedFiles.length > 0;
+
                 return {
                     runId: run.id,
                     folderName: path.join(taskId, run.model_name),
                     modelName: run.model_name,
                     status: run.status,
-                    previewable: !!run.previewable,
+                    previewable: hasFiles, // Allow preview for any project with files
                     generatedFiles,
                     stats: {
                         duration: run.duration,

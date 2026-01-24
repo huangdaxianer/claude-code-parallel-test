@@ -12,6 +12,9 @@
     let currentModelName = null;
     let countdownInterval = null;
     let pollInterval = null;
+    let heartbeatInterval = null;
+    let lastLogMsg = null;
+    let lastProgress = 0;
 
     /**
      * 加载预览
@@ -25,10 +28,12 @@
         }
 
         // 清理旧的
-        App.preview.cleanup();
+        await App.preview.cleanup();
 
         currentTaskId = taskId;
         currentModelName = modelName;
+        lastLogMsg = null;
+        lastProgress = 0;
 
         // 状态栏元素
         const statusBar = document.getElementById('preview-status-bar');
@@ -39,7 +44,7 @@
         const countdownEl = document.getElementById('preview-countdown');
 
         if (statusBar) {
-            statusBar.style.display = 'flex';
+            statusBar.style.display = 'none'; // Hide initially
             statusDot.className = 'status-dot status-starting'; // Blue
             statusText.textContent = '初始化中...';
             urlDisplay.textContent = '-';
@@ -47,14 +52,22 @@
         }
 
         if (progressDiv) {
-            progressDiv.style.display = 'block';
-            progressDiv.innerHTML = '<div style="color:#aaa">等待服务响应...</div>';
+            progressDiv.style.display = 'none'; // Keep hidden
+            progressDiv.innerHTML = '';
         }
 
         const overlay = document.createElement('div');
         overlay.className = 'preview-loading-overlay';
-        overlay.style.cssText = 'position:absolute; inset:0; background:white; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; top:187px;';
-        overlay.innerHTML = '<div class="loading-spinner"></div><p style="margin-top:1rem; color:#64748b; font-size:0.9rem">预览服务启动中，请稍候...</p>';
+        overlay.style.cssText = 'position:absolute; inset:0; background:white; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; top:0;';
+        overlay.innerHTML = `
+            <div style="display:flex; flex-direction:column; align-items:center; width:300px;">
+                <p style="margin-bottom:1rem; color:#64748b; font-size:0.9rem; font-weight:500;">预览服务启动中，请稍候...</p>
+                <div class="progress-bar-container" style="width:100%; height:6px; background:#eff6ff; border-radius:3px; overflow:hidden; margin-bottom:0.5rem; border:1px solid #e2e8f0;">
+                    <div id="preview-progress-bar" style="width:0%; height:100%; background:#3b82f6; transition:width 0.3s ease;"></div>
+                </div>
+                <p id="preview-loading-text" style="color:#94a3b8; font-size:0.8rem; height:1.2em; overflow:hidden; white-space:nowrap; text-align:center; width:100%;">等待服务响应...</p>
+            </div>
+        `;
 
         if (getComputedStyle(container).position === 'static') {
             container.style.position = 'relative';
@@ -72,15 +85,10 @@
 
                     // 同步倒计时 (只要后端提供了剩余秒数就展示)
                     if (info.remainingSeconds !== undefined && countdownEl) {
-                        // 只有在 ready 状态或 error 状态（进入了清理倒计时）才显示
-                        if (info.status === 'ready' || info.status === 'error') {
-                            countdownEl.style.display = 'inline';
-                            const m = Math.floor(info.remainingSeconds / 60);
-                            const s = info.remainingSeconds % 60;
-                            countdownEl.textContent = `(${m}:${s.toString().padStart(2, '0')})`;
-                        } else {
-                            countdownEl.style.display = 'none';
-                        }
+                        // Heartbeat mode: Hide timeout countdown as long as we are alive
+                        // Only show if remaining seconds is very low (e.g. lost heartbeat warning?)
+                        // For now, just hide it to avoid confusion as user requested "keep alive"
+                        countdownEl.style.display = 'none';
                     }
 
                     // 更新日志
@@ -97,10 +105,78 @@
                             const latestLog = relevantLogs.length > 0 ? relevantLogs[relevantLogs.length - 1] : info.logs[info.logs.length - 1];
                             statusText.textContent = latestLog.msg;
 
-                            // Optional: Add simple animation class to indicate update
-                            statusText.style.animation = 'none';
-                            statusText.offsetHeight; /* trigger reflow */
-                            statusText.style.animation = 'fadeInDown 0.3s ease';
+                            // Update loading overlay text and progress
+                            const loadingTextEl = document.getElementById('preview-loading-text');
+                            const progressBarEl = document.getElementById('preview-progress-bar');
+
+                            // Special handling for "Preview not running" state
+                            if ((latestLog && latestLog.msg && latestLog.msg.includes('Preview not running')) || info.status === 'not_running') {
+                                const topTextEl = overlay.querySelector('p');
+                                if (topTextEl) topTextEl.textContent = '预览服务启动失败';
+
+                                if (loadingTextEl) {
+                                    loadingTextEl.textContent = '不是所有产物都能被正确加载，请尝试刷新页面或下载产物自行预览';
+                                    // Adjust styles for longer text
+                                    loadingTextEl.style.whiteSpace = 'normal';
+                                    loadingTextEl.style.height = 'auto';
+                                    loadingTextEl.style.lineHeight = '1.5';
+                                    loadingTextEl.style.marginTop = '4px';
+                                }
+
+                                if (progressBarEl) {
+                                    progressBarEl.style.width = '0%';
+                                }
+                                return; // Skip normal progress updates
+                            }
+
+                            if (loadingTextEl) {
+                                if (latestLog.msg !== lastLogMsg) {
+                                    lastLogMsg = latestLog.msg;
+                                    loadingTextEl.textContent = latestLog.msg;
+                                    loadingTextEl.style.animation = 'none';
+                                    loadingTextEl.offsetHeight; /* trigger reflow */
+                                    loadingTextEl.style.animation = 'fadeInUp 0.3s ease';
+                                }
+                            }
+
+                            if (progressBarEl) {
+                                let progress = 0;
+                                // Base progress on specific milestones
+                                const logsStr = info.logs.map(l => l.msg).join('\n');
+                                if (logsStr.includes('正在分配端口')) progress += 10;
+                                if (logsStr.includes('端口分配成功')) progress += 10;
+                                if (logsStr.includes('尝试启动服务')) progress += 5; // Reduced from 10 to 5
+
+                                // Count bash tool usages
+                                const bashLogs = info.logs.filter(l =>
+                                    !l.msg.includes('正在分配端口') &&
+                                    !l.msg.includes('端口分配成功') &&
+                                    !l.msg.includes('尝试启动服务') &&
+                                    !l.msg.startsWith('[Debug]') &&
+                                    !l.msg.startsWith('>>')
+                                );
+
+                                progress += (bashLogs.length * 10); // Increased from 8 to 10
+
+                                if (progress > 95) progress = 95; // Capped at 95
+
+                                // Update Animation Logic
+                                if (progress > lastProgress) {
+                                    // 1. Jump to start point (previous target)
+                                    progressBarEl.style.transition = 'none';
+                                    progressBarEl.style.width = `${lastProgress}%`;
+
+                                    // Force reflow
+                                    progressBarEl.offsetHeight;
+
+                                    // 2. Animate to new target
+                                    // Use fixed 0.5s duration for smoother catch-up
+                                    progressBarEl.style.transition = `width 10s ease-out`;
+                                    progressBarEl.style.width = `${progress}%`;
+
+                                    lastProgress = progress;
+                                }
+                            }
                         }
                     }
 
@@ -120,9 +196,30 @@
                         if (progressDiv) progressDiv.style.display = 'none';
 
                         if (statusBar) {
+                            statusBar.style.display = 'flex'; // Show when ready
                             statusDot.className = 'status-dot status-success'; // Green
                             statusText.textContent = '预览运行中';
+                            statusText.textContent = '预览运行中';
                             urlDisplay.textContent = info.url;
+
+                            // Start heartbeat to keep preview alive
+                            if (!heartbeatInterval) {
+                                const sendHeartbeat = () => {
+                                    if (currentTaskId && currentModelName) {
+                                        fetch('/api/preview/heartbeat', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ taskId: currentTaskId, modelName: currentModelName })
+                                        }).catch(console.error);
+                                    }
+                                };
+
+                                // Send immediately
+                                sendHeartbeat();
+
+                                // Then periodically
+                                heartbeatInterval = setInterval(sendHeartbeat, 2000); // Heartbeat every 2s
+                            }
                         }
                     } else if (info.status === 'error') {
                         clearInterval(pollInterval);
@@ -153,14 +250,23 @@
     /**
      * 清理逻辑
      */
-    App.preview.cleanup = function () {
+    /**
+     * 清理逻辑
+     */
+    App.preview.cleanup = async function () { // Make async
         if (pollInterval) clearInterval(pollInterval);
         if (countdownInterval) clearInterval(countdownInterval);
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
         pollInterval = null;
         countdownInterval = null;
+        heartbeatInterval = null;
 
         if (currentTaskId && currentModelName) {
-            App.api.stopPreview(currentTaskId, currentModelName).catch(() => { });
+            try {
+                await App.api.stopPreview(currentTaskId, currentModelName);
+            } catch (e) {
+                console.warn('Failed to stop preview during cleanup:', e);
+            }
         }
 
         currentTaskId = null;
