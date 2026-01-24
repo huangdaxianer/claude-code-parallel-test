@@ -202,7 +202,7 @@ router.post('/start', async (req, res) => {
 
     // 7. 启动 Claude Code
     const fileStructure = getFileStructure(projectPath);
-    const prompt = `现在请你启动该项目的前端预览。使用 ${allocatedPort} 端口。请确保服务能够正常访问。如果是静态页面也请将页面预览启动到该端口。如果该端口被占用，请尝试终止占用该端口的任务。你如果需要安装依赖，请使用虚拟环境。禁止使用其它端口，禁止查看非本文件夹的内容，禁止改动文件。你工作目录下的文件结构是\n${fileStructure},`;
+    const prompt = `现在请你启动该项目的前端预览。使用 ${allocatedPort} 端口。请确保服务能够正常访问。如果是静态页面也请将页面预览启动到该端口。如果该端口被占用，请尝试终止占用该端口的任务。你如果需要安装依赖，请使用虚拟环境。如果代码中硬编码了端口，你是被允许且应当修改代码以适配当前端口的（优先使用 process.env.PORT）。禁止使用其它端口，禁止查看非本文件夹的内容。你工作目录下的文件结构是\n${fileStructure},`;
 
     // 增加调试信息打印
     addLog(`端口分配成功`);
