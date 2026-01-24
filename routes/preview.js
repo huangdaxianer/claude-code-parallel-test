@@ -5,7 +5,7 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
-const { exec, spawn } = require('child_process');
+const { exec, spawn, execSync } = require('child_process');
 const config = require('../config');
 const previewService = require('../services/previewService');
 
@@ -106,6 +106,28 @@ router.post('/start', async (req, res) => {
     // 2. 准备环境
     if (!fs.existsSync(projectPath)) {
         return res.status(404).json({ error: 'Project directory not found' });
+    }
+
+    // Check for isolation user availability (similar to batch script)
+    let useIsolation = false;
+    try {
+        // Simple check: can we sudo without password and does claude-user exist?
+        require('child_process').execSync('sudo -n true && id claude-user', { stdio: 'ignore' });
+        useIsolation = true;
+        addLog('Using isolation user: claude-user');
+    } catch (e) {
+        addLog('Running with current user (sudo/claude-user not available)');
+    }
+
+    // Change ownership if using isolation
+    if (useIsolation) {
+        try {
+            // Recursive chown to claude-user
+            require('child_process').execSync(`sudo -n chown -R claude-user "${projectPath}"`);
+        } catch (e) {
+            console.error(`[Preview] Failed to chown project path: ${e.message}`);
+            addLog(`Warning: Failed to set permissions for isolation user.`);
+        }
     }
 
     // 3. 检测项目类型
@@ -220,11 +242,34 @@ router.post('/start', async (req, res) => {
 
     console.log(`[Preview] Executing: ${claudeBin} ${args.join(' ')}`);
 
-    const child = spawn(claudeBin, args, {
+    let spawnCmd = claudeBin;
+    let spawnArgs = args;
+    let spawnOptions = {
         cwd: projectPath,
         env: { ...process.env, PORT: allocatedPort, HOST: '0.0.0.0' },
         stdio: ['pipe', 'pipe', 'pipe']
-    });
+    };
+
+    if (useIsolation) {
+        // Construct sudo command: sudo -n -H -u claude-user env PORT=... claude ...
+        spawnCmd = 'sudo';
+        // Pass essential env vars through 'env'
+        const envVars = [
+            `PORT=${allocatedPort}`,
+            `HOST=0.0.0.0`,
+            // Pass through current PATH and key vars
+            `PATH=${process.env.PATH}`,
+            `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY || ''}`,
+            // Add other necessary keys if needed
+        ];
+
+        spawnArgs = ['-n', '-H', '-u', 'claude-user', 'env', ...envVars, claudeBin, ...args];
+        // When using sudo, we don't pass the process.env directly to spawn, 
+        // as sudo cleans environment. We relies on 'env' command to set them.
+        spawnOptions.env = {};
+    }
+
+    const child = spawn(spawnCmd, spawnArgs, spawnOptions);
 
     child.on('error', (err) => {
         console.error(`[Preview] Failed to start subprocess: ${err}`);
