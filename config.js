@@ -47,6 +47,11 @@ const TITLE_GEN_API = process.env.TITLE_GEN_API || "https://ark.cn-beijing.volce
 const TITLE_GEN_MODEL = process.env.TITLE_GEN_MODEL || "doubao-seed-1-6-flash-250828";
 const TITLE_GEN_KEY = process.env.TITLE_GEN_KEY || "";
 
+// 预览服务配置
+const PUBLIC_HOST = process.env.PUBLIC_HOST || 'localhost';
+const PREVIEW_PORT_START = parseInt(process.env.PREVIEW_PORT_START || '4000', 10);
+const PREVIEW_PORT_END = parseInt(process.env.PREVIEW_PORT_END || '10000', 10);
+
 // 应用配置实例
 let appConfig = loadConfig();
 
@@ -58,6 +63,9 @@ module.exports = {
     TITLE_GEN_API,
     TITLE_GEN_MODEL,
     TITLE_GEN_KEY,
+    PUBLIC_HOST,
+    PREVIEW_PORT_START,
+    PREVIEW_PORT_END,
     loadConfig,
     saveConfig,
     getAppConfig: () => appConfig,

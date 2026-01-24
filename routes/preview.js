@@ -141,7 +141,7 @@ router.post('/start', async (req, res) => {
     previewService.runningPreviews[folderName] = {
         status: 'starting',
         port: allocatedPort,
-        url: `http://localhost:${allocatedPort}`,
+        url: `http://${config.PUBLIC_HOST}:${allocatedPort}`,
         logs: [{ msg: '正在分配端口', ts: Date.now() }],
         startTime: Date.now()
     };

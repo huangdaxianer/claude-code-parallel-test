@@ -86,7 +86,8 @@ function checkPort(port) {
 }
 
 // 查找空闲端口
-async function findFreePort(start = 4000, end = 5000) {
+const config = require('../config');
+async function findFreePort(start = config.PREVIEW_PORT_START, end = config.PREVIEW_PORT_END) {
     for (let p = start; p <= end; p++) {
         if (allocatedPorts.has(p)) continue;
         if (!(await checkPort(p))) {
