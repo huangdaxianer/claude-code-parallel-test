@@ -528,10 +528,16 @@ router.post('/stop', async (req, res) => {
 // 心跳检测接口
 router.post('/heartbeat', (req, res) => {
     const { taskId, modelName } = req.body;
-    if (!taskId || !modelName) return res.status(400).json({ error: 'Missing params' });
 
-    const folderName = `${taskId}/${modelName}`;
-    previewService.updateHeartbeat(folderName);
+    if (taskId) {
+        previewService.updateTaskHeartbeat(taskId);
+    }
+
+    if (taskId && modelName) {
+        const folderName = `${taskId}/${modelName}`;
+        previewService.updateHeartbeat(folderName);
+    }
+
     res.json({ success: true });
 });
 

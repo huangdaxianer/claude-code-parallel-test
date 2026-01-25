@@ -94,7 +94,21 @@
 
         // 启动预览
         try {
-            const data = await App.api.startPreview(taskId, modelName);
+            // 尝试恢复现有会话
+            let shouldStart = true;
+            try {
+                const existingStatus = await App.api.getPreviewStatus(taskId, modelName);
+                if (existingStatus && (existingStatus.status === 'starting' || existingStatus.status === 'ready')) {
+                    console.log('[Preview] Resuming existing active session...');
+                    shouldStart = false;
+                }
+            } catch (e) {
+                // If check fails (e.g. 404), proceed to start
+            }
+
+            if (shouldStart) {
+                await App.api.startPreview(taskId, modelName);
+            }
 
             // 轮询状态
             pollInterval = setInterval(async () => {

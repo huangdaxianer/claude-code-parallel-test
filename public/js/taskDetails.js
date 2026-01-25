@@ -14,6 +14,11 @@
         try {
             const data = await App.api.getTaskDetails(App.state.currentTaskId);
 
+            // Start Global Task Heartbeat
+            if (App.state.currentTaskId) {
+                App.startTaskHeartbeat(App.state.currentTaskId);
+            }
+
             if (!data.runs || data.runs.length === 0) {
                 App.elements.modelListEl.innerHTML = '<div style="padding:1rem; color:#94a3b8; font-size:0.9rem;">正在启动任务...</div>';
                 return;
@@ -210,5 +215,31 @@
             App.main.renderMainContent();
         }
     };
+
+    /**
+     *Start task-level heartbeat
+     */
+    let taskHeartbeatInterval = null;
+    App.startTaskHeartbeat = function (taskId) {
+        if (taskHeartbeatInterval) clearInterval(taskHeartbeatInterval);
+
+        const sendHeartbeat = () => {
+            if (taskId) {
+                fetch('/api/preview/heartbeat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ taskId: taskId })
+                }).catch(e => console.error('Task heartbeat failed', e));
+            }
+        };
+
+        sendHeartbeat();
+        taskHeartbeatInterval = setInterval(sendHeartbeat, 3000); // Send every 3s
+    };
+
+    // Stop heartbeat when page unloads
+    window.addEventListener('beforeunload', () => {
+        if (taskHeartbeatInterval) clearInterval(taskHeartbeatInterval);
+    });
 
 })();

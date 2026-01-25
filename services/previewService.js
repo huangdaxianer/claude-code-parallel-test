@@ -14,6 +14,13 @@ const runningPreviews = {};
 // 任务级别的心跳记录 Map<taskId, lastHeartbeatTime>
 const lastTaskHeartbeats = {};
 
+// 更新任务级心跳
+function updateTaskHeartbeat(taskId) {
+    if (taskId) {
+        lastTaskHeartbeats[taskId] = Date.now();
+    }
+}
+
 // 更新心跳
 function updateHeartbeat(folderName) {
     if (runningPreviews[folderName]) {
@@ -21,7 +28,7 @@ function updateHeartbeat(folderName) {
 
         // 提取 taskId 并更新任务级心跳
         const taskId = folderName.split('/')[0];
-        lastTaskHeartbeats[taskId] = Date.now();
+        updateTaskHeartbeat(taskId);
     }
 }
 
@@ -383,5 +390,6 @@ module.exports = {
     detectStartCommand,
     detectStartCommand,
     detectProjectType,
-    updateHeartbeat
+    updateHeartbeat,
+    updateTaskHeartbeat
 };
