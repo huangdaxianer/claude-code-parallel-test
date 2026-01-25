@@ -129,23 +129,27 @@ router.post('/start', async (req, res) => {
     if (useIsolation) {
         try {
             // Recursive chown to claude-user
-            require('child_process').execSync(`sudo -n chown -R claude-user "${projectPath}"`);
+            require('child_process').execSync(`sudo -n chown -R claude-user "${activePath}"`);
         } catch (e) {
             console.error(`[Preview] Failed to chown project path: ${e.message}`);
             addLog(`Warning: Failed to set permissions for isolation user.`);
         }
     }
 
-    // 3. 检测项目类型
-    const projectType = await previewService.detectProjectType(projectPath);
+    // 3. 检测项目类型 (先在原始路径检测，因为隔离路径可能还没 Ready)
+    const originalProjectType = await previewService.detectProjectType(projectPath);
 
-    // 如果是纯 HTML 项目，直接返回静态服务 URL，不启动 Claude Code
-    if (projectType === 'html') {
-        const files = fs.readdirSync(projectPath);
+    // 4. 隔离路径
+    const isolatedPath = previewService.ensureIsolatedPath(projectPath);
+    const activePathResolved = isolatedPath; // 后续所有操作都基于 activePathResolved
+
+    // 如果是纯 HTML 项目，直接返回静态服务 URL
+    if (originalProjectType === 'html') {
+        const files = fs.readdirSync(activePathResolved);
         const indexFile = files.find(f => f.toLowerCase() === 'index.html') || files.find(f => f.endsWith('.html'));
 
         if (indexFile) {
-            const staticUrl = `/api/preview/view/${taskId}/${modelName}/${indexFile}`;
+            const staticUrl = `/api/preview/view/${taskId}/${modelName}_preview/${indexFile}`;
             previewService.runningPreviews[folderName] = {
                 status: 'ready',
                 type: 'static',
@@ -207,7 +211,7 @@ router.post('/start', async (req, res) => {
 
     // 7. Fast Path: 尝试直接启动 (智能加速)
     try {
-        const startCmd = await previewService.detectStartCommand(projectPath);
+        const startCmd = await previewService.detectStartCommand(activePathResolved);
         if (startCmd) {
             addLog(`⚡️ Fast Path detected: ${startCmd.type} project`);
             addLog(`Command: ${startCmd.cmd} ${startCmd.args.join(' ')}`);
@@ -226,7 +230,7 @@ router.post('/start', async (req, res) => {
             let fastSpawnCmd = startCmd.cmd;
             let fastSpawnArgs = finalArgs;
             let fastSpawnOptions = {
-                cwd: projectPath,
+                cwd: activePathResolved,
                 env: finalEnv,
                 stdio: ['ignore', 'pipe', 'pipe']
             };
@@ -286,7 +290,10 @@ router.post('/start', async (req, res) => {
                 previewService.runningPreviews[folderName].lastHeartbeat = Date.now();
                 return res.json({ status: 'ready', port: allocatedPort, url: previewService.runningPreviews[folderName].url });
             } else {
-                addLog(`⚠️ Fast Path failed: ${fastStartResult.reason}. Falling back to Smart Agent...`);
+                const failureMsg = `⚠️ Fast Path failed: ${fastStartResult.reason}. Falling back to Smart Agent...`;
+                addLog(failureMsg);
+                console.log(`[Preview][FastPathFailure] Task: ${taskId}/${modelName} | Type: ${startCmd.type} | Cmd: ${fastSpawnCmd} ${fastSpawnArgs.join(' ')} | Reason: ${fastStartResult.reason}`);
+
                 // Kill the failed fast process ensure cleanup
                 try {
                     if (fastChild.pid) process.kill(fastChild.pid);
@@ -319,13 +326,13 @@ router.post('/start', async (req, res) => {
     }
 
     // 7. 启动 Claude Code
-    const fileStructure = getFileStructure(projectPath);
+    const fileStructure = getFileStructure(activePathResolved);
     const prompt = `现在请你启动该项目的前端预览。使用 ${allocatedPort} 端口。请确保服务能够正常访问。如果是静态页面也请将页面预览启动到该端口。如果该端口被占用，请尝试终止占用该端口的任务。你如果需要安装依赖，请使用虚拟环境。如果代码中硬编码了端口，你是被允许且应当修改代码以适配当前端口的（如果是 Node.js 请优先使用 process.env.PORT || ${allocatedPort}，如果是 Python 请使用 os.environ.get('PORT', ${allocatedPort})）。禁止使用其它端口，禁止查看非本文件夹的内容。你工作目录下的文件结构是\n${fileStructure},`;
 
     // 增加调试信息打印
     addLog(`端口分配成功`);
 
-    console.log(`[Preview] Starting Claude Code for ${folderName} on port ${allocatedPort}`);
+    console.log(`[Preview] Starting Claude Code for ${folderName} (Isolated) on port ${allocatedPort}`);
 
     const claudeModel = 'tomato'; // 强制使用 tomato 模型
     const args = [
@@ -336,12 +343,12 @@ router.post('/start', async (req, res) => {
         '--verbose'
     ];
 
-    console.log(`[Preview] Executing: ${claudeBin} ${args.join(' ')}`);
+    console.log(`[Preview] Executing (Isolated): ${claudeBin} ${args.join(' ')}`);
 
     let spawnCmd = claudeBin;
     let spawnArgs = args;
     let spawnOptions = {
-        cwd: projectPath,
+        cwd: activePathResolved,
         env: { ...process.env, PORT: allocatedPort, HOST: '0.0.0.0' },
         stdio: ['pipe', 'pipe', 'pipe']
     };

@@ -9,6 +9,25 @@
     App.main = {};
 
     /**
+     * 更新标签页 UI (不含 URL 和 内容渲染)
+     */
+    App.main.updateTabUI = function (tabName) {
+        App.state.activeTab = tabName;
+
+        document.querySelectorAll('.tab').forEach(t => {
+            t.classList.toggle('active', t.dataset.tab === tabName);
+        });
+
+        const trajectoryContent = document.getElementById('tab-content-trajectory');
+        const filesContent = document.getElementById('tab-content-files');
+        const previewContent = document.getElementById('tab-content-preview');
+
+        if (trajectoryContent) trajectoryContent.classList.toggle('active', tabName === 'trajectory');
+        if (filesContent) filesContent.classList.toggle('active', tabName === 'files');
+        if (previewContent) previewContent.classList.toggle('active', tabName === 'preview');
+    };
+
+    /**
      * 渲染主内容
      */
     App.main.renderMainContent = function () {
@@ -185,17 +204,9 @@
                 // Fallback: If current tab is preview but it's not available, switch to trajectory
                 // This handles cases where user directly navigates to &page=preview but it's not valid
                 if (App.state.activeTab === 'preview') {
-                    App.state.activeTab = 'trajectory';
+                    App.state.activeTab = 'trajectory'; // Update state immediately
                     App.updateUrl(App.state.currentTaskId, App.state.activeFolder, 'trajectory');
-
-                    // Update UI for tab selection
-                    document.querySelectorAll('.tab').forEach(t => {
-                        t.classList.toggle('active', t.dataset.tab === 'trajectory');
-                    });
-
-                    document.getElementById('tab-content-trajectory').classList.add('active');
-                    document.getElementById('tab-content-files').classList.remove('active');
-                    document.getElementById('tab-content-preview').classList.remove('active');
+                    App.main.updateTabUI('trajectory');
                 }
             }
         }
@@ -344,15 +355,7 @@
      * 切换标签
      */
     App.main.switchTab = function (tabName) {
-        App.state.activeTab = tabName;
-
-        document.querySelectorAll('.tab').forEach(t => {
-            t.classList.toggle('active', t.dataset.tab === tabName);
-        });
-
-        document.getElementById('tab-content-trajectory').classList.toggle('active', tabName === 'trajectory');
-        document.getElementById('tab-content-files').classList.toggle('active', tabName === 'files');
-        document.getElementById('tab-content-preview').classList.toggle('active', tabName === 'preview');
+        App.main.updateTabUI(tabName);
 
         // Update URL with new page
         App.updateUrl(App.state.currentTaskId, App.state.activeFolder, tabName);

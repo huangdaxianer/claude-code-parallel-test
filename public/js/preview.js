@@ -83,11 +83,8 @@
                 try {
                     const info = await App.api.getPreviewStatus(taskId, modelName);
 
-                    // 同步倒计时 (只要后端提供了剩余秒数就展示)
+                    // 同步倒计时
                     if (info.remainingSeconds !== undefined && countdownEl) {
-                        // Heartbeat mode: Hide timeout countdown as long as we are alive
-                        // Only show if remaining seconds is very low (e.g. lost heartbeat warning?)
-                        // For now, just hide it to avoid confusion as user requested "keep alive"
                         countdownEl.style.display = 'none';
                     }
 
@@ -100,7 +97,6 @@
 
                         // 动态更新状态栏文本为最新消息
                         if (info.logs.length > 0) {
-                            // Find the last relevant message to display as status
                             const relevantLogs = info.logs.filter(l => !l.msg.startsWith('[Debug]'));
                             const latestLog = relevantLogs.length > 0 ? relevantLogs[relevantLogs.length - 1] : info.logs[info.logs.length - 1];
                             statusText.textContent = latestLog.msg;
@@ -108,46 +104,48 @@
                             // Update loading overlay text and progress
                             const loadingTextEl = document.getElementById('preview-loading-text');
                             const progressBarEl = document.getElementById('preview-progress-bar');
+                            const logsStr = info.logs.map(l => l.msg).join('\n');
+                            const isFastPath = logsStr.includes('Fast Path detected');
 
-                            // Special handling for "Preview not running" state
+                            // Determine Target Text first
+                            let targetText = latestLog.msg;
+
                             if ((latestLog && latestLog.msg && latestLog.msg.includes('Preview not running')) || info.status === 'not_running') {
+                                targetText = '预览服务启动失败';
+                                if (progressBarEl) progressBarEl.style.width = '0%';
+
                                 const topTextEl = overlay.querySelector('p');
                                 if (topTextEl) topTextEl.textContent = '预览服务启动失败';
-
                                 if (loadingTextEl) {
                                     loadingTextEl.textContent = '不是所有产物都能被正确加载，请尝试刷新页面或下载产物自行预览';
-                                    // Adjust styles for longer text
                                     loadingTextEl.style.whiteSpace = 'normal';
                                     loadingTextEl.style.height = 'auto';
                                     loadingTextEl.style.lineHeight = '1.5';
                                     loadingTextEl.style.marginTop = '4px';
                                 }
-
-                                if (progressBarEl) {
-                                    progressBarEl.style.width = '0%';
-                                }
-                                return; // Skip normal progress updates
+                                return;
+                            } else if (isFastPath) {
+                                targetText = '正在启动后端服务';
                             }
 
-                            if (loadingTextEl) {
-                                if (latestLog.msg !== lastLogMsg) {
-                                    lastLogMsg = latestLog.msg;
-                                    loadingTextEl.textContent = latestLog.msg;
-                                    loadingTextEl.style.animation = 'none';
-                                    loadingTextEl.offsetHeight; /* trigger reflow */
-                                    loadingTextEl.style.animation = 'fadeInUp 0.3s ease';
-                                }
+                            if (loadingTextEl && targetText !== lastLogMsg) {
+                                lastLogMsg = targetText;
+                                loadingTextEl.textContent = targetText;
+                                loadingTextEl.style.animation = 'none';
+                                loadingTextEl.offsetHeight;
+                                loadingTextEl.style.animation = 'fadeInUp 0.3s ease';
                             }
 
                             if (progressBarEl) {
                                 let progress = 0;
-                                // Base progress on specific milestones
-                                const logsStr = info.logs.map(l => l.msg).join('\n');
                                 if (logsStr.includes('正在分配端口')) progress += 10;
                                 if (logsStr.includes('端口分配成功')) progress += 10;
-                                if (logsStr.includes('尝试启动服务')) progress += 5; // Reduced from 10 to 5
+                                if (logsStr.includes('尝试启动服务')) progress += 5;
 
-                                // Count bash tool usages
+                                if (isFastPath) {
+                                    progress = Math.max(progress, 30);
+                                }
+
                                 const bashLogs = info.logs.filter(l =>
                                     !l.msg.includes('正在分配端口') &&
                                     !l.msg.includes('端口分配成功') &&
@@ -156,24 +154,15 @@
                                     !l.msg.startsWith('>>')
                                 );
 
-                                progress += (bashLogs.length * 10); // Increased from 8 to 10
+                                progress += (bashLogs.length * 10);
+                                if (progress > 95) progress = 95;
 
-                                if (progress > 95) progress = 95; // Capped at 95
-
-                                // Update Animation Logic
                                 if (progress > lastProgress) {
-                                    // 1. Jump to start point (previous target)
                                     progressBarEl.style.transition = 'none';
                                     progressBarEl.style.width = `${lastProgress}%`;
-
-                                    // Force reflow
                                     progressBarEl.offsetHeight;
-
-                                    // 2. Animate to new target
-                                    // Use fixed 0.5s duration for smoother catch-up
                                     progressBarEl.style.transition = `width 10s ease-out`;
                                     progressBarEl.style.width = `${progress}%`;
-
                                     lastProgress = progress;
                                 }
                             }
@@ -247,9 +236,6 @@
         // ... 被同步逻辑替代
     }
 
-    /**
-     * 清理逻辑
-     */
     /**
      * 清理逻辑
      */

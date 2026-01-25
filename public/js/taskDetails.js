@@ -72,6 +72,10 @@
                     statsView.classList.remove('active');
                     comparisonView.classList.remove('active');
                     mainContent.classList.remove('hidden');
+
+                    // Ensure UI reflects the active tab state
+                    App.main.updateTabUI(App.state.activeTab || 'trajectory');
+
                     App.main.renderMainContent();
                 }
                 App.feedback.autoOpenFeedbackSidebar();
@@ -131,17 +135,8 @@
                 App.state.activeFolder = run.folderName;
 
                 // Reset to trajectory view when switching subtasks
-                App.state.activeTab = 'trajectory';
-
-                // Update tabs UI
-                document.querySelectorAll('.tab').forEach(t => {
-                    t.classList.toggle('active', t.dataset.tab === 'trajectory');
-                });
-                document.getElementById('tab-content-trajectory').classList.add('active');
-                document.getElementById('tab-content-files').classList.remove('active');
-                document.getElementById('tab-content-preview').classList.remove('active');
-
-                App.updateUrl(App.state.currentTaskId, App.state.activeFolder, 'trajectory');
+                // Usage switchTab to handle UI updates, URL updates, and content rendering
+                App.main.switchTab('trajectory');
 
                 App.renderModelList();
 
@@ -152,10 +147,6 @@
                 App.elements.logDisplayEl.innerHTML = '<div class="empty-state"><p style="margin-top: 1rem; font-size: 0.9rem;">正在加载...</p></div>';
                 App.elements.logDisplayEl.dataset.lineCount = '0';
                 App.elements.logDisplayEl.dataset.renderedFolder = App.state.activeFolder;
-
-                setTimeout(() => {
-                    App.main.renderMainContent();
-                }, 10);
 
                 App.feedback.autoOpenFeedbackSidebar();
             };

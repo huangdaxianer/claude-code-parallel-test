@@ -264,6 +264,14 @@ async function detectStartCommand(projectPath) {
         } catch (e) { }
     }
 
+    // Detect Virtual Environment
+    let pythonCmd = 'python3';
+    if (fs.existsSync(path.join(projectPath, 'venv/bin/python'))) {
+        pythonCmd = path.join(projectPath, 'venv/bin/python');
+    } else if (fs.existsSync(path.join(projectPath, '.venv/bin/python'))) {
+        pythonCmd = path.join(projectPath, '.venv/bin/python');
+    }
+
     if (mainPy) {
         if (hasStreamlit) {
             return { type: 'python', cmd: 'streamlit', args: ['run', mainPy, '--server.port', '{PORT}', '--server.headless', 'true'] };
@@ -272,20 +280,20 @@ async function detectStartCommand(projectPath) {
         if (hasFlask) {
             return {
                 type: 'python',
-                cmd: 'python3',
+                cmd: pythonCmd,
                 args: ['-m', 'flask', 'run', '--host=0.0.0.0', '--port={PORT}'],
                 env: { FLASK_APP: mainPy, FLASK_DEBUG: '1' }
             };
         }
 
         if (hasGradio) {
-            return { type: 'python', cmd: 'python3', args: [mainPy], env: { GRADIO_SERVER_PORT: '{PORT}', GRADIO_SERVER_NAME: '0.0.0.0' } };
+            return { type: 'python', cmd: pythonCmd, args: [mainPy], env: { GRADIO_SERVER_PORT: '{PORT}', GRADIO_SERVER_NAME: '0.0.0.0' } };
         }
         if (hasDjango && fs.existsSync(path.join(projectPath, 'manage.py'))) {
-            return { type: 'python', cmd: 'python3', args: ['manage.py', 'runserver', '0.0.0.0:{PORT}'] };
+            return { type: 'python', cmd: pythonCmd, args: ['manage.py', 'runserver', '0.0.0.0:{PORT}'] };
         }
         // Generic python fallback 
-        return { type: 'python', cmd: 'python3', args: [mainPy] };
+        return { type: 'python', cmd: pythonCmd, args: [mainPy] };
     }
 
     // 3. Java (basic support)
@@ -316,7 +324,41 @@ async function detectProjectType(projectPath) {
     return 'unknown';
 }
 
+/**
+ * 确保存在隔离的预览路径
+ * @param {string} originalPath 原始路径
+ * @returns {string} 隔离路径
+ */
+function ensureIsolatedPath(originalPath) {
+    const parentDir = path.dirname(originalPath);
+    const baseName = path.basename(originalPath);
+    const isolatedPath = path.join(parentDir, `${baseName}_preview`);
+
+    try {
+        if (!fs.existsSync(isolatedPath)) {
+            console.log(`[Preview] Creating isolated path: ${isolatedPath}`);
+            const { execSync } = require('child_process');
+            execSync(`cp -R "${originalPath}/" "${isolatedPath}"`);
+        } else {
+            console.log(`[Preview] Syncing isolated path: ${isolatedPath}`);
+            const { execSync } = require('child_process');
+            // Use rsync for faster sync, excluding heavy folders
+            try {
+                execSync(`rsync -a --delete --exclude 'venv' --exclude '.venv' --exclude 'node_modules' "${originalPath}/" "${isolatedPath}"`);
+            } catch (rsyncErr) {
+                // Background fallback to cp if rsync fails
+                execSync(`cp -R "${originalPath}/" "${isolatedPath}"`);
+            }
+        }
+        return isolatedPath;
+    } catch (e) {
+        console.error(`[Preview] Failed to isolate path: ${e.message}`);
+        return originalPath;
+    }
+}
+
 module.exports = {
+    ensureIsolatedPath,
     runningPreviews,
     checkPort,
     findFreePort,
