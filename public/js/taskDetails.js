@@ -24,6 +24,11 @@
                 return;
             }
 
+            // Initialize batch previews (Concurrent Start)
+            if (App.preview && App.preview.initAll) {
+                App.preview.initAll(data.runs);
+            }
+
             // 合并新数据与现有日志
             if (App.state.currentRuns.length > 0) {
                 const oldRunsMap = new Map(App.state.currentRuns.map(r => [r.folderName, r]));

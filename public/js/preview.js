@@ -17,6 +17,48 @@
     let lastProgress = 0;
 
     /**
+     * 批量初始化预览
+     * 尝试为列表中的所有任务启动预览
+     */
+    App.preview.initAll = async function (runs) {
+        if (!runs || runs.length === 0) return;
+
+        console.log('[Preview] Initializing batch previews for', runs.length, 'runs');
+
+        // 这里的 taskId 应该是统一的
+        const taskId = runs[0].taskId || (runs[0].folderName ? runs[0].folderName.split('/')[0] : null);
+
+        if (!taskId) return;
+
+        // 并发启动所有预览
+        // 使用 fire-and-forget 模式，不阻塞主流程
+        runs.forEach(async (run) => {
+            if (!run.previewable) {
+                console.log(`[Preview] Skipping non-previewable run: ${run.modelName}`);
+                return;
+            }
+
+            const modelName = run.modelName;
+            if (!modelName) return;
+
+            try {
+                // Check status first
+                const startRes = await App.api.getPreviewStatus(taskId, modelName);
+                if (startRes && (startRes.status === 'starting' || startRes.status === 'ready')) {
+                    console.log(`[Preview] ${modelName} already running/starting.`);
+                    return;
+                }
+
+                // If not running, start it
+                console.log(`[Preview] Auto-starting preview for ${modelName}`);
+                await App.api.startPreview(taskId, modelName);
+            } catch (e) {
+                console.warn(`[Preview] Failed to auto-start ${modelName}:`, e);
+            }
+        });
+    };
+
+    /**
      * 加载预览
      */
     App.preview.loadPreview = async function (taskId, modelName, iframe, container) {
@@ -92,14 +134,14 @@
             heartbeatInterval = setInterval(sendHeartbeat, 2000);
         }
 
-        // 启动预览
+        // 启动/连接预览
         try {
-            // 尝试恢复现有会话
+            // 尝试连接现有会话 (大部分情况下 initAll 应该已经启动了)
             let shouldStart = true;
             try {
                 const existingStatus = await App.api.getPreviewStatus(taskId, modelName);
                 if (existingStatus && (existingStatus.status === 'starting' || existingStatus.status === 'ready')) {
-                    console.log('[Preview] Resuming existing active session...');
+                    console.log('[Preview] Connecting to existing active session...');
                     shouldStart = false;
                 }
             } catch (e) {
@@ -107,6 +149,7 @@
             }
 
             if (shouldStart) {
+                console.log('[Preview] No active session found during load, starting new...');
                 await App.api.startPreview(taskId, modelName);
             }
 
