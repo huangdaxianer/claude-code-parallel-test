@@ -85,6 +85,48 @@
         const progressDiv = document.getElementById('preview-progress');
         const countdownEl = document.getElementById('preview-countdown');
 
+        // Fast Path: Check if already running before showing loading UI
+        try {
+            const preCheck = await App.api.getPreviewStatus(taskId, modelName);
+            if (preCheck && preCheck.status === 'ready' && preCheck.url) {
+                console.log('[Preview] Fast path: Service ready, skipping loading UI');
+
+                // Ensure heartbeat is monitoring this
+                if (!heartbeatInterval) {
+                    const sendHeartbeat = () => {
+                        const taskIdToSend = taskId || currentTaskId;
+                        const modelNameToSend = modelName || currentModelName;
+                        if (taskIdToSend && modelNameToSend) {
+                            fetch('/api/preview/heartbeat', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ taskId: taskIdToSend, modelName: modelNameToSend })
+                            }).catch(console.error);
+                        }
+                    };
+                    sendHeartbeat();
+                    heartbeatInterval = setInterval(sendHeartbeat, 2000);
+                }
+
+                if (iframe.getAttribute('data-src') !== preCheck.url) {
+                    iframe.src = preCheck.url;
+                    iframe.setAttribute('data-src', preCheck.url);
+                }
+                iframe.style.display = 'block';
+
+                if (statusBar) {
+                    statusBar.style.display = 'flex';
+                    statusDot.className = 'status-dot status-success';
+                    statusText.textContent = '预览运行中';
+                    urlDisplay.textContent = preCheck.url;
+                }
+                if (progressDiv) progressDiv.style.display = 'none';
+                return;
+            }
+        } catch (e) {
+            // Ignore fast path errors
+        }
+
         if (statusBar) {
             statusBar.style.display = 'none'; // Hide initially
             statusDot.className = 'status-dot status-starting'; // Blue

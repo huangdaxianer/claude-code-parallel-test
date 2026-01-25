@@ -26,28 +26,43 @@
 
         if (previewableRuns.length === 0) return;
 
-        // Default logic: load 1st and 2nd subtasks if not already set
-        if (!App.state.compareLeftRun && previewableRuns.length > 0) {
+        const isSingleMode = previewableRuns.length === 1;
+
+        if (isSingleMode) {
             App.state.compareLeftRun = previewableRuns[0].folderName;
-        }
-        if (!App.state.compareRightRun && previewableRuns.length > 0) {
-            // Try to pick a different one for right side
-            if (previewableRuns.length > 1 && previewableRuns[1].folderName !== App.state.compareLeftRun) {
-                App.state.compareRightRun = previewableRuns[1].folderName;
-            } else {
-                // Fallback if only 1 run or weird state
-                App.state.compareRightRun = previewableRuns.length > 1 ? previewableRuns[1].folderName : previewableRuns[0].folderName;
+            App.state.compareRightRun = null;
+        } else {
+            // Default logic: load 1st and 2nd subtasks if not already set
+            if (!App.state.compareLeftRun && previewableRuns.length > 0) {
+                App.state.compareLeftRun = previewableRuns[0].folderName;
+            }
+            if (!App.state.compareRightRun && previewableRuns.length > 0) {
+                // Try to pick a different one for right side
+                if (previewableRuns.length > 1 && previewableRuns[1].folderName !== App.state.compareLeftRun) {
+                    App.state.compareRightRun = previewableRuns[1].folderName;
+                } else {
+                    // Fallback if only 1 run or weird state
+                    App.state.compareRightRun = previewableRuns.length > 1 ? previewableRuns[1].folderName : previewableRuns[0].folderName;
+                }
+            }
+
+            // Ensure they are not the same if we have enough options
+            if (App.state.compareLeftRun === App.state.compareRightRun && previewableRuns.length > 1) {
+                const other = previewableRuns.find(r => r.folderName !== App.state.compareLeftRun);
+                if (other) App.state.compareRightRun = other.folderName;
             }
         }
 
-        // Ensure they are not the same if we have enough options
-        if (App.state.compareLeftRun === App.state.compareRightRun && previewableRuns.length > 1) {
-            const other = previewableRuns.find(r => r.folderName !== App.state.compareLeftRun);
-            if (other) App.state.compareRightRun = other.folderName;
+        // Toggle Right Panel Visibility
+        const rightPanel = document.getElementById('comparison-right');
+        if (rightPanel) {
+            rightPanel.style.display = isSingleMode ? 'none' : 'flex';
         }
 
         App.compare.updateComparisonSide('left');
-        App.compare.updateComparisonSide('right');
+        if (!isSingleMode) {
+            App.compare.updateComparisonSide('right');
+        }
     };
 
     /**
@@ -107,7 +122,7 @@
 
         const htmlFile = (activeRun.generatedFiles || []).find(f => f.endsWith('.html'));
         const packageJson = (activeRun.generatedFiles || []).find(f => f === 'package.json');
-        const hasPreview = htmlFile || packageJson;
+        const hasPreview = activeRun.previewable || htmlFile || packageJson;
 
         if (hasPreview) {
             iframe.style.display = 'block';
