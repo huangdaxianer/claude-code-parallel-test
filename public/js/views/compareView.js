@@ -28,21 +28,34 @@
 
         const isSingleMode = previewableRuns.length === 1;
 
+        // Validate current captures belong to existing previewable runs of the current task
+        const leftExists = previewableRuns.some(r => r.folderName === App.state.compareLeftRun);
+        const rightExists = previewableRuns.some(r => r.folderName === App.state.compareRightRun);
+
+        if (!leftExists) App.state.compareLeftRun = null;
+        if (!rightExists) App.state.compareRightRun = null;
+
         if (isSingleMode) {
             App.state.compareLeftRun = previewableRuns[0].folderName;
             App.state.compareRightRun = null;
         } else {
-            // Default logic: load 1st and 2nd subtasks if not already set
+            // Default logic: load 1st and 2nd subtasks if not already set or defaulted above
             if (!App.state.compareLeftRun && previewableRuns.length > 0) {
                 App.state.compareLeftRun = previewableRuns[0].folderName;
             }
             if (!App.state.compareRightRun && previewableRuns.length > 0) {
-                // Try to pick a different one for right side
-                if (previewableRuns.length > 1 && previewableRuns[1].folderName !== App.state.compareLeftRun) {
-                    App.state.compareRightRun = previewableRuns[1].folderName;
+                // Try to pick a different one for right side (the 2nd model)
+                if (previewableRuns.length > 1) {
+                    // Always try to pick the 2nd one if we just reset or haven't set it
+                    const secondRun = previewableRuns[1];
+                    if (secondRun.folderName !== App.state.compareLeftRun) {
+                        App.state.compareRightRun = secondRun.folderName;
+                    } else {
+                        // This should theoretically not happen if they are different models
+                        App.state.compareRightRun = previewableRuns[0].folderName;
+                    }
                 } else {
-                    // Fallback if only 1 run or weird state
-                    App.state.compareRightRun = previewableRuns.length > 1 ? previewableRuns[1].folderName : previewableRuns[0].folderName;
+                    App.state.compareRightRun = previewableRuns[0].folderName;
                 }
             }
 
