@@ -27,8 +27,8 @@
             return;
         }
 
-        // 清理旧的
-        await App.preview.cleanup();
+        // 清理旧的 (尝试保留相同任务的进程)
+        await App.preview.cleanup(taskId);
 
         currentTaskId = taskId;
         currentModelName = modelName;
@@ -73,6 +73,24 @@
             container.style.position = 'relative';
         }
         container.appendChild(overlay);
+
+        // 启动心跳以保活 (立即启动，防止并发的其他 Preview 被杀)
+        if (!heartbeatInterval) {
+            const sendHeartbeat = () => {
+                const taskIdToSend = taskId || currentTaskId;
+                const modelNameToSend = modelName || currentModelName;
+                if (taskIdToSend && modelNameToSend) {
+                    fetch('/api/preview/heartbeat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ taskId: taskIdToSend, modelName: modelNameToSend })
+                    }).catch(console.error);
+                }
+            };
+
+            sendHeartbeat();
+            heartbeatInterval = setInterval(sendHeartbeat, 2000);
+        }
 
         // 启动预览
         try {
@@ -190,25 +208,6 @@
                             statusText.textContent = '预览运行中';
                             statusText.textContent = '预览运行中';
                             urlDisplay.textContent = info.url;
-
-                            // Start heartbeat to keep preview alive
-                            if (!heartbeatInterval) {
-                                const sendHeartbeat = () => {
-                                    if (currentTaskId && currentModelName) {
-                                        fetch('/api/preview/heartbeat', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ taskId: currentTaskId, modelName: currentModelName })
-                                        }).catch(console.error);
-                                    }
-                                };
-
-                                // Send immediately
-                                sendHeartbeat();
-
-                                // Then periodically
-                                heartbeatInterval = setInterval(sendHeartbeat, 2000); // Heartbeat every 2s
-                            }
                         }
                     } else if (info.status === 'error') {
                         clearInterval(pollInterval);
@@ -238,8 +237,9 @@
 
     /**
      * 清理逻辑
+     * @param {string} nextTaskId 下一个要加载的任务ID (可选)
      */
-    App.preview.cleanup = async function () { // Make async
+    App.preview.cleanup = async function (nextTaskId) { // Make async
         if (pollInterval) clearInterval(pollInterval);
         if (countdownInterval) clearInterval(countdownInterval);
         if (heartbeatInterval) clearInterval(heartbeatInterval);
@@ -247,7 +247,8 @@
         countdownInterval = null;
         heartbeatInterval = null;
 
-        if (currentTaskId && currentModelName) {
+        // 如果切换到了不同的 parent task，才真正停止后端进程
+        if (currentTaskId && currentModelName && (!nextTaskId || nextTaskId !== currentTaskId)) {
             try {
                 await App.api.stopPreview(currentTaskId, currentModelName);
             } catch (e) {
@@ -255,7 +256,10 @@
             }
         }
 
-        currentTaskId = null;
+        // 仅在任务改变时清除任务上下文，否则保留以供心跳检测
+        if (!nextTaskId || nextTaskId !== currentTaskId) {
+            currentTaskId = null;
+        }
         currentModelName = null;
 
         const countdownEl = document.getElementById('preview-countdown');
@@ -324,6 +328,6 @@
     });
 
     // 监听 Tab 切换，如果离开预览 Tab 则停止（可选，用户可能想切回来看一眼进度）
-    // 但根据需求“用户关闭前端的预览页面 ... 就关闭相关的进程”，这里我们主要处理 tab 关闭和 unload。
+    // 但根据需求“用户关闭前端的预览页面 ... 就关闭相关的进程”，这里我们主要处理 tab 关闭 and unload。
 
 })();

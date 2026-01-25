@@ -11,36 +11,48 @@ const path = require('path');
 // 运行中的预览 Map<folderName, { proc, port, url, lastAccess, status, logs, timeoutId, lastHeartbeat }>
 const runningPreviews = {};
 
+// 任务级别的心跳记录 Map<taskId, lastHeartbeatTime>
+const lastTaskHeartbeats = {};
+
 // 更新心跳
 function updateHeartbeat(folderName) {
     if (runningPreviews[folderName]) {
         runningPreviews[folderName].lastHeartbeat = Date.now();
-        // 如果有原来的超时逻辑，可以在这里清除或重置，但现在的需求是基于心跳保活
-        // 我们假设前端会持续发送心跳
+
+        // 提取 taskId 并更新任务级心跳
+        const taskId = folderName.split('/')[0];
+        lastTaskHeartbeats[taskId] = Date.now();
     }
 }
 
 // 启动心跳监控 (每1秒检查一次)
 function startHeartbeatMonitor() {
+    console.error("[Monitor] Starting Heartbeat Monitor...");
     setInterval(async () => {
         const now = Date.now();
+        console.error(`[MonitorPulse] ${new Date().toISOString()} | Previews: ${Object.keys(runningPreviews).length}`);
+        const folderNames = Object.keys(runningPreviews);
+        if (folderNames.length > 0) {
+            console.error(`[Monitor] Checking ${folderNames.length} previews: ${folderNames.join(', ')}`);
+        }
         for (const [folderName, info] of Object.entries(runningPreviews)) {
-            const timeSinceHeartbeat = now - (info.lastHeartbeat || info.startTime || now);
+            // 提取 taskId
+            const taskId = folderName.split('/')[0];
+            const taskHeartbeat = lastTaskHeartbeats[taskId] || info.lastHeartbeat || info.startTime || now;
+            const timeSinceTaskHeartbeat = now - taskHeartbeat;
 
-            // 1. 如果是 Ready 状态，检测心跳 (5s 无心跳则清理)
+            // 1. 如果是 Ready 状态，检测任务级心跳 (5s 无心跳则清理)
             if (info.status === 'ready') {
-                if (timeSinceHeartbeat > 5000) { // 5s timeout
-                    console.log(`[PreviewMonitor] Kill stale READY preview ${folderName} (No heartbeat for ${Math.floor(timeSinceHeartbeat / 1000)}s)`);
+                if (timeSinceTaskHeartbeat > 5000) { // 5s timeout
+                    console.error(`[PreviewMonitor] Kill stale READY preview ${folderName} (Task ${taskId} idle for ${Math.floor(timeSinceTaskHeartbeat / 1000)}s)`);
                     await forceCleanup(folderName);
                 }
             }
-            // 2. 如果是 Starting 状态，给予较长宽限期 (10分钟)，防止安装过程被误杀
-            // 注意：前端在 starting 阶段通常不发心跳 (因为还没轮询到 ready)，或者轮询到了但还没 ready
-            // 所以 starting 阶段主要靠总时长限制
+            // 2. 如果是 Starting 状态，给予较长宽限期 (10分钟)
             else if (info.status === 'starting') {
-                const timeSinceStart = now - info.startTime;
+                const timeSinceStart = now - (info.startTime || now);
                 if (timeSinceStart > 600000) { // 10 mins
-                    console.log(`[PreviewMonitor] Kill stale STARTING preview ${folderName} (Timeout 10m)`);
+                    console.error(`[PreviewMonitor] Kill stale STARTING preview ${folderName} (Timeout 10m)`);
                     await forceCleanup(folderName);
                 }
             }
