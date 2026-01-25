@@ -47,7 +47,7 @@
     /**
      * 更新 URL 参数
      */
-    App.updateUrl = function (taskId, modelParam) {
+    App.updateUrl = function (taskId, modelParam, pageParam) {
         if (!App.state.currentUser) return;
 
         const url = new URL(window.location.href);
@@ -72,18 +72,25 @@
             url.searchParams.delete('model');
         }
 
+        if (pageParam) {
+            url.searchParams.set('page', pageParam);
+        } else {
+            url.searchParams.delete('page');
+        }
+
         window.history.pushState({ path: url.toString() }, '', url.toString());
     };
+
 
     /**
      * 加载任务
      */
-    App.loadTask = function (id, pushState, initialModel) {
+    App.loadTask = function (id, pushState, initialModel, initialPage) {
         if (pushState === undefined) pushState = true;
         initialModel = initialModel || null;
 
         if (pushState) {
-            App.updateUrl(id, initialModel);
+            App.updateUrl(id, initialModel, initialPage);
         }
 
         App.state.currentTaskId = id;
@@ -106,6 +113,13 @@
             } else {
                 App.state.activeFolder = `${id}/${initialModel}`;
             }
+        }
+
+        // Set initial page/tab
+        if (initialPage && ['trajectory', 'files', 'preview'].includes(initialPage)) {
+            App.state.activeTab = initialPage;
+        } else {
+            App.state.activeTab = 'trajectory'; // Default
         }
 
         // 清除定时器
@@ -146,10 +160,11 @@
 
         App.initElements();
 
-        // 获取 URL 参数（新格式：user/task/model）
+        // 获取 URL 参数（新格式：user/task/model/page）
         const urlParams = new URLSearchParams(window.location.search);
         const taskId = urlParams.get('task');
         const model = urlParams.get('model');
+        const page = urlParams.get('page');
 
         // 如果 URL 中有任务 ID，先设置到状态中，防止 fetchTaskHistory 自动加载第一个任务
         if (taskId) {
@@ -191,11 +206,11 @@
                     App.toast.show('任务不存在或无权访问');
                     // 清除 URL 参数，显示用户主页
                     App.state.currentTaskId = null;
-                    App.updateUrl(null, null);
+                    App.updateUrl(null, null, null);
                 } else {
                     // 任务存在，加载任务
                     // model 验证会在 loadTask -> fetchTaskDetails 中自然处理
-                    App.loadTask(taskId, false, model);
+                    App.loadTask(taskId, false, model, page);
                 }
             } catch (e) {
                 console.error('[App] Task validation error:', e);
@@ -245,12 +260,14 @@
             const params = new URLSearchParams(window.location.search);
             const id = params.get('task'); // 改为 task
             const model = params.get('model');
+            const page = params.get('page');
             if (id) {
-                App.loadTask(id, false, model);
+                App.loadTask(id, false, model, page);
             } else {
                 App.state.currentTaskId = null;
             }
         });
+
     };
 
 })();

@@ -130,7 +130,18 @@
                 App.state.isStatsMode = false;
                 App.state.activeFolder = run.folderName;
 
-                App.updateUrl(App.state.currentTaskId, App.state.activeFolder);
+                // Reset to trajectory view when switching subtasks
+                App.state.activeTab = 'trajectory';
+
+                // Update tabs UI
+                document.querySelectorAll('.tab').forEach(t => {
+                    t.classList.toggle('active', t.dataset.tab === 'trajectory');
+                });
+                document.getElementById('tab-content-trajectory').classList.add('active');
+                document.getElementById('tab-content-files').classList.remove('active');
+                document.getElementById('tab-content-preview').classList.remove('active');
+
+                App.updateUrl(App.state.currentTaskId, App.state.activeFolder, 'trajectory');
 
                 App.renderModelList();
 

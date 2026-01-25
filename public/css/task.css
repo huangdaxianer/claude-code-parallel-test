@@ -687,15 +687,51 @@
             height: 50px;
         }
 
-        .model-selector {
-            padding: 0.25rem 0.5rem;
+        .comparison-model-list {
+            display: flex;
+            gap: 0.5rem;
+            overflow-x: auto;
+            align-items: center;
+            padding-bottom: 2px;
+            /* Scrollbar hiding */
+            scrollbar-width: none;  /* Firefox */
+        }
+        .comparison-model-list::-webkit-scrollbar {
+            display: none;  /* Chrome, Safari, Opera */
+        }
+
+        .comparison-model-tab {
+            padding: 0.25rem 0.6rem;
             border: 1px solid #cbd5e1;
-            border-radius: 0.375rem;
-            font-size: 0.9rem;
-            color: #334155;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: #64748b;
             background-color: #ffffff;
             cursor: pointer;
-            min-width: 200px;
+            white-space: nowrap;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .comparison-model-tab:hover:not(.disabled) {
+            background-color: #f1f5f9;
+            color: #1e293b;
+        }
+
+        .comparison-model-tab.active {
+            background-color: #eff6ff;
+            color: #2563eb;
+            border-color: #bfdbfe;
+            font-weight: 500;
+        }
+
+        .comparison-model-tab.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background-color: #f8fafc;
+            color: #94a3b8;
         }
 
         .comparison-iframe {

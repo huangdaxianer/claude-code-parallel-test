@@ -118,9 +118,9 @@
                 <!-- Left Panel -->
                 <div class="comparison-panel" id="comparison-left">
                     <div class="comparison-header">
-                        <select class="model-selector" id="select-left" onchange="updateComparisonPanel('left')">
-                            <option value="" disabled selected>Select Model</option>
-                        </select>
+                        <div class="comparison-model-list" id="select-left">
+                            <!-- Model tabs injected here -->
+                        </div>
                         <span id="status-left" class="status-badge" style="display:none"></span>
                     </div>
                     <div style="flex:1; position:relative; overflow:hidden;">
@@ -134,9 +134,9 @@
                 <!-- Right Panel -->
                 <div class="comparison-panel" id="comparison-right">
                     <div class="comparison-header">
-                        <select class="model-selector" id="select-right" onchange="updateComparisonPanel('right')">
-                            <option value="" disabled selected>Select Model</option>
-                        </select>
+                        <div class="comparison-model-list" id="select-right">
+                            <!-- Model tabs injected here -->
+                        </div>
                         <span id="status-right" class="status-badge" style="display:none"></span>
                     </div>
                     <div style="flex:1; position:relative; overflow:hidden;">

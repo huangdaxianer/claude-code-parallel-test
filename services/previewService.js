@@ -253,6 +253,17 @@ async function detectStartCommand(projectPath) {
     // Simple heuristic: if there's an app.py or main.py, it's a strong candidate
     const mainPy = pythonFiles.find(f => ['app.py', 'main.py', 'server.py', 'web.py'].includes(f.toLowerCase())) || pythonFiles[0];
 
+    // If requirements.txt didn't give us a clue, scan the main file content
+    if (mainPy && !hasStreamlit && !hasGradio && !hasFlask && !hasDjango) {
+        try {
+            const mainContent = fs.readFileSync(path.join(projectPath, mainPy), 'utf8').toLowerCase();
+            if (mainContent.includes('import streamlit') || mainContent.includes('from streamlit')) hasStreamlit = true;
+            if (mainContent.includes('import gradio') || mainContent.includes('from gradio')) hasGradio = true;
+            if (mainContent.includes('import flask') || mainContent.includes('from flask')) hasFlask = true;
+            if (mainContent.includes('import django') || mainContent.includes('from django')) hasDjango = true;
+        } catch (e) { }
+    }
+
     if (mainPy) {
         if (hasStreamlit) {
             return { type: 'python', cmd: 'streamlit', args: ['run', mainPy, '--server.port', '{PORT}', '--server.headless', 'true'] };

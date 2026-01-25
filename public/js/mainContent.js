@@ -181,7 +181,22 @@
                 previewTabBtn.style.display = 'block';
             } else {
                 previewTabBtn.style.display = 'none';
-                if (App.state.activeTab === 'preview') App.main.switchTab('files');
+
+                // Fallback: If current tab is preview but it's not available, switch to trajectory
+                // This handles cases where user directly navigates to &page=preview but it's not valid
+                if (App.state.activeTab === 'preview') {
+                    App.state.activeTab = 'trajectory';
+                    App.updateUrl(App.state.currentTaskId, App.state.activeFolder, 'trajectory');
+
+                    // Update UI for tab selection
+                    document.querySelectorAll('.tab').forEach(t => {
+                        t.classList.toggle('active', t.dataset.tab === 'trajectory');
+                    });
+
+                    document.getElementById('tab-content-trajectory').classList.add('active');
+                    document.getElementById('tab-content-files').classList.remove('active');
+                    document.getElementById('tab-content-preview').classList.remove('active');
+                }
             }
         }
 
@@ -338,6 +353,9 @@
         document.getElementById('tab-content-trajectory').classList.toggle('active', tabName === 'trajectory');
         document.getElementById('tab-content-files').classList.toggle('active', tabName === 'files');
         document.getElementById('tab-content-preview').classList.toggle('active', tabName === 'preview');
+
+        // Update URL with new page
+        App.updateUrl(App.state.currentTaskId, App.state.activeFolder, tabName);
 
         App.main.renderMainContent();
     };
