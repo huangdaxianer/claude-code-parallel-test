@@ -205,7 +205,101 @@ router.post('/start', async (req, res) => {
     // 初始设置 Setup 超时
     setKillTimeout(setupTimeoutLimit, "Setup Phase Timeout");
 
-    // 6. 查找 Claude 二进制文件
+    // 7. Fast Path: 尝试直接启动 (智能加速)
+    try {
+        const startCmd = await previewService.detectStartCommand(projectPath);
+        if (startCmd) {
+            addLog(`⚡️ Fast Path detected: ${startCmd.type} project`);
+            addLog(`Command: ${startCmd.cmd} ${startCmd.args.join(' ')}`);
+
+            // Prepare command
+            const finalArgs = startCmd.args.map(arg => arg.replace('{PORT}', allocatedPort));
+            let finalEnv = { ...process.env, PORT: allocatedPort, HOST: '0.0.0.0' };
+
+            // Merge extra env vars if any (e.g. for Gradio)
+            if (startCmd.env) {
+                for (const [key, val] of Object.entries(startCmd.env)) {
+                    finalEnv[key] = val.replace('{PORT}', allocatedPort);
+                }
+            }
+
+            let fastSpawnCmd = startCmd.cmd;
+            let fastSpawnArgs = finalArgs;
+            let fastSpawnOptions = {
+                cwd: projectPath,
+                env: finalEnv,
+                stdio: ['ignore', 'pipe', 'pipe']
+            };
+
+            if (useIsolation) {
+                // Adjust for isolation
+                // Re-construct env vars for `env` command
+                const envVars = Object.entries(finalEnv).map(([k, v]) => `${k}=${v}`);
+                // Filter out non-string values just in case, though process.env usually has strings
+                const safeEnvVars = envVars.filter(e => !e.includes('[object Object]'));
+
+                fastSpawnCmd = 'sudo';
+                fastSpawnArgs = ['-n', '-H', '-u', 'claude-user', 'env', ...safeEnvVars, startCmd.cmd, ...finalArgs];
+                fastSpawnOptions.env = {}; // sudo handles env
+            }
+
+            console.log(`[Preview] Attempting Fast Path: ${fastSpawnCmd} ${fastSpawnArgs.join(' ')}`);
+
+            const fastChild = spawn(fastSpawnCmd, fastSpawnArgs, fastSpawnOptions);
+
+            // Temporary logging for Fast Path
+            fastChild.stdout.on('data', d => addLog(`[FastPath] ${d.toString().trim().substring(0, 100)}`));
+            fastChild.stderr.on('data', d => addLog(`[FastPath] ${d.toString().trim().substring(0, 100)}`));
+
+            // Wait 5 seconds to see if it crashes or port opens
+            const fastStartResult = await new Promise(resolve => {
+                let crashed = false;
+                fastChild.on('exit', (code) => {
+                    if (!crashed) { // Only handle if we haven't resolved yet
+                        crashed = true;
+                        resolve({ success: false, reason: `Process exited code ${code}` });
+                    }
+                });
+
+                setTimeout(async () => {
+                    if (crashed) return;
+
+                    // Check port
+                    try {
+                        const { score } = await previewService.probePort(allocatedPort);
+                        if (score > 0) {
+                            resolve({ success: true });
+                        } else {
+                            resolve({ success: false, reason: 'Port not accessible after 5s' });
+                        }
+                    } catch (e) {
+                        resolve({ success: false, reason: 'Probe error' });
+                    }
+                }, 5000);
+            });
+
+            if (fastStartResult.success) {
+                addLog('✅ Fast Path successful! Service is running.');
+                previewService.runningPreviews[folderName].proc = fastChild;
+                previewService.runningPreviews[folderName].status = 'ready';
+                previewService.runningPreviews[folderName].type = startCmd.type; // 'node', 'python', etc.
+                previewService.runningPreviews[folderName].lastHeartbeat = Date.now();
+                return res.json({ status: 'ready', port: allocatedPort, url: previewService.runningPreviews[folderName].url });
+            } else {
+                addLog(`⚠️ Fast Path failed: ${fastStartResult.reason}. Falling back to Smart Agent...`);
+                // Kill the failed fast process ensure cleanup
+                try {
+                    if (fastChild.pid) process.kill(fastChild.pid);
+                } catch (e) { }
+                // Proceed to normal flow...
+            }
+        }
+    } catch (e) {
+        console.error(`[Preview] Fast Path error: ${e.message}`);
+        addLog(`Fast Path error, skipping: ${e.message}`);
+    }
+
+    // 8. 启动 Claude Code (Fallback)
     let claudeBin = 'claude';
     try {
         const whichClaude = execSync('which claude').toString().trim();

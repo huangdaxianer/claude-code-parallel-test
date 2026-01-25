@@ -205,22 +205,84 @@ async function probePort(port) {
 
 // 检测启动命令
 async function detectStartCommand(projectPath) {
+    // 1. Check for Node.js
     const pkgPath = path.join(projectPath, 'package.json');
     if (fs.existsSync(pkgPath)) {
         try {
             const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
             const scripts = pkg.scripts || {};
-            if (scripts.start) return { cmd: 'npm', args: ['start'] };
-            if (scripts.dev) return { cmd: 'npm', args: ['run', 'dev'] };
+            // Prioritize explicit start scripts
+            if (scripts.start) return { type: 'node', cmd: 'npm', args: ['run', 'start'] };
+            if (scripts.dev) return { type: 'node', cmd: 'npm', args: ['run', 'dev'] };
+            if (scripts.server) return { type: 'node', cmd: 'npm', args: ['run', 'server'] };
         } catch (e) {
             console.warn(`[Preview] Failed to parse package.json: ${e.message}`);
         }
     }
-    const commonEntries = ['server.js', 'app.js', 'index.js', 'main.js'];
-    for (const entry of commonEntries) {
-        if (fs.existsSync(path.join(projectPath, entry))) return { cmd: 'node', args: [entry] };
+
+    // Check for common Node entry points if no package.json scripts found
+    const commonNodeEntries = ['server.js', 'app.js', 'index.js', 'main.js'];
+    for (const entry of commonNodeEntries) {
+        if (fs.existsSync(path.join(projectPath, entry))) {
+            return { type: 'node', cmd: 'node', args: [entry] };
+        }
     }
-    throw new Error('Unable to determine start command');
+
+    // 2. Check for Python
+    // Streamlit
+    // specific check: look for "streamlit" in requirements.txt or *.py files importing it? 
+    // For speed, we just check existence of common files or requirements.
+    const requirementsPath = path.join(projectPath, 'requirements.txt');
+    let hasStreamlit = false;
+    let hasGradio = false;
+    let hasFlask = false;
+    let hasDjango = false;
+
+    if (fs.existsSync(requirementsPath)) {
+        const reqContent = fs.readFileSync(requirementsPath, 'utf8').toLowerCase();
+        if (reqContent.includes('streamlit')) hasStreamlit = true;
+        if (reqContent.includes('gradio')) hasGradio = true;
+        if (reqContent.includes('flask')) hasFlask = true;
+        if (reqContent.includes('django')) hasDjango = true;
+    }
+
+    // Attempt to find main python file
+    const files = fs.readdirSync(projectPath);
+    const pythonFiles = files.filter(f => f.endsWith('.py'));
+
+    // Simple heuristic: if there's an app.py or main.py, it's a strong candidate
+    const mainPy = pythonFiles.find(f => ['app.py', 'main.py', 'server.py', 'web.py'].includes(f.toLowerCase())) || pythonFiles[0];
+
+    if (mainPy) {
+        if (hasStreamlit) {
+            return { type: 'python', cmd: 'streamlit', args: ['run', mainPy, '--server.port', '{PORT}', '--server.headless', 'true'] };
+        }
+
+        if (hasFlask) {
+            return {
+                type: 'python',
+                cmd: 'python3',
+                args: ['-m', 'flask', 'run', '--host=0.0.0.0', '--port={PORT}'],
+                env: { FLASK_APP: mainPy, FLASK_DEBUG: '1' }
+            };
+        }
+
+        if (hasGradio) {
+            return { type: 'python', cmd: 'python3', args: [mainPy], env: { GRADIO_SERVER_PORT: '{PORT}', GRADIO_SERVER_NAME: '0.0.0.0' } };
+        }
+        if (hasDjango && fs.existsSync(path.join(projectPath, 'manage.py'))) {
+            return { type: 'python', cmd: 'python3', args: ['manage.py', 'runserver', '0.0.0.0:{PORT}'] };
+        }
+        // Generic python fallback 
+        return { type: 'python', cmd: 'python3', args: [mainPy] };
+    }
+
+    // 3. Java (basic support)
+    if (fs.existsSync(path.join(projectPath, 'pom.xml'))) {
+        return { type: 'java', cmd: 'mvn', args: ['spring-boot:run', '-Dserver.port={PORT}'] };
+    }
+
+    return null;
 }
 
 // 检测项目类型
