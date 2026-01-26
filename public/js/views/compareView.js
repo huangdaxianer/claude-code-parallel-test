@@ -18,10 +18,9 @@
         const runs = App.state.currentRuns || [];
         if (runs.length === 0) return;
 
+        // Filter runs based strictly on previewable status as requested
         const previewableRuns = runs.filter(run => {
-            const htmlFile = (run.generatedFiles || []).find(f => f.endsWith('.html'));
-            const packageJson = (run.generatedFiles || []).find(f => f === 'package.json');
-            return htmlFile || packageJson || run.previewable;
+            return run.previewable === 'static' || run.previewable === 'dynamic';
         });
 
         if (previewableRuns.length === 0) return;
@@ -104,10 +103,9 @@
 
         App.compare.syncModelTabs(container, App.state.currentRuns, side, currentTarget, otherTarget);
 
+        // Filter runs based strictly on previewable status as requested
         const previewableRuns = App.state.currentRuns.filter(run => {
-            const htmlFile = (run.generatedFiles || []).find(f => f.endsWith('.html'));
-            const packageJson = (run.generatedFiles || []).find(f => f === 'package.json');
-            return htmlFile || packageJson || run.previewable;
+            return run.previewable === 'static' || run.previewable === 'dynamic';
         });
 
         // Validate currentTarget exists
@@ -129,9 +127,22 @@
             return;
         }
 
-        statusBadge.textContent = activeRun.status;
-        statusBadge.className = `status-badge status-${activeRun.status || 'pending'}`;
-        statusBadge.style.display = 'inline-block';
+        // Replace status badge with Refresh Button
+        statusBadge.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>`;
+        statusBadge.className = 'status-badge btn-refresh';
+        statusBadge.style.display = 'inline-flex';
+        statusBadge.style.cursor = 'pointer';
+        statusBadge.style.alignItems = 'center';
+        statusBadge.style.justifyContent = 'center';
+        statusBadge.style.padding = '4px 8px';
+        statusBadge.title = "刷新预览";
+
+        statusBadge.onclick = (e) => {
+            e.stopPropagation();
+            if (iframe && iframe.contentWindow) {
+                iframe.src = iframe.src; // Reload iframe
+            }
+        };
 
         const htmlFile = (activeRun.generatedFiles || []).find(f => f.endsWith('.html'));
         const packageJson = (activeRun.generatedFiles || []).find(f => f === 'package.json');
@@ -161,10 +172,9 @@
      * Replaces syncSelectOptions
      */
     App.compare.syncModelTabs = function (container, runs, side, currentTarget, otherTarget) {
+        // Filter runs based strictly on previewable status as requested
         const previewableRuns = runs.filter(run => {
-            const htmlFile = (run.generatedFiles || []).find(f => f.endsWith('.html'));
-            const packageJson = (run.generatedFiles || []).find(f => f === 'package.json');
-            return htmlFile || packageJson || run.previewable;
+            return run.previewable === 'static' || run.previewable === 'dynamic';
         });
 
         container.innerHTML = '';

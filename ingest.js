@@ -331,17 +331,7 @@ rl.on('line', (line) => {
                     // Flush stats immediately
                     flush();
 
-                    // Check if project is previewable (only if completed successfully)
-                    if (stats.status === 'completed') {
-                        const TASKS_DIR = path.join(__dirname, '../tasks'); // re-declare to be safe or use global if available (it is global at line 5)
-                        const projectPath = path.join(TASKS_DIR, taskId, modelName);
-                        try {
-                            const isPreviewable = 1;
-                            db.prepare('UPDATE model_runs SET previewable = ? WHERE id = ?').run(isPreviewable, runId);
-                        } catch (e) {
-                            console.error('[Ingest] Failed to update previewable status:', e);
-                        }
-                    }
+
 
                     // EXIT explicitly
                     process.stderr.write(`[Ingest] Task finished with status: ${stats.status}. Exiting.\\n`);
@@ -403,18 +393,5 @@ function detectProjectType(projectPath) {
 rl.on('close', () => {
     flush();
 
-    // Check if project is previewable (only if completed successfully)
-    if (stats.status === 'completed') {
-        const TASKS_DIR = path.join(__dirname, '../tasks');
-        const projectPath = path.join(TASKS_DIR, taskId, modelName);
 
-        try {
-            const isPreviewable = 1;
-
-            db.prepare('UPDATE model_runs SET previewable = ? WHERE id = ?').run(isPreviewable, runId);
-            // console.log(`[Ingest] Project type: ${type}, Previewable: ${isPreviewable}`);
-        } catch (e) {
-            console.error('[Ingest] Failed to update previewable status:', e);
-        }
-    }
 });

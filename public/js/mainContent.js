@@ -196,7 +196,7 @@
 
         const previewTabBtn = document.querySelector('.tab[data-tab="preview"]');
         if (previewTabBtn) {
-            if (activeRun.previewable) {
+            if (activeRun.previewable === 'static' || activeRun.previewable === 'dynamic') {
                 previewTabBtn.style.display = 'block';
             } else {
                 previewTabBtn.style.display = 'none';

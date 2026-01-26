@@ -84,6 +84,10 @@ router.use('/view/:taskId/:modelName', (req, res, next) => {
     res.status(404).send('File not found');
 });
 
+const db = require('../db'); // Ensure DB imported
+
+// ... (other imports)
+
 // 启动预览
 router.post('/start', async (req, res) => {
     const { taskId, modelName } = req.body;
@@ -92,16 +96,45 @@ router.post('/start', async (req, res) => {
     const folderName = `${taskId}/${modelName}`;
     const projectPath = path.join(config.TASKS_DIR, taskId, modelName);
 
+    // 0. Check Database Status
+    const runInfo = db.prepare("SELECT previewable FROM model_runs WHERE task_id = ? AND model_name = ?").get(taskId, modelName);
+    const previewableStatus = runInfo ? runInfo.previewable : null;
+
+    if (previewableStatus === 'preparing') {
+        return res.status(202).json({ status: 'preparing', message: 'Preview environment is being prepared...' });
+    }
+    if (previewableStatus === 'unpreviewable') {
+        return res.status(400).json({ status: 'unpreviewable', error: 'Project is not previewable' });
+    }
+    // If null or unknown, maybe we trigger preparation? But for now assume flow is correct.
+    // Or if legacy task without status, we might need a fallback.
+    // For this refactor, let's stick to the new flow. If null, maybe fallback to old logic or fail.
+    // Let's assume we want to handle the case where it might be null (old task).
+    // If null or unknown, maybe we trigger preparation? But for now assume flow is correct.
+    // Or if legacy task without status, we might need a fallback.
+    // For this refactor, let's stick to the new flow. If null, maybe fallback to old logic or fail.
+    // Let's assume we want to handle the case where it might be null (old task).
+    if (!previewableStatus || previewableStatus == 1) {
+        // Fallback: Check if completed
+        const runStatus = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_name = ?").get(taskId, modelName)?.status;
+        if (runStatus !== 'completed') {
+            return res.status(400).json({ error: 'Task not completed yet. Please wait.' });
+        }
+
+        // Trigger prep now
+        previewService.preparePreview(taskId, modelName);
+        return res.status(202).json({ status: 'preparing', message: 'Triggered preparation...' });
+    }
+
     const addLog = (msg) => {
         if (previewService.runningPreviews[folderName]) {
             previewService.runningPreviews[folderName].logs.push({ msg, ts: Date.now() });
         }
     };
 
-    // 1. 如果已经在运行，先彻底关闭
+    // 1. Clean existing
     if (previewService.runningPreviews[folderName]) {
         const info = previewService.runningPreviews[folderName];
-        console.log(`[Preview] Restarting: Stopping existing preview for ${folderName}`);
         if (info.proc && info.proc.pid) {
             await previewService.killProcessTree(info.proc.pid);
         }
@@ -109,43 +142,12 @@ router.post('/start', async (req, res) => {
         delete previewService.runningPreviews[folderName];
     }
 
-    // 2. 准备环境
-    if (!fs.existsSync(projectPath)) {
-        return res.status(404).json({ error: 'Project directory not found' });
-    }
-
-    // Check for isolation user availability (similar to batch script)
-    let useIsolation = false;
-    try {
-        // Simple check: can we sudo without password and does claude-user exist?
-        require('child_process').execSync('sudo -n true && id claude-user', { stdio: 'ignore' });
-        useIsolation = true;
-        addLog('Using isolation user: claude-user');
-    } catch (e) {
-        addLog('Running with current user (sudo/claude-user not available)');
-    }
-
-    // Change ownership if using isolation
-    if (useIsolation) {
-        try {
-            // Recursive chown to claude-user
-            require('child_process').execSync(`sudo -n chown -R claude-user "${activePath}"`);
-        } catch (e) {
-            console.error(`[Preview] Failed to chown project path: ${e.message}`);
-            addLog(`Warning: Failed to set permissions for isolation user.`);
-        }
-    }
-
-    // 3. 检测项目类型 (先在原始路径检测，因为隔离路径可能还没 Ready)
-    const originalProjectType = await previewService.detectProjectType(projectPath);
-
-    // 4. 隔离路径
+    // 2. Ensure Isolation Path (It should be there from prep, but safe to check/get path)
     const isolatedPath = previewService.ensureIsolatedPath(projectPath);
-    const activePathResolved = isolatedPath; // 后续所有操作都基于 activePathResolved
 
-    // 如果是纯 HTML 项目，直接返回静态服务 URL
-    if (originalProjectType === 'html') {
-        const files = fs.readdirSync(activePathResolved);
+    // 3. Handle Static
+    if (previewableStatus === 'static') {
+        const files = fs.readdirSync(isolatedPath);
         const indexFile = files.find(f => f.toLowerCase() === 'index.html') || files.find(f => f.endsWith('.html'));
 
         if (indexFile) {
@@ -154,348 +156,108 @@ router.post('/start', async (req, res) => {
                 status: 'ready',
                 type: 'static',
                 url: staticUrl,
-                logs: [{ msg: '检测到静态页面，直接预览...', ts: Date.now() }],
+                logs: [{ msg: 'Static project detected, ready.', ts: Date.now() }],
                 startTime: Date.now()
             };
             return res.json({ status: 'ready', url: staticUrl });
         }
     }
 
-    // 4. 分配端口 (仅非静态项目需要)
-    let allocatedPort;
-    try {
-        allocatedPort = await previewService.findFreePort();
-    } catch (e) {
-        return res.status(500).json({ error: 'No free ports available' });
-    }
-
-    // 5. 初始化状态
-    previewService.runningPreviews[folderName] = {
-        status: 'starting',
-        port: allocatedPort,
-        url: `http://${config.PUBLIC_HOST}:${allocatedPort}`,
-        logs: [{ msg: '正在分配端口', ts: Date.now() }],
-        startTime: Date.now()
-    };
-
-
-
-    // 6. 设置初始超时 (安装/启动阶段给 10 分钟)
-    // 注意：Runtime 阶段现在由 Heartbeat 监控，不再设置硬性超时
-    const setupTimeoutLimit = 10 * 60 * 1000;
-
-    const setKillTimeout = (durationMs, reason) => {
-        const info = previewService.runningPreviews[folderName];
-        if (info && info.timeoutId) clearTimeout(info.timeoutId);
-
-        const timeoutId = setTimeout(async () => {
-            console.log(`[Preview] Timeout reached for ${folderName}: ${reason}`);
-            const currentInfo = previewService.runningPreviews[folderName];
-            if (currentInfo) {
-                addLog(`Preview timeout: ${reason}. Closing environment.`);
-                if (currentInfo.proc && currentInfo.proc.pid) {
-                    await previewService.killProcessTree(currentInfo.proc.pid);
-                }
-                delete previewService.runningPreviews[folderName];
-            }
-        }, durationMs);
-
-        if (previewService.runningPreviews[folderName]) {
-            previewService.runningPreviews[folderName].timeoutId = timeoutId;
-            previewService.runningPreviews[folderName].expiresAt = Date.now() + durationMs;
+    // 4. Handle Dynamic
+    if (previewableStatus === 'dynamic') {
+        // Allocate Port
+        let allocatedPort;
+        try {
+            allocatedPort = await previewService.findFreePort();
+        } catch (e) {
+            return res.status(500).json({ error: 'No free ports available' });
         }
-    };
 
-    // 初始设置 Setup 超时
-    setKillTimeout(setupTimeoutLimit, "Setup Phase Timeout");
+        // Init State
+        previewService.runningPreviews[folderName] = {
+            status: 'starting',
+            port: allocatedPort,
+            url: `http://${config.PUBLIC_HOST}:${allocatedPort}`,
+            logs: [{ msg: `Starting dynamic preview on port ${allocatedPort}`, ts: Date.now() }],
+            startTime: Date.now()
+        };
 
-    // 7. Fast Path: 尝试直接启动 (智能加速)
-    try {
-        const startCmd = await previewService.detectStartCommand(activePathResolved);
-        if (startCmd) {
-            addLog(`⚡️ Fast Path detected: ${startCmd.type} project`);
-            addLog(`Command: ${startCmd.cmd} ${startCmd.args.join(' ')}`);
-
-            // Prepare command
-            const finalArgs = startCmd.args.map(arg => arg.replace('{PORT}', allocatedPort));
-            let finalEnv = { ...process.env, PORT: allocatedPort, HOST: '0.0.0.0' };
-
-            // Merge extra env vars if any (e.g. for Gradio)
-            if (startCmd.env) {
-                for (const [key, val] of Object.entries(startCmd.env)) {
-                    finalEnv[key] = val.replace('{PORT}', allocatedPort);
-                }
-            }
-
-            let fastSpawnCmd = startCmd.cmd;
-            let fastSpawnArgs = finalArgs;
-            let fastSpawnOptions = {
-                cwd: activePathResolved,
-                env: finalEnv,
-                stdio: ['ignore', 'pipe', 'pipe']
-            };
-
-            if (useIsolation) {
-                // Adjust for isolation
-                // Re-construct env vars for `env` command
-                const envVars = Object.entries(finalEnv).map(([k, v]) => `${k}=${v}`);
-                // Filter out non-string values just in case, though process.env usually has strings
-                const safeEnvVars = envVars.filter(e => !e.includes('[object Object]'));
-
-                fastSpawnCmd = 'sudo';
-                fastSpawnArgs = ['-n', '-H', '-u', 'claude-user', 'env', ...safeEnvVars, startCmd.cmd, ...finalArgs];
-                fastSpawnOptions.env = {}; // sudo handles env
-            }
-
-            console.log(`[Preview] Attempting Fast Path: ${fastSpawnCmd} ${fastSpawnArgs.join(' ')}`);
-
-            const fastChild = spawn(fastSpawnCmd, fastSpawnArgs, fastSpawnOptions);
-
-            // Temporary logging for Fast Path
-            fastChild.stdout.on('data', d => addLog(`[FastPath] ${d.toString().trim().substring(0, 100)}`));
-            fastChild.stderr.on('data', d => addLog(`[FastPath] ${d.toString().trim().substring(0, 100)}`));
-
-            // Wait 5 seconds to see if it crashes or port opens
-            const fastStartResult = await new Promise(resolve => {
-                let crashed = false;
-                fastChild.on('exit', (code) => {
-                    if (!crashed) { // Only handle if we haven't resolved yet
-                        crashed = true;
-                        resolve({ success: false, reason: `Process exited code ${code}` });
-                    }
-                });
-
-                setTimeout(async () => {
-                    if (crashed) return;
-
-                    // Check port
-                    try {
-                        const { score } = await previewService.probePort(allocatedPort);
-                        if (score > 0) {
-                            resolve({ success: true });
-                        } else {
-                            resolve({ success: false, reason: 'Port not accessible after 5s' });
-                        }
-                    } catch (e) {
-                        resolve({ success: false, reason: 'Probe error' });
-                    }
-                }, 5000);
-            });
-
-            if (fastStartResult.success) {
-                addLog('✅ Fast Path successful! Service is running.');
-                previewService.runningPreviews[folderName].proc = fastChild;
-                previewService.runningPreviews[folderName].status = 'ready';
-                previewService.runningPreviews[folderName].type = startCmd.type; // 'node', 'python', etc.
-                previewService.runningPreviews[folderName].lastHeartbeat = Date.now();
-                return res.json({ status: 'ready', port: allocatedPort, url: previewService.runningPreviews[folderName].url });
-            } else {
-                const failureMsg = `⚠️ Fast Path failed: ${fastStartResult.reason}. Falling back to Smart Agent...`;
-                addLog(failureMsg);
-                console.log(`[Preview][FastPathFailure] Task: ${taskId}/${modelName} | Type: ${startCmd.type} | Cmd: ${fastSpawnCmd} ${fastSpawnArgs.join(' ')} | Reason: ${fastStartResult.reason}`);
-
-                // Kill the failed fast process ensure cleanup
-                try {
-                    if (fastChild.pid) process.kill(fastChild.pid);
-                } catch (e) { }
-                // Proceed to normal flow...
-            }
+        const runScript = path.join(isolatedPath, 'run_server.sh');
+        if (!fs.existsSync(runScript)) {
+            // Self-healing: if status says dynamic but script missing, downgrade it.
+            db.prepare("UPDATE model_runs SET previewable = 'unpreviewable' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+            delete previewService.runningPreviews[folderName]; // Cleanup init state
+            return res.status(500).json({ error: 'run_server.sh missing. Project marked as unpreviewable.' });
         }
-    } catch (e) {
-        console.error(`[Preview] Fast Path error: ${e.message}`);
-        addLog(`Fast Path error, skipping: ${e.message}`);
-    }
 
-    // 8. 启动 Claude Code (Fallback)
-    let claudeBin = 'claude';
-    try {
-        const whichClaude = execSync('which claude').toString().trim();
-        if (whichClaude) claudeBin = whichClaude;
-    } catch (e) {
-        // 尝试常见路径
-        const paths = [
-            path.join(process.env.HOME, '.npm-global/bin/claude'),
-            '/usr/local/bin/claude'
-        ];
-        for (const p of paths) {
-            if (fs.existsSync(p)) {
-                claudeBin = p;
-                break;
-            }
+        // Spawn ./run_server.sh <PORT>
+        // Use isolation if possible
+        let useIsolation = false;
+        try {
+            execSync('sudo -n true && id claude-user', { stdio: 'ignore' });
+            useIsolation = true;
+        } catch (e) { }
+
+        let spawnCmd = '/bin/bash'; // Explicit interpreter
+        let spawnArgs = [runScript, String(allocatedPort)];
+        let spawnOptions = {
+            cwd: isolatedPath,
+            env: { ...process.env, PORT: allocatedPort, HOST: '0.0.0.0' },
+            stdio: ['ignore', 'pipe', 'pipe']
+        };
+
+        if (useIsolation) {
+            const envVars = [`PORT=${allocatedPort}`, `HOST=0.0.0.0`];
+            spawnCmd = 'sudo';
+            spawnArgs = ['-n', '-H', '-u', 'claude-user', 'env', ...envVars, '/bin/bash', runScript, String(allocatedPort)];
+            spawnOptions.env = {};
         }
-    }
 
-    // 7. 启动 Claude Code
-    const fileStructure = getFileStructure(activePathResolved);
-    const prompt = `现在请你启动该项目的前端预览。使用 ${allocatedPort} 端口。请确保服务能够正常访问。如果是静态页面也请将页面预览启动到该端口。如果该端口被占用，请尝试终止占用该端口的任务。你如果需要安装依赖，请使用虚拟环境。如果代码中硬编码了端口，你是被允许且应当修改代码以适配当前端口的（如果是 Node.js 请优先使用 process.env.PORT || ${allocatedPort}，如果是 Python 请使用 os.environ.get('PORT', ${allocatedPort})）。禁止使用其它端口，禁止查看非本文件夹的内容。你工作目录下的文件结构是\n${fileStructure},`;
+        // Ensure script is executable
+        try { fs.chmodSync(runScript, '755'); } catch (e) { }
 
-    // 增加调试信息打印
-    addLog(`端口分配成功`);
+        console.log(`[Preview] Launching: ${spawnCmd} ${spawnArgs.join(' ')}`);
+        const child = spawn(spawnCmd, spawnArgs, spawnOptions);
 
-    console.log(`[Preview] Starting Claude Code for ${folderName} (Isolated) on port ${allocatedPort}`);
+        previewService.runningPreviews[folderName].proc = child;
 
-    const claudeModel = 'tomato'; // 强制使用 tomato 模型
-    const args = [
-        '--model', claudeModel,
-        '--allowedTools', 'Read(./**),Bash(./**)',
-        '--dangerously-skip-permissions',
-        '--output-format', 'stream-json',
-        '--verbose'
-    ];
+        child.stdout.on('data', d => addLog(`[STDOUT] ${d.toString().trim()}`));
+        child.stderr.on('data', d => addLog(`[STDERR] ${d.toString().trim()}`));
 
-    console.log(`[Preview] Executing (Isolated): ${claudeBin} ${args.join(' ')}`);
-
-    let spawnCmd = claudeBin;
-    let spawnArgs = args;
-    let spawnOptions = {
-        cwd: activePathResolved,
-        env: { ...process.env, PORT: allocatedPort, HOST: '0.0.0.0' },
-        stdio: ['pipe', 'pipe', 'pipe']
-    };
-
-    if (useIsolation) {
-        // Construct sudo command: sudo -n -H -u claude-user env PORT=... claude ...
-        spawnCmd = 'sudo';
-        // Pass essential env vars through 'env'
-        const envVars = [
-            `PORT=${allocatedPort}`,
-            `HOST=0.0.0.0`,
-            // Pass through current PATH and key vars
-            `PATH=${process.env.PATH}`,
-            `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY || ''}`,
-            // Add other necessary keys if needed
-        ];
-
-        spawnArgs = ['-n', '-H', '-u', 'claude-user', 'env', ...envVars, claudeBin, ...args];
-        // When using sudo, we don't pass the process.env directly to spawn, 
-        // as sudo cleans environment. We relies on 'env' command to set them.
-        spawnOptions.env = {};
-    }
-
-    const child = spawn(spawnCmd, spawnArgs, spawnOptions);
-
-    child.on('error', (err) => {
-        console.error(`[Preview] Failed to start subprocess: ${err}`);
-        addLog(`Error: Failed to launch Claude Code: ${err.message}`);
-        previewService.runningPreviews[folderName].status = 'error';
-    });
-
-    previewService.runningPreviews[folderName].proc = child;
-    addLog(`尝试启动服务`);
-
-    // Give it a tick to start
-    setTimeout(() => {
-        if (child.stdin && child.stdin.writable) {
-            try {
-                child.stdin.write(prompt + "\n");
-                child.stdin.end();
-            } catch (e) {
-                console.error(`[Preview] Write to stdin failed: ${e}`);
-            }
-        }
-    }, 100);
-
-    // 8. 解析输出内容
-    let buffer = '';
-    child.stdout.on('data', (data) => {
-        const raw = data.toString();
-        // Print raw output to server console
-        process.stdout.write(`[ClaudeCode][STDOUT] ${raw}`);
-
-        buffer += raw;
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-
-        lines.forEach(line => {
-            if (!line.trim()) return;
-
-            try {
-                const obj = JSON.parse(line);
-
-                // 1. 处理直接的 tool_use
-                if (obj.type === 'tool_use' && obj.name === 'Bash') {
-                    if (obj.input && obj.input.description) {
-                        addLog(obj.input.description);
-                    }
-                }
-
-                // 2. 处理 assistant 消息中的 tool_use (常见格式)
-                if (obj.type === 'assistant' && obj.message && Array.isArray(obj.message.content)) {
-                    obj.message.content.forEach(block => {
-                        if (block.type === 'tool_use' && block.name === 'Bash') {
-                            if (block.input && block.input.description) {
-                                addLog(block.input.description);
-                            }
-                        }
-                    });
-                }
-
-                // 3. 处理最终结果 (保留状态更新，但不打印 JSON)
-                if (obj.type === 'result') {
-                    if (obj.is_error) {
-                        addLog(`Error: ${obj.error?.message || 'Unknown error'}`);
-                        previewService.runningPreviews[folderName].status = 'error';
-                        setKillTimeout(2 * 60 * 1000, "Error state cleanup");
-                    } else {
-                        addLog("验证网页可用性");
-
-                        (async () => {
-                            try {
-                                const checkInfo = previewService.runningPreviews[folderName];
-                                if (!checkInfo) return; // Removed during waiting
-
-                                const { serviceType, score } = await previewService.probePort(allocatedPort);
-                                console.log(`[Preview] Probe port ${allocatedPort} result: ${serviceType}, score=${score}`);
-
-                                if (score > 0) {
-                                    addLog(">> Verification successful. Preview runtime starts now.");
-                                    if (previewService.runningPreviews[folderName]) {
-                                        previewService.runningPreviews[folderName].status = 'ready';
-                                        previewService.runningPreviews[folderName].lastHeartbeat = Date.now();
-                                    }
-                                } else {
-                                    addLog(">> Verification failed: Port is not accessible or returns error.");
-                                    if (previewService.runningPreviews[folderName]) {
-                                        // Special status to trigger "Preview not running" UI
-                                        previewService.runningPreviews[folderName].status = 'not_running';
-                                        previewService.runningPreviews[folderName].logs.push({ msg: 'Preview not running. Validation failed.', ts: Date.now() });
-                                    }
-                                }
-                            } catch (e) {
-                                console.error(`[Preview] Verification error: ${e}`);
-                                if (previewService.runningPreviews[folderName]) {
-                                    previewService.runningPreviews[folderName].status = 'not_running';
-                                    previewService.runningPreviews[folderName].logs.push({ msg: 'Preview not running. Verification error.', ts: Date.now() });
-                                }
-                            }
-                        })();
-                    }
-                }
-            } catch (e) {
-                // 非 JSON 或解析失败的消息一律不打印，保持界面干净
+        child.on('exit', (code) => {
+            addLog(`Process exited with code ${code}`);
+            if (code !== 0 && previewService.runningPreviews[folderName]) {
+                previewService.runningPreviews[folderName].status = 'error';
             }
         });
-    });
 
-    child.stderr.on('data', (data) => {
-        process.stderr.write(`[ClaudeCode][STDERR] ${data.toString()}`);
-    });
-
-    child.on('exit', (code) => {
-        if (previewService.runningPreviews[folderName]) {
-            if (code !== 0 && code !== null) {
-                addLog(`Claude Code process exited with code ${code}.`);
-                // 但不一定要在这里销毁，因为子进程可能还在运行
+        // Simple Probe to switch to ready
+        let checks = 0;
+        const checkInterval = setInterval(async () => {
+            checks++;
+            if (!previewService.runningPreviews[folderName]) {
+                clearInterval(checkInterval);
+                return;
             }
-            // 如果 Claude 正常退出且没有报错，我们假设它已经启动了服务
-            if (previewService.runningPreviews[folderName].status === 'starting') {
+            if (checks > 20) { // 20 * 500ms = 10s timeout
+                clearInterval(checkInterval);
+                addLog('Startup timed out waiting for port.');
+                return;
+            }
+
+            const { score } = await previewService.probePort(allocatedPort);
+            if (score > 0) {
+                clearInterval(checkInterval);
                 previewService.runningPreviews[folderName].status = 'ready';
-                previewService.runningPreviews[folderName].lastHeartbeat = Date.now(); // Reset heartbeat timer on ready
+                previewService.runningPreviews[folderName].lastHeartbeat = Date.now();
+                addLog('Service is ready!');
             }
-        }
-    });
+        }, 500);
 
-    res.json({ status: 'starting', port: allocatedPort, url: previewService.runningPreviews[folderName].url });
+        return res.json({ status: 'starting', port: allocatedPort, url: previewService.runningPreviews[folderName].url });
+    }
+
+    return res.status(500).json({ error: 'Invalid state' });
 });
 
 // 停止预览接口

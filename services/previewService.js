@@ -2,11 +2,13 @@
  * 预览服务
  * 管理动态预览的端口分配、进程检测等辅助功能
  */
-const { exec, spawn } = require('child_process');
+const { exec, spawn, execSync } = require('child_process');
 const net = require('net');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const db = require('../db');
+const config = require('../config');
 
 // 运行中的预览 Map<folderName, { proc, port, url, lastAccess, status, logs, timeoutId, lastHeartbeat }>
 const runningPreviews = {};
@@ -37,7 +39,7 @@ function startHeartbeatMonitor() {
     console.error("[Monitor] Starting Heartbeat Monitor...");
     setInterval(async () => {
         const now = Date.now();
-        console.error(`[MonitorPulse] ${new Date().toISOString()} | Previews: ${Object.keys(runningPreviews).length}`);
+        //console.error(`[MonitorPulse] ${new Date().toISOString()} | Previews: ${Object.keys(runningPreviews).length}`);
         const folderNames = Object.keys(runningPreviews);
         if (folderNames.length > 0) {
             console.error(`[Monitor] Checking ${folderNames.length} previews: ${folderNames.join(', ')}`);
@@ -105,7 +107,6 @@ function checkPort(port) {
 }
 
 // 查找空闲端口
-const config = require('../config');
 async function findFreePort(start = config.PREVIEW_PORT_START, end = config.PREVIEW_PORT_END) {
     for (let p = start; p <= end; p++) {
         if (allocatedPorts.has(p)) continue;
@@ -358,22 +359,184 @@ function ensureIsolatedPath(originalPath) {
             console.log(`[Preview] Creating isolated path: ${isolatedPath}`);
             const { execSync } = require('child_process');
             execSync(`cp -R "${originalPath}/" "${isolatedPath}"`);
+            console.log(`[Preview] Isolation copy complete for: ${isolatedPath}`);
         } else {
-            console.log(`[Preview] Syncing isolated path: ${isolatedPath}`);
-            const { execSync } = require('child_process');
-            // Use rsync for faster sync, excluding heavy folders
-            try {
-                execSync(`rsync -a --delete --exclude 'venv' --exclude '.venv' --exclude 'node_modules' "${originalPath}/" "${isolatedPath}"`);
-            } catch (rsyncErr) {
-                // Background fallback to cp if rsync fails
-                execSync(`cp -R "${originalPath}/" "${isolatedPath}"`);
-            }
+            console.log(`[Preview] Isolated path already exists: ${isolatedPath}`);
         }
         return isolatedPath;
     } catch (e) {
         console.error(`[Preview] Failed to isolate path: ${e.message}`);
         return originalPath;
     }
+}
+
+/**
+ * 准备预览环境 (Background Preparation)
+ * @param {string} taskId
+ * @param {string} modelName
+ */
+async function preparePreview(taskId, modelName) {
+    const projectPath = path.join(config.TASKS_DIR, taskId, modelName);
+    const folderName = `${taskId}/${modelName}`;
+
+    console.log(`[PreviewPrep] Starting preparation for ${folderName}`);
+
+    // Update status to preparing
+    db.prepare("UPDATE model_runs SET previewable = 'preparing' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+
+    try {
+        // 1. Ensure Isolation
+        const isolatedPath = ensureIsolatedPath(projectPath);
+
+        // 2. Check if empty
+        let files = [];
+        try {
+            files = fs.readdirSync(isolatedPath);
+            console.log(`[PreviewPrep] Files in isolated path: ${JSON.stringify(files)}`);
+        } catch (e) {
+            console.error(`[PreviewPrep] Failed to read dir: ${e.message}`);
+        }
+
+        if (files.length === 0 || (files.length === 1 && files[0] === '.DS_Store')) {
+            console.log(`[PreviewPrep] Project empty: ${folderName}`);
+            db.prepare("UPDATE model_runs SET previewable = 'unpreviewable' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+            return;
+        }
+
+        // 3. Dynamic Project Check & Preparation
+        const hasDynamicIndicators = files.some(f =>
+            f === 'package.json' ||
+            f === 'requirements.txt' ||
+            f === 'pom.xml' ||
+            f.endsWith('.py') ||
+            f.endsWith('.go') ||
+            f.endsWith('.java') ||
+            f.endsWith('.php')
+        );
+
+        // If we found dynamic indicators, OR if it's not clearly static (no index.html) but has files, 
+        // we default to trying dynamic (Claude can generate a static server script if needed).
+        // But to be safe and avoid unnecessary LLM calls for pure static sites, we check specifically.
+
+        let isStatic = false;
+        const indexFile = files.find(f => f.toLowerCase() === 'index.html') || files.find(f => f.endsWith('.html'));
+
+        if (!hasDynamicIndicators && indexFile) {
+            isStatic = true;
+        }
+
+        if (isStatic) {
+            console.log(`[PreviewPrep] Identified as Static: ${folderName}`);
+            db.prepare("UPDATE model_runs SET previewable = 'static' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+            return;
+        }
+
+        // 4. Dynamic Project Preparation
+        console.log(`[PreviewPrep] Identified as Dynamic (Indicators: ${hasDynamicIndicators}), starting Claude Code preparation: ${folderName}`);
+
+        // Determine Claude Bin
+        let claudeBin = 'claude';
+        try {
+            claudeBin = execSync('which claude').toString().trim();
+        } catch (e) {
+            const paths = [path.join(process.env.HOME, '.npm-global/bin/claude'), '/usr/local/bin/claude'];
+            for (const p of paths) if (fs.existsSync(p)) { claudeBin = p; break; }
+        }
+
+        // Read Prompt
+        const promptPath = path.join(__dirname, 'preview_prepration_prompt.txt');
+        let promptContent = '';
+        if (fs.existsSync(promptPath)) {
+            promptContent = fs.readFileSync(promptPath, 'utf-8');
+        } else {
+            console.error('[PreviewPrep] Prompt file not found!');
+            promptContent = "Analyze this project and generate a clean run_server.sh script to start the web server on a configurable PORT.";
+        }
+
+        // Append context
+        const fileStructure = getFileStructure(isolatedPath);
+        const fullPrompt = `${promptContent}\n\nCurrent File Structure:\n${fileStructure}`;
+
+        // Spawn Claude Code
+        const args = [
+            '--model', 'tomato',
+            '--allowedTools', 'Read(./**),Edit(./**),Bash(./**)',
+            '--dangerously-skip-permissions'
+        ];
+
+        console.log(`[PreviewPrep] Spawning Claude: ${claudeBin} ${args.join(' ')}`);
+
+        // Check isolation
+        let useIsolation = false;
+        try {
+            execSync('sudo -n true && id claude-user', { stdio: 'ignore' });
+            useIsolation = true;
+        } catch (e) { }
+
+        let spawnCmd = claudeBin;
+        let spawnArgs = args;
+        let spawnOptions = {
+            cwd: isolatedPath,
+            env: { ...process.env, CI: 'true' },
+            stdio: ['pipe', 'pipe', 'pipe']
+        };
+
+        if (useIsolation) {
+            spawnCmd = 'sudo';
+            const envVars = [
+                `PATH=${process.env.PATH}`,
+                `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY || ''}`,
+                `CI=true`
+            ];
+            spawnArgs = ['-n', '-H', '-u', 'claude-user', 'env', ...envVars, claudeBin, ...args];
+            spawnOptions.env = {};
+        }
+
+        const child = spawn(spawnCmd, spawnArgs, spawnOptions);
+
+        // Pipe output for debugging
+        if (child.stdout) child.stdout.pipe(process.stdout);
+        if (child.stderr) child.stderr.pipe(process.stderr);
+
+        if (child.stdin) {
+            child.stdin.write(fullPrompt + "\n");
+            child.stdin.end();
+        }
+
+        await new Promise((resolve, reject) => {
+            child.on('exit', (code) => {
+                if (code === 0) resolve();
+                else reject(new Error(`Claude Code exited with ${code}`));
+            });
+            child.on('error', reject);
+        });
+
+        // 5. Check Result
+        const runScriptPath = path.join(isolatedPath, 'run_server.sh');
+        if (fs.existsSync(runScriptPath)) {
+            console.log(`[PreviewPrep] Preparation successful, run_server.sh found: ${folderName}`);
+            db.prepare("UPDATE model_runs SET previewable = 'dynamic' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+        } else {
+            console.log(`[PreviewPrep] Preparation failed, no run_server.sh: ${folderName}`);
+            db.prepare("UPDATE model_runs SET previewable = 'unpreviewable' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+        }
+
+    } catch (e) {
+        console.error(`[PreviewPrep] Error during preparation: ${e.message}`, e);
+        db.prepare("UPDATE model_runs SET previewable = 'unpreviewable' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+    }
+}
+
+// Helper for prep
+function getFileStructure(dir, depth = 0) {
+    if (depth > 2) return '';
+    try {
+        const items = fs.readdirSync(dir, { withFileTypes: true });
+        return items.map(item => {
+            if (item.name.startsWith('.') || item.name === 'node_modules') return '';
+            return item.isDirectory() ? `${item.name}/` : item.name;
+        }).filter(Boolean).join('\n');
+    } catch (e) { return ''; }
 }
 
 module.exports = {
@@ -388,8 +551,8 @@ module.exports = {
     getListeningPorts,
     probePort,
     detectStartCommand,
-    detectStartCommand,
     detectProjectType,
     updateHeartbeat,
-    updateTaskHeartbeat
+    updateTaskHeartbeat,
+    preparePreview
 };

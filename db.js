@@ -59,6 +59,7 @@ db.exec(`
         count_read INTEGER,
         count_write INTEGER,
         count_bash INTEGER,
+        previewable TEXT, -- 'static', 'dynamic', 'preparing', 'unpreviewable'
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(task_id, model_name),
         FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
@@ -120,7 +121,7 @@ try { db.exec("ALTER TABLE log_entries ADD COLUMN tool_name TEXT"); } catch (e) 
 try { db.exec("ALTER TABLE log_entries ADD COLUMN tool_use_id TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE log_entries ADD COLUMN preview_text TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE log_entries ADD COLUMN status_class TEXT"); } catch (e) { }
-try { db.exec("ALTER TABLE model_runs ADD COLUMN previewable INTEGER DEFAULT 0"); } catch (e) { }
+try { db.exec("ALTER TABLE model_runs ADD COLUMN previewable TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE feedback_questions ADD COLUMN short_name TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE feedback_questions ADD COLUMN options_json TEXT"); } catch (e) { }
 

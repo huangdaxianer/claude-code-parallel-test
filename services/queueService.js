@@ -6,6 +6,7 @@ const { spawn, execSync } = require('child_process');
 const path = require('path');
 const db = require('../db');
 const config = require('../config');
+const previewService = require('./previewService');
 
 // 活跃的子任务进程 Map<"taskId/modelName", ChildProcess>
 const activeSubtaskProcesses = {};
@@ -91,6 +92,14 @@ function executeSubtask(taskId, modelName) {
         if (currentStatus && currentStatus.status === 'running') {
             const newStatus = (code === 0) ? 'completed' : 'stopped';
             db.prepare("UPDATE model_runs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_name = ?").run(newStatus, taskId, modelName);
+
+            // 如果子任务成功完成，立即生成预览文件夹（隔离环境）并在后台进行 Preparation
+            if (newStatus === 'completed') {
+                // Fire and forget - processing happens in background
+                previewService.preparePreview(taskId, modelName).catch(err => {
+                    console.error(`[Queue] Failed to trigger preview prep for ${taskId}/${modelName}:`, err);
+                });
+            }
         }
 
         checkAndUpdateTaskStatus(taskId);

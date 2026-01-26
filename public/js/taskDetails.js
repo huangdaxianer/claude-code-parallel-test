@@ -114,7 +114,7 @@
         App.elements.modelListEl.appendChild(statsBtn);
 
         // 对比按钮
-        const canCompare = App.state.currentRuns.some(r => r.previewable);
+        const canCompare = App.state.currentRuns.some(r => r.previewable === 'static' || r.previewable === 'dynamic');
         if (canCompare) {
             const compareBtn = document.createElement('div');
             compareBtn.className = `compare-btn ${App.state.isCompareMode ? 'active' : ''}`;

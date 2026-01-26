@@ -54,7 +54,7 @@ router.get('/task_details/:taskId', (req, res) => {
                     folderName: path.join(taskId, run.model_name),
                     modelName: run.model_name,
                     status: run.status,
-                    previewable: hasFiles, // Allow preview for any project with files
+                    previewable: run.previewable || ((run.status === 'completed' && hasFiles) ? 'static' : 'unpreviewable'), // Fallback for old tasks, ensure running tasks don't show preview
                     generatedFiles,
                     stats: {
                         duration: run.duration,
