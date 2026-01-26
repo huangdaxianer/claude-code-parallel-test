@@ -35,10 +35,17 @@ function init() {
         }
     });
 
+    document.getElementById('config-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'config-modal') {
+            closeConfigModal();
+        }
+    });
+
     // ESC to close modal
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             closePromptModal();
+            closeConfigModal();
         }
     });
 }
@@ -97,7 +104,8 @@ async function updateMaxParallel() {
         if (res.ok) {
             const config = await res.json();
             queueStatus.maxParallelSubtasks = config.maxParallelSubtasks;
-            alert('设置已保存');
+            closeConfigModal();
+            // Optional: alert('设置已保存');
         } else {
             const error = await res.json();
             alert('保存失败: ' + (error.error || '未知错误'));
@@ -105,6 +113,18 @@ async function updateMaxParallel() {
     } catch (e) {
         alert('保存失败: ' + e.message);
     }
+}
+
+function openConfigModal() {
+    const input = document.getElementById('max-parallel-input');
+    if (input) {
+        input.value = queueStatus.maxParallelSubtasks;
+    }
+    document.getElementById('config-modal').classList.add('show');
+}
+
+function closeConfigModal() {
+    document.getElementById('config-modal').classList.remove('show');
 }
 
 // Fetch all tasks
@@ -175,16 +195,37 @@ function updateTableHeader() {
     thead.innerHTML = headerHTML;
 }
 
-// Update statistics - now shows subtask-level stats for running/pending
+// Update statistics - now shows subtask-level stats
 function updateStats() {
-    const total = allTasks.length;
-    const completed = allTasks.filter(t => t.queueStatus === 'completed').length;
+    let totalSubtasks = 0;
+    let completedSubtasks = 0;
+    let runningSubtasks = 0;
+    let queuedSubtasks = 0;
+    let stoppedSubtasks = 0;
 
-    document.getElementById('stat-total').textContent = total;
-    // Use subtask-level stats from queue status
-    document.getElementById('stat-running').textContent = queueStatus.runningSubtasks || 0;
-    document.getElementById('stat-pending').textContent = queueStatus.pendingSubtasks || 0;
-    document.getElementById('stat-completed').textContent = completed;
+    allTasks.forEach(task => {
+        (task.runs || []).forEach(run => {
+            // Count a subtask only if it has been planned/started
+            if (run.status && run.status !== 'not-started') {
+                totalSubtasks++;
+                if (run.status === 'completed' || run.status === 'evaluated') {
+                    completedSubtasks++;
+                } else if (run.status === 'running') {
+                    runningSubtasks++;
+                } else if (run.status === 'pending') {
+                    queuedSubtasks++;
+                } else if (run.status === 'stopped') {
+                    stoppedSubtasks++;
+                }
+            }
+        });
+    });
+
+    document.getElementById('stat-total').textContent = totalSubtasks;
+    document.getElementById('stat-running').textContent = runningSubtasks;
+    document.getElementById('stat-pending').textContent = queuedSubtasks;
+    document.getElementById('stat-completed').textContent = completedSubtasks;
+    document.getElementById('stat-stopped').textContent = stoppedSubtasks;
 }
 
 // Update last refresh time
@@ -604,9 +645,11 @@ function switchTab(tabId) {
     document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
     document.getElementById(`tab-${tabId}`).classList.add('active');
 
-    // Load data for feedback stats tab when activated
+    // Load data for specific tabs when activated
     if (tabId === 'feedback-stats') {
         fetchFeedbackStats();
+    } else if (tabId === 'users') {
+        fetchUserManagementUsers();
     }
 }
 
@@ -1162,3 +1205,70 @@ function downloadFeedbackStatsCSV() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 }
+
+// ========== User Management Logic ==========
+
+let allManagementUsers = [];
+
+async function fetchUserManagementUsers() {
+    const tbody = document.getElementById('users-tbody');
+    try {
+        const res = await fetch('/api/admin/users');
+        allManagementUsers = await res.json();
+        renderUserManagement();
+    } catch (e) {
+        console.error('Failed to fetch users:', e);
+        tbody.innerHTML = `<tr><td colspan="5" class="empty-state"><p>加载失败: ${e.message}</p></td></tr>`;
+    }
+}
+
+function renderUserManagement() {
+    const tbody = document.getElementById('users-tbody');
+    if (allManagementUsers.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><p>暂无用户</p></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = allManagementUsers.map(user => `
+        <tr>
+            <td>${user.id}</td>
+            <td><strong>${escapeHtml(user.username)}</strong></td>
+            <td>
+                <select class="filter-select" onchange="updateUserRole(${user.id}, this.value)" style="min-width: 120px;">
+                    <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>管理员</option>
+                    <option value="internal" ${user.role === 'internal' ? 'selected' : ''}>内部评测人员</option>
+                    <option value="external" ${user.role === 'external' ? 'selected' : ''}>外部评测人员</option>
+                </select>
+            </td>
+            <td><span class="timestamp">${formatDateTime(user.created_at)}</span></td>
+            <td>
+                <button class="btn btn-warning btn-sm" onclick="alert('暂不支持删除用户')">删除</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function updateUserRole(userId, newRole) {
+    try {
+        const res = await fetch(`/api/admin/users/${userId}/role`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: newRole })
+        });
+
+        if (res.ok) {
+            // Optional: show a small toast or just refresh locally
+            const user = allManagementUsers.find(u => u.id === userId);
+            if (user) user.role = newRole;
+            console.log(`User ${userId} role updated to ${newRole}`);
+        } else {
+            const error = await res.json();
+            alert('更新失败: ' + (error.error || '未知错误'));
+            fetchUserManagementUsers(); // Revert UI
+        }
+    } catch (e) {
+        alert('请求失败: ' + e.message);
+        fetchUserManagementUsers(); // Revert UI
+    }
+}
+

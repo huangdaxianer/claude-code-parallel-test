@@ -18,7 +18,7 @@ router.get('/verify', (req, res) => {
             return res.json({ exists: false, user: null });
         }
 
-        const user = db.prepare('SELECT id, username FROM users WHERE username = ?').get(username);
+        const user = db.prepare('SELECT id, username, role FROM users WHERE username = ?').get(username);
 
         res.json({
             exists: !!user,

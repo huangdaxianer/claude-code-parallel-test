@@ -129,6 +129,7 @@ try { db.exec("ALTER TABLE feedback_questions ADD COLUMN display_order INTEGER D
 
 // Migration: Add user_id column to tasks if it doesn't exist
 try { db.exec("ALTER TABLE tasks ADD COLUMN user_id INTEGER"); } catch (e) { }
+try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'internal'"); } catch (e) { }
 
 // Now safe to create index
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_log_tool_use_id ON log_entries(tool_use_id)"); } catch (e) { }
@@ -138,8 +139,10 @@ try { db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)");
 try {
     const existingUser = db.prepare("SELECT id FROM users WHERE username = ?").get('huangpenghao');
     if (!existingUser) {
-        db.prepare("INSERT INTO users (username) VALUES (?)").run('huangpenghao');
-        console.log('[DB] Created default user: huangpenghao');
+        db.prepare("INSERT INTO users (username, role) VALUES (?, ?)").run('huangpenghao', 'admin');
+        console.log('[DB] Created default user: huangpenghao (admin)');
+    } else if (existingUser && !existingUser.role) {
+        db.prepare("UPDATE users SET role = ? WHERE username = ?").run('admin', 'huangpenghao');
     }
     // Migrate existing tasks without user_id to huangpenghao
     const defaultUser = db.prepare("SELECT id FROM users WHERE username = ?").get('huangpenghao');

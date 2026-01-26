@@ -1291,7 +1291,6 @@
             border: 1px solid #e2e8f0;
             border-radius: 1rem;
             padding: 1.25rem;
-            padding-bottom: 4rem;
             color: #000000;
             font-family: inherit;
             font-size: 1.1rem;
@@ -1413,6 +1412,12 @@
 
         .upload-folder-btn.uploading .upload-folder-icon {
             display: none;
+        }
+
+        /* 修复新建任务模态框的样式逻辑 */
+        .task-modal-body {
+            white-space: normal !important;
+            font-family: 'Inter', sans-serif !important;
         }
 
         .upload-progress-ring .progress-ring__circle {

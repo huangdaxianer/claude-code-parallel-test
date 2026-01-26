@@ -66,11 +66,35 @@ router.get('/tasks', (req, res) => {
 // 获取所有用户列表
 router.get('/users', (req, res) => {
     try {
-        const users = db.prepare('SELECT id, username, created_at FROM users ORDER BY created_at DESC').all();
+        const users = db.prepare('SELECT id, username, role, created_at FROM users ORDER BY created_at DESC').all();
         return res.json(users);
     } catch (e) {
         console.error('Error fetching users:', e);
         return res.status(500).json({ error: 'Failed to fetch users' });
+    }
+});
+
+// 更新用户角色
+router.put('/users/:id/role', (req, res) => {
+    try {
+        const { id } = req.params;
+        const { role } = req.body;
+
+        const validRoles = ['admin', 'internal', 'external'];
+        if (!validRoles.includes(role)) {
+            return res.status(400).json({ error: 'Invalid role' });
+        }
+
+        const result = db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
+
+        if (result.changes > 0) {
+            res.json({ success: true });
+        } else {
+            res.status(404).json({ error: 'User not found' });
+        }
+    } catch (e) {
+        console.error('[API] Update user role error:', e);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
