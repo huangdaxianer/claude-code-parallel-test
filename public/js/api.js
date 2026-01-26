@@ -74,6 +74,18 @@
     };
 
     /**
+     * 切换日志标记状态
+     */
+    App.api.toggleLogFlag = async function (eventId, isFlagged) {
+        const res = await fetch(`/api/log_entries/${eventId}/flag`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ isFlagged })
+        });
+        return res.json();
+    };
+
+    /**
      * 获取文件内容
      */
     App.api.getFileContent = async function (folder, file) {

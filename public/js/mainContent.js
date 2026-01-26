@@ -100,10 +100,58 @@
                                 summary.className = 'json-summary';
                                 const safePreview = event.preview_text.length > 200 ? event.preview_text.slice(0, 200) + '...' : event.preview_text;
 
+                                const standardTypes = ['TXT', 'USER', 'ERROR', 'SUBAGENT', 'SUBAGENT_RESULT', 'Bash', 'Write', 'Edit', 'Read', 'ExitPlanMode', 'EnterPlanMode', 'AskUserQuestion', 'TodoWrite'];
+                                const isStandard = standardTypes.includes(event.type);
+                                const displayType = isStandard ? event.type : 'ERROR';
+                                const displayClass = isStandard ? (event.status_class || 'type-tool') : 'type-error';
+                                const displayPreview = isStandard ? App.utils.escapeHtml(safePreview) : '';
+
                                 summary.innerHTML = `
-                                    <span class="json-type-badge ${event.status_class || 'type-tool'}">${event.type}</span>
-                                    <span class="json-preview-text" title="${App.utils.escapeHtml(event.preview_text)}">${App.utils.escapeHtml(safePreview)}</span>
+                                    <span class="json-type-badge ${displayClass}">${displayType}</span>
+                                    <span class="json-preview-text" title="${App.utils.escapeHtml(event.preview_text)}">${displayPreview}</span>
                                 `;
+
+                                // Flag Feature
+                                const flagSpan = document.createElement('span');
+                                flagSpan.className = `log-flag ${event.is_flagged ? 'active' : ''}`;
+                                flagSpan.style.marginLeft = 'auto'; // Push to right
+                                flagSpan.style.cursor = 'pointer';
+                                flagSpan.style.padding = '0 8px';
+                                flagSpan.style.display = 'flex';
+                                flagSpan.style.alignItems = 'center';
+                                flagSpan.style.color = event.is_flagged ? '#ef4444' : '#cbd5e1'; // Red if active, gray if not
+
+                                const flagSvg = `
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="${event.is_flagged ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+                                        <line x1="4" y1="22" x2="4" y2="15"></line>
+                                    </svg>
+                                `;
+                                flagSpan.innerHTML = flagSvg;
+
+                                flagSpan.onclick = async (e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+
+                                    const isNowFlagged = !flagSpan.classList.contains('active');
+
+                                    // Optimistic Update
+                                    flagSpan.classList.toggle('active');
+                                    flagSpan.style.color = isNowFlagged ? '#ef4444' : '#cbd5e1';
+                                    flagSpan.querySelector('svg').style.fill = isNowFlagged ? 'currentColor' : 'none';
+
+                                    try {
+                                        await App.api.toggleLogFlag(event.id, isNowFlagged);
+                                    } catch (err) {
+                                        console.error('Failed to toggle flag:', err);
+                                        // Revert on error
+                                        flagSpan.classList.toggle('active');
+                                        flagSpan.style.color = !isNowFlagged ? '#ef4444' : '#cbd5e1';
+                                        flagSpan.querySelector('svg').style.fill = !isNowFlagged ? 'currentColor' : 'none';
+                                    }
+                                };
+
+                                summary.appendChild(flagSpan);
 
                                 const body = document.createElement('div');
                                 body.className = 'json-body';

@@ -121,6 +121,7 @@ try { db.exec("ALTER TABLE log_entries ADD COLUMN tool_name TEXT"); } catch (e) 
 try { db.exec("ALTER TABLE log_entries ADD COLUMN tool_use_id TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE log_entries ADD COLUMN preview_text TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE log_entries ADD COLUMN status_class TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE log_entries ADD COLUMN is_flagged INTEGER DEFAULT 0"); } catch (e) { }
 try { db.exec("ALTER TABLE model_runs ADD COLUMN previewable TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE feedback_questions ADD COLUMN short_name TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE feedback_questions ADD COLUMN options_json TEXT"); } catch (e) { }

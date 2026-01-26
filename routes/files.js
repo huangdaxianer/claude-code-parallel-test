@@ -102,7 +102,7 @@ router.get('/task_events/:runId', (req, res) => {
     const { runId } = req.params;
     try {
         const events = db.prepare(`
-            SELECT id, type, tool_name, tool_use_id, preview_text, status_class 
+            SELECT id, type, tool_name, tool_use_id, preview_text, status_class, is_flagged 
             FROM log_entries 
             WHERE run_id = ? AND type NOT LIKE 'HIDDEN_%'
             ORDER BY line_number ASC
@@ -134,6 +134,26 @@ router.get('/log_event_content/:eventId', (req, res) => {
     } catch (e) {
         console.error('Error fetching event content:', e);
         res.status(500).json({ error: 'Failed to fetch event content' });
+    }
+});
+
+// 切换日志标记状态
+router.post('/log_entries/:id/flag', (req, res) => {
+    const { id } = req.params;
+    const { isFlagged } = req.body;
+
+    try {
+        const stmt = db.prepare('UPDATE log_entries SET is_flagged = ? WHERE id = ?');
+        const result = stmt.run(isFlagged ? 1 : 0, id);
+
+        if (result.changes > 0) {
+            res.json({ success: true });
+        } else {
+            res.status(404).json({ error: 'Log entry not found' });
+        }
+    } catch (e) {
+        console.error('Error updating log flag:', e);
+        res.status(500).json({ error: 'Failed to update flag' });
     }
 });
 
