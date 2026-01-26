@@ -11,7 +11,7 @@ router.get('/questions', (req, res) => {
         const questions = db.prepare(`
             SELECT * FROM feedback_questions 
             WHERE is_active = 1 
-            ORDER BY created_at ASC
+            ORDER BY display_order ASC, created_at DESC
         `).all();
         res.json(questions);
     } catch (e) {

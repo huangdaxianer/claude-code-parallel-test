@@ -612,7 +612,7 @@ function switchTab(tabId) {
 
 async function fetchQuestions() {
     try {
-        const res = await fetch('/api/admin/questions');
+        const res = await fetch('/api/admin/questions', { headers: { 'Cache-Control': 'no-cache' } });
         allQuestions = await res.json();
         renderQuestions();
     } catch (e) {
@@ -627,9 +627,27 @@ function renderQuestions() {
         return;
     }
 
-    list.innerHTML = allQuestions.map(q => `
-        <div class="question-item" onclick='openQuestionModal(${JSON.stringify(q)})'>
-            <div class="q-content">
+    list.innerHTML = allQuestions.map((q, index) => `
+        <div class="question-item" draggable="true" 
+             data-id="${q.id}" data-index="${index}"
+             ondragstart="handleDragStart(event)" 
+             ondragover="handleDragOver(event)" 
+             ondrop="handleDrop(event)"
+             ondragenter="handleDragEnter(event)"
+             ondragleave="handleDragLeave(event)"
+             style="align-items: center;">
+            <div class="drag-handle" style="cursor: grab; margin-right: 1rem; padding: 0.5rem; display: grid; grid-template-columns: repeat(3, 4px); gap: 3px; color: #cbd5e1;">
+                <div style="width:4px; height:4px; background:currentColor; border-radius:50%"></div>
+                <div style="width:4px; height:4px; background:currentColor; border-radius:50%"></div>
+                <div style="width:4px; height:4px; background:currentColor; border-radius:50%"></div>
+                <div style="width:4px; height:4px; background:currentColor; border-radius:50%"></div>
+                <div style="width:4px; height:4px; background:currentColor; border-radius:50%"></div>
+                <div style="width:4px; height:4px; background:currentColor; border-radius:50%"></div>
+                <div style="width:4px; height:4px; background:currentColor; border-radius:50%"></div>
+                <div style="width:4px; height:4px; background:currentColor; border-radius:50%"></div>
+                <div style="width:4px; height:4px; background:currentColor; border-radius:50%"></div>
+            </div>
+            <div class="q-content" onclick='openQuestionModal(${JSON.stringify(q)})'>
                 ${q.short_name ? `
                     <div style="font-size:1.1rem; font-weight:700; color:#1e293b; margin-bottom:0.25rem;">${escapeHtml(q.short_name)}</div>
                     <div style="font-size:0.9rem; color:#64748b; margin-bottom:0.5rem; line-height:1.5;">${escapeHtml(q.stem)}</div>
@@ -644,7 +662,7 @@ function renderQuestions() {
                 </div>
                 ${q.description ? `<div style="margin-top:0.5rem; color:#94a3b8; font-size:0.85rem;">${escapeHtml(q.description)}</div>` : ''}
             </div>
-            <div style="display:flex; gap:0.5rem; flex-direction:column; align-items: flex-end;">
+            <div style="display:flex; align-items:center;">
                 <label class="toggle-switch" title="${q.is_active ? '点击停用' : '点击启用'}" onclick="event.stopPropagation()">
                     <input type="checkbox" ${q.is_active ? 'checked' : ''} onchange="toggleQuestionActive(${q.id}, this.checked, this)">
                     <span class="slider"></span>
@@ -794,6 +812,149 @@ async function toggleQuestionActive(id, isActive, checkbox) {
         if (checkbox) checkbox.checked = !isActive; // Revert
     }
 }
+
+// Drag and Drop Logic
+let dragSrcEl = null;
+
+function handleDragStart(e) {
+    dragSrcEl = e.currentTarget;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', e.currentTarget.innerHTML);
+    e.currentTarget.style.opacity = '0.4';
+    e.currentTarget.classList.add('dragging');
+}
+
+function handleDragOver(e) {
+    if (e.preventDefault) {
+        e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+}
+
+function handleDragEnter(e) {
+    e.currentTarget.classList.add('over');
+}
+
+function handleDragLeave(e) {
+    e.currentTarget.classList.remove('over');
+}
+
+async function handleDrop(e) {
+    if (e.stopPropagation) {
+        e.stopPropagation();
+    }
+
+    const dropTarget = e.currentTarget;
+
+    // Don't do anything if dropping the same column we're dragging.
+    if (dragSrcEl !== dropTarget) {
+        // Swap data in allQuestions array
+        const srcIndex = parseInt(dragSrcEl.dataset.index);
+        const targetIndex = parseInt(dropTarget.dataset.index);
+
+        // Move item in array
+        const [movedItem] = allQuestions.splice(srcIndex, 1);
+        allQuestions.splice(targetIndex, 0, movedItem);
+
+        // Re-render
+        renderQuestions();
+
+        // Save new order
+        try {
+            const order = allQuestions.map(q => q.id);
+            const res = await fetch('/api/admin/questions/reorder', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ order })
+            });
+
+            if (res.ok) {
+                showToast('顺序更新成功', 'success');
+            } else {
+                showToast('顺序更新失败', 'error');
+            }
+        } catch (err) {
+            console.error('Failed to save order:', err);
+            showToast('请求失败', 'error');
+        }
+    }
+
+    return false;
+}
+
+function stopDrag(e) {
+    const list = document.getElementById('question-list');
+    const items = list.querySelectorAll('.question-item');
+    items.forEach(item => {
+        item.classList.remove('over');
+        item.classList.remove('dragging');
+        item.style.opacity = '1';
+    });
+}
+
+// Add end listener to reset styles
+document.addEventListener('dragend', stopDrag);
+
+// Toast Notification
+function showToast(message, type = 'success') {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.style.position = 'fixed';
+        container.style.top = '20px';
+        container.style.right = '20px';
+        container.style.zIndex = '9999';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.gap = '10px';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.style.padding = '12px 20px';
+    toast.style.borderRadius = '8px';
+    toast.style.color = 'white';
+    toast.style.fontSize = '0.9rem';
+    toast.style.fontWeight = '500';
+    toast.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+    toast.style.display = 'flex';
+    toast.style.alignItems = 'center';
+    toast.style.gap = '8px';
+    toast.style.animation = 'slideIn 0.3s ease-out forwards';
+    toast.style.minWidth = '200px';
+
+    if (type === 'success') {
+        toast.style.background = '#10b981'; // Green
+        toast.innerHTML = '<span>✅</span><span>' + message + '</span>';
+    } else {
+        toast.style.background = '#ef4444'; // Red
+        toast.innerHTML = '<span>❌</span><span>' + message + '</span>';
+    }
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.3s ease-in forwards';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Add CSS for toast animations programmatically (or could check if style tag exists)
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes fadeOut {
+        from { opacity: 1; }
+        to { opacity: 0; }
+    }
+`;
+document.head.appendChild(style);
+
 
 // ========== Feedback Statistics Logic ==========
 

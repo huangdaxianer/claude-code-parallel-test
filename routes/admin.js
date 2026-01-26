@@ -119,7 +119,7 @@ router.get('/queue-status', (req, res) => {
 // 获取所有评价问题 (Admin)
 router.get('/questions', (req, res) => {
     try {
-        const questions = db.prepare('SELECT * FROM feedback_questions ORDER BY created_at DESC').all();
+        const questions = db.prepare('SELECT * FROM feedback_questions ORDER BY display_order ASC, created_at DESC').all();
         res.json(questions);
     } catch (e) {
         console.error('Error fetching questions:', e);
@@ -146,6 +146,36 @@ router.post('/questions', (req, res) => {
     } catch (e) {
         console.error('Error creating question:', e);
         res.status(500).json({ error: 'Failed to create question' });
+    }
+});
+
+// 重排序问题 (Admin)
+router.put('/questions/reorder', express.json(), (req, res) => {
+    const { order } = req.body; // Array of IDs in new order
+
+    if (!Array.isArray(order)) {
+        return res.status(400).json({ error: 'Invalid order data' });
+    }
+
+    try {
+        console.log('[Reorder] Received order:', order);
+        const updateStmt = db.prepare('UPDATE feedback_questions SET display_order = ? WHERE id = ?');
+
+        const transaction = db.transaction((ids) => {
+            let changes = 0;
+            ids.forEach((id, index) => {
+                const info = updateStmt.run(index, id);
+                changes += info.changes;
+                console.log(`[Reorder] ID ${id} -> Order ${index}, Changes: ${info.changes}`);
+            });
+            console.log(`[Reorder] Total changes: ${changes}`);
+        });
+
+        transaction(order);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error reordering questions:', e);
+        res.status(500).json({ error: 'Failed to reorder questions' });
     }
 });
 

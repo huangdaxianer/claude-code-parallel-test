@@ -180,7 +180,7 @@
      */
     App.stats.previewFromStats = function (modelName) {
         App.state.isStatsMode = false;
-        App.loadTask(App.state.currentTaskId, true, modelName);
+        App.loadTask(App.state.currentTaskId, true, modelName, 'preview');
     };
 
     // 全局快捷方式

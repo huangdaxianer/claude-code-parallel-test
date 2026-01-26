@@ -124,6 +124,7 @@ try { db.exec("ALTER TABLE log_entries ADD COLUMN status_class TEXT"); } catch (
 try { db.exec("ALTER TABLE model_runs ADD COLUMN previewable TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE feedback_questions ADD COLUMN short_name TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE feedback_questions ADD COLUMN options_json TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE feedback_questions ADD COLUMN display_order INTEGER DEFAULT 0"); } catch (e) { }
 
 // Migration: Add user_id column to tasks if it doesn't exist
 try { db.exec("ALTER TABLE tasks ADD COLUMN user_id INTEGER"); } catch (e) { }
