@@ -114,6 +114,7 @@
         App.elements.modelListEl.appendChild(statsBtn);
 
         // 对比按钮
+        // Limit comparison to valid previewable states
         const canCompare = App.state.currentRuns.some(r => r.previewable === 'static' || r.previewable === 'dynamic');
         if (canCompare) {
             const compareBtn = document.createElement('div');

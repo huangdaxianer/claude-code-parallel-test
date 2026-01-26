@@ -628,25 +628,27 @@ function renderQuestions() {
     }
 
     list.innerHTML = allQuestions.map(q => `
-        <div class="question-item">
+        <div class="question-item" onclick='openQuestionModal(${JSON.stringify(q)})'>
             <div class="q-content">
-                <div class="q-stem">
-                    ${escapeHtml(q.stem)}
-                    ${q.short_name ? `<span style="font-size:0.8rem; color:#64748b; font-weight:normal; margin-left:0.5rem;">(${escapeHtml(q.short_name)})</span>` : ''}
-                </div>
+                ${q.short_name ? `
+                    <div style="font-size:1.1rem; font-weight:700; color:#1e293b; margin-bottom:0.25rem;">${escapeHtml(q.short_name)}</div>
+                    <div style="font-size:0.9rem; color:#64748b; margin-bottom:0.5rem; line-height:1.5;">${escapeHtml(q.stem)}</div>
+                ` : `
+                    <div style="font-size:1.1rem; font-weight:700; color:#1e293b; margin-bottom:0.5rem;">${escapeHtml(q.stem)}</div>
+                `}
+                
                 <div class="q-meta">
                     <span class="q-tag">${q.scoring_type === 'stars_5' ? '五星评分' : '三星评分'}</span>
                     ${q.is_required ? '<span class="q-tag" style="background:#fef3c7; color:#d97706">必填</span>' : '<span class="q-tag">选填</span>'}
                     ${q.has_comment ? '<span class="q-tag">允许评论</span>' : ''}
-                    ${q.is_active ? '<span class="q-tag" style="background:#dcfce7; color:#166534">已启用</span>' : '<span class="q-tag" style="background:#f1f5f9; color:#64748b">已停用</span>'}
                 </div>
-                ${q.description ? `<div style="margin-top:0.5rem; color:#64748b; font-size:0.9rem;">${escapeHtml(q.description)}</div>` : ''}
+                ${q.description ? `<div style="margin-top:0.5rem; color:#94a3b8; font-size:0.85rem;">${escapeHtml(q.description)}</div>` : ''}
             </div>
-            <div style="display:flex; gap:0.5rem; flex-direction:column;">
-                <button class="btn" style="padding:0.3rem 0.6rem; font-size:0.8rem;" onclick='openQuestionModal(${JSON.stringify(q)})'>编辑</button>
-                <button class="btn ${q.is_active ? 'btn-danger' : 'btn-primary'}" style="padding:0.3rem 0.6rem; font-size:0.8rem;" onclick="toggleQuestionActive(${q.id}, ${!q.is_active})">
-                    ${q.is_active ? '停用' : '启用'}
-                </button>
+            <div style="display:flex; gap:0.5rem; flex-direction:column; align-items: flex-end;">
+                <label class="toggle-switch" title="${q.is_active ? '点击停用' : '点击启用'}" onclick="event.stopPropagation()">
+                    <input type="checkbox" ${q.is_active ? 'checked' : ''} onchange="toggleQuestionActive(${q.id}, this.checked, this)">
+                    <span class="slider"></span>
+                </label>
             </div>
         </div>
     `).join('');
@@ -766,9 +768,7 @@ async function handleQuestionSubmit(e) {
     }
 }
 
-async function toggleQuestionActive(id, isActive) {
-    if (!confirm(`确定要${isActive ? '启用' : '停用'}该题目吗？`)) return;
-
+async function toggleQuestionActive(id, isActive, checkbox) {
     try {
         const res = await fetch(`/api/admin/questions/${id}`, {
             method: 'PUT',
@@ -777,13 +777,21 @@ async function toggleQuestionActive(id, isActive) {
         });
 
         if (res.ok) {
-            fetchQuestions();
+            // Update local state without full refresh if possible, or just refresh
+            // fetchQuestions(); // Refreshing ensures consistency but might be overkill
+
+            // Update the local data array to reflect the change so subsequent renders are correct
+            const q = allQuestions.find(i => i.id === id);
+            if (q) q.is_active = isActive;
+
         } else {
             alert('操作失败');
+            if (checkbox) checkbox.checked = !isActive; // Revert
         }
     } catch (e) {
         console.error(e);
         alert('请求失败');
+        if (checkbox) checkbox.checked = !isActive; // Revert
     }
 }
 

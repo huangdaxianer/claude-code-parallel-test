@@ -196,12 +196,15 @@
 
         const previewTabBtn = document.querySelector('.tab[data-tab="preview"]');
         if (previewTabBtn) {
-            if (activeRun.previewable === 'static' || activeRun.previewable === 'dynamic') {
+            // Strictly check for valid previewable status ('static' or 'dynamic')
+            const isPreviewable = activeRun.previewable === 'static' || activeRun.previewable === 'dynamic';
+
+            if (isPreviewable) {
                 previewTabBtn.style.display = 'block';
             } else {
                 previewTabBtn.style.display = 'none';
 
-                // Fallback: If current tab is preview but it's not available, switch to trajectory
+                // Fallback: If current tab is preview but it's not valid, switch to trajectory
                 // This handles cases where user directly navigates to &page=preview but it's not valid
                 if (App.state.activeTab === 'preview') {
                     App.state.activeTab = 'trajectory'; // Update state immediately
