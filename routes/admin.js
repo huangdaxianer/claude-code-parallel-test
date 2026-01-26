@@ -301,4 +301,131 @@ router.get('/feedback-stats', (req, res) => {
     }
 });
 
+// 获取所有模型配置 (Admin)
+router.get('/models', (req, res) => {
+    try {
+        const models = db.prepare('SELECT * FROM model_configs ORDER BY created_at DESC').all();
+        res.json(models);
+    } catch (e) {
+        console.error('Error fetching model configs:', e);
+        res.status(500).json({ error: 'Failed to fetch model configs' });
+    }
+});
+
+// 获取对当前角色启用的模型 (Public/User)
+router.get('/models/enabled', (req, res) => {
+    try {
+        const username = req.cookies?.username || req.headers['x-username'];
+        if (!username) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const user = db.prepare('SELECT role FROM users WHERE username = ?').get(username);
+        if (!user) {
+            return res.status(401).json({ error: 'User not found' });
+        }
+
+        let roleCol = 'is_enabled_internal';
+        if (user.role === 'admin') roleCol = 'is_enabled_admin';
+        else if (user.role === 'external') roleCol = 'is_enabled_external';
+
+        const models = db.prepare(`
+            SELECT name, description, is_default_checked 
+            FROM model_configs 
+            WHERE ${roleCol} = 1
+            ORDER BY name ASC
+        `).all();
+
+        res.json(models);
+    } catch (e) {
+        console.error('Error fetching enabled models:', e);
+        res.status(500).json({ error: 'Failed to fetch enabled models' });
+    }
+});
+
+// 创建新模型 (Admin)
+router.post('/models', express.json(), (req, res) => {
+    const { name, description, is_enabled_internal, is_enabled_external, is_enabled_admin, is_default_checked } = req.body;
+
+    if (!name) {
+        return res.status(400).json({ error: 'Missing required field: name' });
+    }
+
+    try {
+        const stmt = db.prepare(`
+            INSERT INTO model_configs (name, description, is_enabled_internal, is_enabled_external, is_enabled_admin, is_default_checked)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        const result = stmt.run(
+            name,
+            description || '',
+            is_enabled_internal ? 1 : 0,
+            is_enabled_external ? 1 : 0,
+            is_enabled_admin ? 1 : 0,
+            is_default_checked ? 1 : 0
+        );
+
+        res.json({ success: true, id: result.lastInsertRowid });
+    } catch (e) {
+        console.error('Error creating model config:', e);
+        if (e.message.includes('UNIQUE constraint failed')) {
+            return res.status(400).json({ error: 'Model name already exists' });
+        }
+        res.status(500).json({ error: 'Failed to create model config' });
+    }
+});
+
+// 更新模型 (Admin)
+router.put('/models/:id', express.json(), (req, res) => {
+    const { id } = req.params;
+    const { name, description, is_enabled_internal, is_enabled_external, is_enabled_admin, is_default_checked } = req.body;
+
+    try {
+        const updates = [];
+        const params = [];
+
+        if (name !== undefined) { updates.push('name = ?'); params.push(name); }
+        if (description !== undefined) { updates.push('description = ?'); params.push(description); }
+        if (is_enabled_internal !== undefined) { updates.push('is_enabled_internal = ?'); params.push(is_enabled_internal ? 1 : 0); }
+        if (is_enabled_external !== undefined) { updates.push('is_enabled_external = ?'); params.push(is_enabled_external ? 1 : 0); }
+        if (is_enabled_admin !== undefined) { updates.push('is_enabled_admin = ?'); params.push(is_enabled_admin ? 1 : 0); }
+        if (is_default_checked !== undefined) { updates.push('is_default_checked = ?'); params.push(is_default_checked ? 1 : 0); }
+
+        if (updates.length === 0) {
+            return res.json({ success: true, message: 'No changes' });
+        }
+
+        params.push(id);
+        const sql = `UPDATE model_configs SET ${updates.join(', ')} WHERE id = ?`;
+        const result = db.prepare(sql).run(...params);
+
+        if (result.changes === 0) {
+            return res.status(404).json({ error: 'Model config not found' });
+        }
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error updating model config:', e);
+        if (e.message.includes('UNIQUE constraint failed')) {
+            return res.status(400).json({ error: 'Model name already exists' });
+        }
+        res.status(500).json({ error: 'Failed to update model config' });
+    }
+});
+
+// 删除模型 (Admin)
+router.delete('/models/:id', (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = db.prepare('DELETE FROM model_configs WHERE id = ?').run(id);
+        if (result.changes === 0) {
+            return res.status(404).json({ error: 'Model config not found' });
+        }
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error deleting model config:', e);
+        res.status(500).json({ error: 'Failed to delete model config' });
+    }
+});
+
 module.exports = router;

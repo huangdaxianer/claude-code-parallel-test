@@ -26,7 +26,9 @@
         activeTab: 'trajectory',
         feedbackQuestions: [],
         feedbackDebounceTimer: null,
-        expandedPaths: new Set()
+        feedbackDebounceTimer: null,
+        expandedPaths: new Set(),
+        targetUser: null // The user whose tasks we are viewing (if different from currentUser)
     };
 
     // DOM 元素引用
@@ -52,8 +54,9 @@
 
         const url = new URL(window.location.href);
 
-        // 始终包含 user 参数
-        url.searchParams.set('user', App.state.currentUser.username);
+        // 始终包含 user 参数 (优先使用目标用户)
+        const targetUsername = App.state.targetUser ? App.state.targetUser.username : App.state.currentUser.username;
+        url.searchParams.set('user', targetUsername);
 
         if (taskId) {
             url.searchParams.set('task', taskId);
@@ -165,6 +168,29 @@
         const taskId = urlParams.get('task');
         const model = urlParams.get('model');
         const page = urlParams.get('page');
+        const userParam = urlParams.get('user');
+
+        // 处理目标用户 (查看模式)
+        if (userParam && userParam !== App.state.currentUser.username) {
+            try {
+                const targetUser = await App.api.verifyUser(userParam);
+                if (targetUser) {
+                    App.state.targetUser = targetUser;
+                    console.log(`[App] Viewing as user: ${targetUser.username} (${targetUser.id})`);
+
+                    // 更新显示的用户名，增加提示
+                    const usernameDisplay = document.getElementById('username-display');
+                    if (usernameDisplay) {
+                        usernameDisplay.textContent = `${App.state.currentUser.username} (View: ${targetUser.username})`;
+                        usernameDisplay.style.color = '#f59e0b'; // Orange to indicate special mode
+                    }
+                } else {
+                    App.toast.show(`用户 ${userParam} 不存在`);
+                }
+            } catch (e) {
+                console.error('[App] Failed to verify target user:', e);
+            }
+        }
 
         // 如果 URL 中有任务 ID，先设置到状态中，防止 fetchTaskHistory 自动加载第一个任务
         if (taskId) {

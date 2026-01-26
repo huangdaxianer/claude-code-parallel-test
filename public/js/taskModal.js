@@ -34,6 +34,37 @@
         App.modal.updateStartButtonStyle();
 
         document.getElementById('new-task-modal').classList.add('show');
+        App.modal.loadModels();
+    };
+
+    /**
+     * 加载并渲染模型
+     */
+    App.modal.loadModels = async function () {
+        const container = document.getElementById('model-checkboxes');
+        if (!container) return; // Should allow this to be absent on task_manager page
+
+        try {
+            const models = await App.api.getEnabledModels();
+
+            if (models.length === 0) {
+                container.innerHTML = '<div style="color: #64748b; font-size: 0.9rem;">没有可用的模型</div>';
+                return;
+            }
+
+            container.innerHTML = models.map(model => `
+                <label class="checkbox-item" title="${escapeHtml(model.description || '')}">
+                    <input type="checkbox" name="model" value="${escapeHtml(model.name)}" 
+                           ${model.is_default_checked ? 'checked' : ''}>
+                    <span class="checkmark"></span>
+                    ${escapeHtml(model.name)}
+                </label>
+            `).join('');
+
+        } catch (e) {
+            console.error('Failed to load models:', e);
+            container.innerHTML = '<div style="color: #dc2626; font-size: 0.9rem;">加载模型失败</div>';
+        }
     };
 
     /**

@@ -110,6 +110,17 @@ db.exec(`
         FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS model_configs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        description TEXT,
+        is_enabled_internal INTEGER DEFAULT 1,
+        is_enabled_external INTEGER DEFAULT 1,
+        is_enabled_admin INTEGER DEFAULT 1,
+        is_default_checked INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_task_model_question ON feedback_responses(task_id, model_name, question_id);
     CREATE INDEX IF NOT EXISTS idx_queue_status ON task_queue(status);
     CREATE INDEX IF NOT EXISTS idx_feedback_task_model ON feedback_responses(task_id, model_name);
@@ -154,6 +165,21 @@ try {
     }
 } catch (e) {
     console.error('[DB] Migration error:', e.message);
+}
+
+// Seed initial models
+try {
+    const modelCount = db.prepare("SELECT COUNT(*) as count FROM model_configs").get().count;
+    if (modelCount === 0) {
+        const initialModels = ['potato', 'tomato', 'strawberry', 'watermelon', 'banana', 'avocado', 'cherry', 'pineapple'];
+        const stmt = db.prepare("INSERT INTO model_configs (name, description, is_enabled_internal, is_enabled_external, is_enabled_admin, is_default_checked) VALUES (?, ?, 1, 1, 1, 1)");
+        for (const model of initialModels) {
+            stmt.run(model, `${model} model`);
+        }
+        console.log(`[DB] Seeded ${initialModels.length} initial models`);
+    }
+} catch (e) {
+    console.error('[DB] Seeding error:', e.message);
 }
 
 module.exports = db;

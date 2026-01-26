@@ -9,6 +9,17 @@
     App.api = {};
 
     /**
+     * 获取认证头
+     */
+    App.api.getAuthHeaders = function () {
+        const username = App.state.currentUser?.username;
+        if (username) {
+            return { 'x-username': username };
+        }
+        return {};
+    };
+
+    /**
      * 获取任务列表
      */
     App.api.getTasks = async function (userId) {
@@ -31,7 +42,10 @@
     App.api.createTask = async function (task) {
         const res = await fetch('/api/tasks', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                ...App.api.getAuthHeaders()
+            },
             body: JSON.stringify({ task })
         });
         return res.json();
@@ -97,7 +111,9 @@
      * 获取反馈问题
      */
     App.api.getFeedbackQuestions = async function () {
-        const res = await fetch('/api/feedback/questions');
+        const res = await fetch('/api/feedback/questions', {
+            headers: App.api.getAuthHeaders()
+        });
         return res.json();
     };
 
@@ -105,7 +121,9 @@
      * 检查反馈
      */
     App.api.checkFeedback = async function (taskId, modelName) {
-        const res = await fetch(`/api/feedback/check?taskId=${taskId}&modelName=${encodeURIComponent(modelName)}`);
+        const res = await fetch(`/api/feedback/check?taskId=${taskId}&modelName=${encodeURIComponent(modelName)}`, {
+            headers: App.api.getAuthHeaders()
+        });
         return res.json();
     };
 
@@ -115,7 +133,10 @@
     App.api.submitFeedback = async function (taskId, modelName, responses) {
         const res = await fetch('/api/feedback/submit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                ...App.api.getAuthHeaders()
+            },
             body: JSON.stringify({ taskId, modelName, responses })
         });
         return res.json();
@@ -127,7 +148,10 @@
     App.api.startPreview = async function (taskId, modelName) {
         const res = await fetch('/api/preview/start', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                ...App.api.getAuthHeaders()
+            },
             body: JSON.stringify({ taskId, modelName })
         });
         return res.json();
@@ -137,7 +161,9 @@
      * 获取预览状态
      */
     App.api.getPreviewStatus = async function (taskId, modelName) {
-        const res = await fetch(`/api/preview/status/${taskId}/${modelName}`);
+        const res = await fetch(`/api/preview/status/${taskId}/${modelName}`, {
+            headers: App.api.getAuthHeaders()
+        });
         return res.json();
     };
 
@@ -147,7 +173,10 @@
     App.api.stopPreview = async function (taskId, modelName) {
         const res = await fetch('/api/preview/stop', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                ...App.api.getAuthHeaders()
+            },
             body: JSON.stringify({ taskId, modelName })
         });
         return res.json();
@@ -169,6 +198,16 @@
         const res = await fetch(`/api/tasks/verify?taskId=${encodeURIComponent(taskId)}&userId=${userId}`);
         const data = await res.json();
         return data;
+    };
+
+    /**
+     * 获取当前启用的模型
+     */
+    App.api.getEnabledModels = async function () {
+        const res = await fetch('/api/admin/models/enabled', {
+            headers: App.api.getAuthHeaders()
+        });
+        return res.json();
     };
 
 })();

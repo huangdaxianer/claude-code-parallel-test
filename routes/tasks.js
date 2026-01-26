@@ -534,7 +534,7 @@ router.post('/batch', upload.single('file'), (req, res) => {
         const content = fs.readFileSync(req.file.path, 'utf8');
         const lines = content.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
 
-        const baseModels = ["potato", "tomato", "strawberry", "watermelon", "banana", "avocado", "cherry", "pineapple"];
+        const baseModels = db.prepare('SELECT name FROM model_configs WHERE is_enabled_internal = 1').all().map(m => m.name);
 
         const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir) VALUES (?, ?, ?, ?)');
         const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_name, status) VALUES (?, ?, ?)');

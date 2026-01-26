@@ -12,7 +12,8 @@
      */
     App.fetchTaskHistory = async function () {
         try {
-            const tasks = await App.api.getTasks(App.state.currentUser.id);
+            const userId = App.state.targetUser ? App.state.targetUser.id : App.state.currentUser.id;
+            const tasks = await App.api.getTasks(userId);
             const listEl = document.getElementById('task-history-list');
             listEl.innerHTML = '';
 

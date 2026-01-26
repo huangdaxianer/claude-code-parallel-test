@@ -650,6 +650,8 @@ function switchTab(tabId) {
         fetchFeedbackStats();
     } else if (tabId === 'users') {
         fetchUserManagementUsers();
+    } else if (tabId === 'models') {
+        fetchModels();
     }
 }
 
@@ -1242,10 +1244,17 @@ function renderUserManagement() {
             </td>
             <td><span class="timestamp">${formatDateTime(user.created_at)}</span></td>
             <td>
-                <button class="btn btn-warning btn-sm" onclick="alert('暂不支持删除用户')">删除</button>
+                <div class="action-buttons">
+                    <button class="action-btn action-btn-view" onclick="viewUserTasks('${escapeHtml(user.username)}')">查看</button>
+                    <button class="btn btn-warning btn-sm" onclick="alert('暂不支持删除用户')">删除</button>
+                </div>
             </td>
         </tr>
     `).join('');
+}
+
+function viewUserTasks(username) {
+    window.open(`/task.html?user=${encodeURIComponent(username)}`, '_blank');
 }
 
 async function updateUserRole(userId, newRole) {
@@ -1272,3 +1281,214 @@ async function updateUserRole(userId, newRole) {
     }
 }
 
+
+// ========== Model Management Logic ==========
+
+let allModels = [];
+
+async function fetchModels() {
+    const tbody = document.getElementById('models-tbody');
+    try {
+        const res = await fetch('/api/admin/models');
+        allModels = await res.json();
+        renderModels();
+    } catch (e) {
+        console.error('Failed to fetch models:', e);
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><p>加载失败: ${e.message}</p></td></tr>`;
+        }
+    }
+}
+
+function renderModels() {
+    const tbody = document.getElementById('models-tbody');
+    if (!tbody) return;
+
+    if (allModels.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><p>暂无模型，请点击右上角新增</p></td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = allModels.map(model => `
+        <tr>
+            <td><strong>${escapeHtml(model.name)}</strong></td>
+            <td>${escapeHtml(model.description || '-')}</td>
+            <td>
+                <label class="toggle-switch">
+                    <input type="checkbox" ${model.is_enabled_internal ? 'checked' : ''} 
+                           onchange="updateModelStatus(${model.id}, {is_enabled_internal: this.checked})">
+                    <span class="slider"></span>
+                </label>
+            </td>
+            <td>
+                <label class="toggle-switch">
+                    <input type="checkbox" ${model.is_enabled_external ? 'checked' : ''} 
+                           onchange="updateModelStatus(${model.id}, {is_enabled_external: this.checked})">
+                    <span class="slider"></span>
+                </label>
+            </td>
+            <td>
+                <label class="toggle-switch">
+                    <input type="checkbox" ${model.is_enabled_admin ? 'checked' : ''} 
+                           onchange="updateModelStatus(${model.id}, {is_enabled_admin: this.checked})">
+                    <span class="slider"></span>
+                </label>
+            </td>
+            <td>
+                <label class="toggle-switch">
+                    <input type="checkbox" ${model.is_default_checked ? 'checked' : ''} 
+                           onchange="updateModelStatus(${model.id}, {is_default_checked: this.checked})">
+                    <span class="slider"></span>
+                </label>
+            </td>
+            <td><span class="timestamp">${formatDateTime(model.created_at)}</span></td>
+            <td>
+                <div class="action-buttons">
+                    <button class="action-btn action-btn-view" onclick="openModelModal(${model.id})">编辑</button>
+                    <button class="action-btn action-btn-delete" onclick="deleteModel(${model.id}, '${escapeHtml(model.name)}')">删除</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function openModelModal(modelOrId = null) {
+    console.log('[openModelModal] Called with:', modelOrId);
+
+    const modal = document.getElementById('model-modal');
+    if (!modal) {
+        console.error('[openModelModal] Error: Modal element #model-modal not found!');
+        alert('错误：无法找到模态框元素，请尝试刷新页面。');
+        return;
+    }
+
+    const title = document.getElementById('model-modal-title');
+    const form = document.getElementById('model-form');
+
+    if (!title || !form) {
+        console.error('[openModelModal] Error: Modal internal elements not found!');
+        return;
+    }
+
+    form.reset();
+    document.getElementById('m-id').value = '';
+
+    let model = modelOrId;
+    if (typeof modelOrId === 'number' || typeof modelOrId === 'string') {
+        model = allModels.find(m => m.id == modelOrId);
+        console.log('[openModelModal] Found model by ID:', model);
+    }
+
+    if (model) {
+        title.textContent = '编辑模型';
+        document.getElementById('m-id').value = model.id;
+        document.getElementById('m-name').value = model.name;
+        document.getElementById('m-desc').value = model.description || '';
+        document.getElementById('m-enabled-internal').checked = !!model.is_enabled_internal;
+        document.getElementById('m-enabled-external').checked = !!model.is_enabled_external;
+        document.getElementById('m-enabled-admin').checked = !!model.is_enabled_admin;
+        document.getElementById('m-default-checked').checked = !!model.is_default_checked;
+    } else {
+        title.textContent = '新增模型';
+        document.getElementById('m-enabled-internal').checked = true;
+        document.getElementById('m-enabled-external').checked = true;
+        document.getElementById('m-enabled-admin').checked = true;
+        document.getElementById('m-default-checked').checked = true;
+    }
+
+    modal.classList.add('show');
+    // modal.style.display = 'flex'; // Removed, rely on CSS class
+    console.log('[openModelModal] Modal showed');
+}
+
+function closeModelModal() {
+    const modal = document.getElementById('model-modal');
+    modal.classList.remove('show');
+    // modal.style.display = ''; // Removed
+}
+
+async function handleModelSubmit(e) {
+    e.preventDefault();
+
+    const id = document.getElementById('m-id').value;
+    const payload = {
+        name: document.getElementById('m-name').value,
+        description: document.getElementById('m-desc').value,
+        is_enabled_internal: document.getElementById('m-enabled-internal').checked,
+        is_enabled_external: document.getElementById('m-enabled-external').checked,
+        is_enabled_admin: document.getElementById('m-enabled-admin').checked,
+        is_default_checked: document.getElementById('m-default-checked').checked
+    };
+
+    try {
+        const url = id ? `/api/admin/models/${id}` : '/api/admin/models';
+        const method = id ? 'PUT' : 'POST';
+
+        const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            closeModelModal();
+            fetchModels();
+        } else {
+            const error = await res.json();
+            alert('保存失败: ' + (error.error || '未知错误'));
+        }
+    } catch (e) {
+        alert('请求失败: ' + e.message);
+    }
+}
+
+async function updateModelStatus(id, updates) {
+    try {
+        const res = await fetch(`/api/admin/models/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+        });
+
+        if (!res.ok) {
+            const error = await res.json();
+            alert('更新失败: ' + (error.error || '未知错误'));
+            fetchModels(); // Revert UI
+        }
+    } catch (e) {
+        alert('请求失败: ' + e.message);
+        fetchModels(); // Revert UI
+    }
+}
+
+async function deleteModel(id, name) {
+    if (!confirm(`确定要删除模型 "${name}" 吗？此操作不可恢复！`)) return;
+
+    try {
+        const res = await fetch(`/api/admin/models/${id}`, { method: 'DELETE' });
+
+        if (res.ok) {
+            fetchModels();
+        } else {
+            const error = await res.json();
+            alert('删除失败: ' + (error.error || '未知错误'));
+        }
+    } catch (e) {
+        alert('删除请求失败: ' + e.message);
+    }
+}
+
+// 显式暴露给全局对象，防止作用域问题
+window.openModelModal = openModelModal;
+window.closeModelModal = closeModelModal;
+window.handleModelSubmit = handleModelSubmit;
+window.updateModelStatus = updateModelStatus;
+window.deleteModel = deleteModel;
+window.fetchModels = fetchModels;
+
+// 全局错误捕获
+window.addEventListener('error', function (event) {
+    console.error('Global error:', event.error);
+});
+
+console.log('Task Manager JS Fully Loaded');
