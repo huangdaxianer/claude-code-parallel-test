@@ -373,7 +373,9 @@ function ensureIsolatedPath(originalPath) {
             // Use strict copy to preserve attributes
             try {
                 execSync(`cp -R "${originalPath}/" "${isolatedPath}"`, { stdio: 'pipe' });
-                console.log(`[Preview] Isolation copy complete for: ${isolatedPath}`);
+                // Fix permissions: grant full access to ensure Claude (running as any user) can write
+                execSync(`chmod -R 777 "${isolatedPath}"`, { stdio: 'pipe' });
+                console.log(`[Preview] Isolation copy complete and permissions fixed for: ${isolatedPath}`);
             } catch (cpErr) {
                 console.error(`[Preview] Copy failed: ${cpErr.message}`);
                 if (cpErr.stderr) console.error(`[Preview] Copy stderr: ${cpErr.stderr.toString()}`);
