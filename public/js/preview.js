@@ -370,20 +370,44 @@
     /**
      * 打开文件预览模态框
      */
+    /**
+     * 打开文件预览模态框
+     */
     App.preview.openFilePreview = async function (folder, file) {
         App.elements.previewFilename.textContent = file;
         App.elements.previewBody.textContent = 'Loading...';
+        // Reset class to base
+        App.elements.previewBody.className = 'preview-body';
+        App.elements.previewBody.removeAttribute('data-highlighted');
+
         App.elements.previewModal.classList.add('show');
+
+        // Determine language from extension
+        const ext = file.split('.').pop().toLowerCase();
 
         try {
             const data = await App.api.getFileContent(folder, file);
             if (data.error) {
                 App.elements.previewBody.textContent = 'Error: ' + data.error;
             } else {
-                App.elements.previewBody.textContent = data.content;
+                // Determine if we should highlight
+                // Common code extensions
+                const codeExts = ['js', 'json', 'html', 'css', 'ts', 'jsx', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'go', 'rs', 'php', 'rb', 'sh', 'yaml', 'yml', 'xml', 'md', 'sql'];
+
+                if (codeExts.includes(ext)) {
+                    // Start with clean text
+                    App.elements.previewBody.textContent = data.content;
+                    // Add language class
+                    App.elements.previewBody.classList.add(`language-${ext}`);
+                    // Trigger highlight
+                    hljs.highlightElement(App.elements.previewBody);
+                } else {
+                    App.elements.previewBody.textContent = data.content;
+                }
             }
         } catch (err) {
             App.elements.previewBody.textContent = 'Failed to load file content';
+            console.error(err);
         }
     };
 

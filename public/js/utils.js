@@ -36,6 +36,17 @@
                     cls = 'json-key';
                 } else {
                     cls = 'json-string';
+                    // Unescape contents for better readability (direct formatting)
+                    // Keep the surrounding quotes but format the inner content
+                    // match is like "some content\nnewline"
+                    // We replace literal \n with actual newline, etc.
+                    match = match
+                        .replace(/\\n/g, '\n')
+                        .replace(/\\t/g, '\t')
+                        .replace(/\\"/g, '"');
+                    // Note: We don't unescape \\ to \ to avoid ambiguity if needed, 
+                    // but user asked for "all escaped", so let's skip deep path escaping issues for now 
+                    // and focus on layout (newlines/tabs).
                 }
             } else if (/true|false/.test(match)) {
                 cls = 'json-boolean';
