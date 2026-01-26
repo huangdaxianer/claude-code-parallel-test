@@ -5,13 +5,14 @@ Your goal is to create a shell script named `run_server.sh` that starts the web 
 Instructions:
 1. Analyze the files in the current directory to determine the project type (e.g., Python, Node.js, static HTML).
 2. Create `run_server.sh` with the following requirements:
-   - It must start the server on port 3000 (or use the content of the PORT environment variable).
+   - It must support using the content of the PORT environment variable.
    - If the project is a Python script using `http.server`, modify the command to use the PORT variable or default to 3000.
    - If the project is Node.js, use `npm start` or `node server.js` ensuring it listens on the correct port.
    - If it is a static site with no server file, create a simple python http server command.
    - The script should be executable (`chmod +x run_server.sh`).
    - The script MUST output "Server started on port <PORT>" to stdout when ready.
    - Ideally, redirect other logs to `server.log`.
-
+   
+Do not change files other than the current directory you are working on (typically the working directory should be a "xxx-preview" folder).
 Do not ask for clarification. Just analyze the files and create the script.
 If you cannot determine how to start the server, create a script that echoes "Error: Could not determine startup command" and exits with 1.

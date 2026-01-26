@@ -481,6 +481,7 @@ async function preparePreview(taskId, modelName) {
         const args = [
             '--model', 'tomato',
             '--allowedTools', 'Read(./**),Edit(./**),Bash(./**)',
+            '--disallowedTools', 'EnterPlanMode,ExitPlanMode',
             '--dangerously-skip-permissions'
         ];
 
