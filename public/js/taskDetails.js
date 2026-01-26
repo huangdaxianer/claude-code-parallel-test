@@ -154,10 +154,6 @@
                 document.getElementById('statistics-view').classList.remove('active');
                 document.getElementById('main-content').classList.remove('hidden');
 
-                App.elements.logDisplayEl.innerHTML = '<div class="empty-state"><p style="margin-top: 1rem; font-size: 0.9rem;">正在加载...</p></div>';
-                App.elements.logDisplayEl.dataset.lineCount = '0';
-                App.elements.logDisplayEl.dataset.renderedFolder = App.state.activeFolder;
-
                 App.feedback.autoOpenFeedbackSidebar();
             };
 
