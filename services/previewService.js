@@ -482,7 +482,8 @@ async function preparePreview(taskId, modelName) {
             '--model', 'tomato',
             '--allowedTools', 'Read(./**),Edit(./**),Bash(./**)',
             '--disallowedTools', 'EnterPlanMode,ExitPlanMode',
-            '--dangerously-skip-permissions'
+            '--dangerously-skip-permissions',
+            '--verbose'
         ];
 
         console.log(`[PreviewPrep] Spawning Claude: ${claudeBin} ${args.join(' ')}`);
