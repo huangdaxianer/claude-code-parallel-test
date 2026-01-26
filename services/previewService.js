@@ -354,19 +354,39 @@ function ensureIsolatedPath(originalPath) {
     const baseName = path.basename(originalPath);
     const isolatedPath = path.join(parentDir, `${baseName}_preview`);
 
+    console.log(`[Preview] ensureIsolatedPath inputs: original=${originalPath}, isolated=${isolatedPath}`);
+
     try {
+        if (!fs.existsSync(originalPath)) {
+            console.error(`[Preview] Original path does not exist: ${originalPath}`);
+            throw new Error(`Original path not found: ${originalPath}`);
+        }
+
+        if (!fs.existsSync(parentDir)) {
+            console.log(`[Preview] Creating parent directory: ${parentDir}`);
+            fs.mkdirSync(parentDir, { recursive: true });
+        }
+
         if (!fs.existsSync(isolatedPath)) {
             console.log(`[Preview] Creating isolated path: ${isolatedPath}`);
             const { execSync } = require('child_process');
-            execSync(`cp -R "${originalPath}/" "${isolatedPath}"`);
-            console.log(`[Preview] Isolation copy complete for: ${isolatedPath}`);
+            // Use strict copy to preserve attributes
+            try {
+                execSync(`cp -R "${originalPath}/" "${isolatedPath}"`, { stdio: 'pipe' });
+                console.log(`[Preview] Isolation copy complete for: ${isolatedPath}`);
+            } catch (cpErr) {
+                console.error(`[Preview] Copy failed: ${cpErr.message}`);
+                if (cpErr.stderr) console.error(`[Preview] Copy stderr: ${cpErr.stderr.toString()}`);
+                throw cpErr;
+            }
         } else {
             console.log(`[Preview] Isolated path already exists: ${isolatedPath}`);
         }
         return isolatedPath;
     } catch (e) {
-        console.error(`[Preview] Failed to isolate path: ${e.message}`);
-        return originalPath;
+        console.error(`[Preview] Failed to isolate path: ${e.message}`, e);
+        // Fallback or re-throw? Re-throwing allows caller to handle failure properly
+        throw e;
     }
 }
 
