@@ -207,6 +207,11 @@
 
                         const isScrolled = App.elements.logDisplayEl.scrollHeight - App.elements.logDisplayEl.scrollTop <= App.elements.logDisplayEl.clientHeight + 200;
                         if (isScrolled) App.elements.logDisplayEl.scrollTop = App.elements.logDisplayEl.scrollHeight;
+
+                        // Trigger persistent highlight update
+                        if (App.comments && App.comments.highlightAllComments) {
+                            setTimeout(App.comments.highlightAllComments, 100);
+                        }
                     }
                 })
                 .catch(err => {
@@ -390,6 +395,7 @@
 
             } else {
                 li.className = 'file-tree-file';
+                li.dataset.fullPath = fullPath;
                 li.innerHTML = `
                     <span class="icon" style="margin-left:18px;">📄</span>
                     <span>${key}</span>

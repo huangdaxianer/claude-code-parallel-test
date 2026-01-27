@@ -9,7 +9,9 @@
 
     App.comments.state = {
         selection: null,
-        comments: []
+        comments: [],
+        commentRanges: [], // Store ranges for hit testing
+        activeRefIcon: null
     };
 
     /**
@@ -38,6 +40,9 @@
                 }
             }
         });
+
+
+        App.comments.initHoverInteraction();
     };
 
     /**
@@ -53,12 +58,181 @@
             const comments = await App.api.getComments(App.state.currentTaskId, modelName);
             App.comments.state.comments = comments;
             App.comments.renderComments(comments);
+            App.comments.highlightAllComments(); // Trigger highlight
         } catch (e) {
             console.error('Failed to load comments:', e);
             document.getElementById('comments-list').innerHTML = '<div style="text-align:center; padding:2rem; color:#ef4444;">加载失败</div>';
         }
     };
 
+    /**
+     * 高亮所有评论对应的文本
+     */
+    App.comments.highlightAllComments = function () {
+        if (!window.Highlight || !window.CSS || !CSS.highlights) return;
+
+        const logDisplay = document.getElementById('log-display');
+        if (!logDisplay) return;
+
+        const ranges = [];
+        App.comments.state.commentRanges = []; // Reset storage
+        const comments = App.comments.state.comments || [];
+
+        comments.forEach(comment => {
+            if (!comment.original_content) return;
+
+            let container = logDisplay;
+            if (comment.target_ref && comment.target_ref !== 'current') {
+                const specific = document.querySelector(`[data-event-id="${comment.target_ref}"]`);
+                if (specific) container = specific;
+            }
+
+            let selectionRange = {};
+            try { selectionRange = JSON.parse(comment.selection_range || '{}'); } catch (e) { }
+
+            const targetOffset = selectionRange.startOffset !== undefined ? selectionRange.startOffset : -1;
+            const range = App.comments.findBestRangeMatch(container, comment.original_content, targetOffset);
+
+            if (range) {
+                ranges.push(range);
+                App.comments.state.commentRanges.push({ range, commentId: comment.id });
+            }
+        });
+
+        const highlight = new Highlight(...ranges);
+        CSS.highlights.set('comment-persistent', highlight);
+    };
+
+    /**
+     * Initialize hover interaction for reverse lookup
+     */
+    App.comments.initHoverInteraction = function () {
+        let hoverTimeout;
+        const container = document.body; // Listen globally or on main-content
+
+        container.addEventListener('mousemove', function (e) {
+            if (hoverTimeout) clearTimeout(hoverTimeout);
+
+            // Throttle slightly
+            hoverTimeout = setTimeout(() => {
+                App.comments.handleHover(e);
+            }, 50);
+        });
+    };
+
+    /**
+     * Handle hover to detect if over a highlighted comment
+     */
+    App.comments.handleHover = function (e) {
+        // If hovering over the icon itself, do nothing (keep it shown)
+        if (e.target.classList.contains('comment-ref-icon') || e.target.closest('.comment-ref-icon')) return;
+
+        // Hide existing icon if moved away (will be re-shown if hit)
+        // Check if we are still close to the active icon?
+        // Simpler: caretRangeFromPoint to see if we hit a range
+
+        let range;
+        try {
+            if (document.caretRangeFromPoint) {
+                range = document.caretRangeFromPoint(e.clientX, e.clientY);
+            } else if (document.caretPositionFromPoint) {
+                const pos = document.caretPositionFromPoint(e.clientX, e.clientY);
+                if (pos) {
+                    range = document.createRange();
+                    range.setStart(pos.offsetNode, pos.offset);
+                    range.setEnd(pos.offsetNode, pos.offset);
+                }
+            }
+        } catch (err) {
+            // Ignore errors (e.g. out of bounds)
+        }
+
+        if (!range) {
+            App.comments.hideRefIcon();
+            return;
+        }
+
+        // Check intersection with known valid ranges
+        // We look for strict containment of our cursor position within the comment range
+        const hit = App.comments.state.commentRanges.find(item => {
+            return range.compareBoundaryPoints(Range.START_TO_START, item.range) >= 0 &&
+                range.compareBoundaryPoints(Range.END_TO_END, item.range) <= 0;
+            // Note: caret range is collapsed, so START_TO_START >= 0 means caret is after start
+            // END_TO_END <= 0 means caret is before end
+        });
+
+        if (hit) {
+            App.comments.showRefIcon(e.clientX, e.clientY, hit.commentId);
+        } else {
+            App.comments.hideRefIcon();
+        }
+    };
+
+    /**
+     * Show the floating reference icon
+     */
+    App.comments.showRefIcon = function (x, y, commentId) {
+        // If already showing for this ID, just update pos or ignore
+        if (App.comments.state.activeRefIcon && App.comments.state.activeRefIcon.dataset.commentId === commentId) {
+            return;
+        }
+
+        App.comments.hideRefIcon();
+
+        const icon = document.createElement('div');
+        icon.className = 'comment-ref-icon';
+        icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>';
+        icon.dataset.commentId = commentId;
+
+        // Position slightly offset from cursor
+        icon.style.left = `${x + 10}px`;
+        icon.style.top = `${y - 25}px`;
+
+        icon.onclick = (e) => {
+            e.stopPropagation();
+            App.comments.jumpToComment(commentId);
+        };
+
+        document.body.appendChild(icon);
+        App.comments.state.activeRefIcon = icon;
+    };
+
+    /**
+     * Hide the reference icon
+     */
+    App.comments.hideRefIcon = function () {
+        if (App.comments.state.activeRefIcon) {
+            App.comments.state.activeRefIcon.remove();
+            App.comments.state.activeRefIcon = null;
+        }
+    };
+
+    /**
+     * Jump to the comment in the sidebar
+     */
+    App.comments.jumpToComment = function (commentId) {
+        // 1. Ensure tab is open
+        const feedbackBtn = document.querySelector('.sidebar-tab[data-tab="feedback"]');
+        if (feedbackBtn && !feedbackBtn.classList.contains('active')) {
+            if (App.feedback && App.feedback.switchTab) {
+                App.feedback.switchTab('comments');
+            }
+        } else {
+            // If already in feedback but maybe not comments subtab?
+            // Not easily checked, but usually safe to just ensure sidebar is viewed.
+            // Actually, switchTab('comments') in feedback.js handles internal tab switching too.
+            if (App.feedback && App.feedback.switchTab) App.feedback.switchTab('comments');
+        }
+
+        setTimeout(() => {
+            const card = document.querySelector(`.comment-card[data-id="${commentId}"]`);
+            if (card) {
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                card.classList.add('highlight-flash');
+                setTimeout(() => card.classList.remove('highlight-flash'), 2000);
+            }
+        }, 100);
+    };
     /**
      * 渲染评论列表
      */
@@ -74,7 +248,7 @@
         let html = '';
         comments.forEach(c => {
             html += `
-                <div class="comment-card" onclick="App.comments.jumpToContext(${c.id})">
+                <div class="comment-card" data-id="${c.id}" onclick="App.comments.jumpToContext(${c.id})">
                     ${App.state.currentUser && (App.state.currentUser.id === c.user_id || App.state.currentUser.role === 'admin') ? `
                     <button class="comment-more-btn" onclick="event.stopPropagation(); App.comments.toggleMenu(${c.id}, event)">⋮</button>
                     <div id="comment-menu-${c.id}" class="comment-menu-popup">
@@ -120,7 +294,7 @@
         if (logDisplay && logDisplay.contains(anchorNode)) {
             targetType = 'trajectory';
             // 尝试找到所属的 event-id
-            const entry = anchorNode.closest('[data-event-id]');
+            const entry = (anchorNode.nodeType === 3 ? anchorNode.parentElement : anchorNode).closest('[data-event-id]');
             if (entry) {
                 targetRef = entry.dataset.eventId;
             } else {
@@ -142,12 +316,23 @@
             const range = selection.getRangeAt(0);
             const rect = range.getBoundingClientRect();
 
+            // Calculate precise offset
+            let startOffset = 0;
+            const entry = (targetType === 'trajectory' && targetRef !== 'current') ?
+                document.querySelector(`[data-event-id="${targetRef}"]`) :
+                logDisplay;
+
+            if (entry && entry.contains(range.startContainer)) {
+                startOffset = App.comments.calculateCharacterOffset(entry, range.startContainer, range.startOffset);
+            }
+
             App.comments.state.selection = {
                 text: text,
                 targetType: targetType,
                 targetRef: targetRef,
                 rect: rect,
-                range: range.cloneRange() // Keep a copy
+                range: range.cloneRange(), // Keep a copy
+                startOffset: startOffset
             };
 
             App.comments.showFloatingButton(rect);
@@ -215,7 +400,6 @@
         }
 
         popover.style.left = `${left}px`;
-        popover.style.left = `${left}px`;
         popover.style.display = 'block';
         input.focus();
 
@@ -270,8 +454,8 @@
 
         // 构造选区范围信息
         const selectionRange = {
-            startOffset: 0,
-            endOffset: 0
+            startOffset: sel.startOffset || 0,
+            endOffset: (sel.startOffset || 0) + sel.text.length
         };
 
         try {
@@ -305,16 +489,12 @@
      * 删除评论
      */
     App.comments.deleteComment = async function (id) {
-        App.comments.deleteComment = async function (id) {
-            // No confirmation
-            try {
-                await App.api.deleteComment(id);
-                App.comments.loadComments();
-                App.toast.show('评论已删除', 'success');
-            } catch (e) {
-                console.error('Delete comment failed:', e);
-                App.toast.show('删除失败', 'error');
-            }
+        // No confirmation
+        try {
+            await App.api.deleteComment(id);
+            App.comments.loadComments();
+            App.toast.show('评论已删除', 'success');
+        } catch (e) {
             console.error('Delete comment failed:', e);
             App.toast.show('删除失败', 'error');
         }
@@ -352,98 +532,65 @@
                 if (!logDisplay) return;
 
                 // 1. Try to find specific event block by ID
-                let container = null;
+                let container = logDisplay;
                 if (comment.target_ref && comment.target_ref !== 'current') {
-                    // Try to find the element
-                    // The mainContent.js renders text entries as: div.dataset.eventId = event.id
-                    // And json entries (details) as: details.dataset.eventId = event.id
-                    container = document.querySelector(`[data-event-id="${comment.target_ref}"]`);
+                    const specific = document.querySelector(`[data-event-id="${comment.target_ref}"]`);
+                    if (specific) container = specific;
                 }
 
-                if (container) {
-                    // Check if it is a details element and open it if needed
-                    const details = container.closest('details') || (container.tagName === 'DETAILS' ? container : null);
-
-                    if (details) {
-                        if (!details.open) {
-                            details.open = true;
-                            // Trigger lazy load if not loaded
-                            if (!details.dataset.loaded) {
-                                details.dispatchEvent(new Event('toggle'));
-                                // Wait for loading to finish (poll for dataset.loaded)
-                                let attempts = 0;
-                                while (!details.dataset.loaded && attempts < 20) {
-                                    await new Promise(r => setTimeout(r, 100));
-                                    attempts++;
-                                }
-                            }
-                        } else if (!details.dataset.loaded) {
-                            // Case where it might be open but content fail/not loaded? trigger just in case
-                            details.dispatchEvent(new Event('toggle'));
-                            let attempts = 0;
-                            while (!details.dataset.loaded && attempts < 20) {
-                                await new Promise(r => setTimeout(r, 100));
-                                attempts++;
-                            }
-                        }
+                // Check if it is a details element and open it if needed
+                const details = container.closest('details') || (container.tagName === 'DETAILS' ? container : null);
+                if (details && !details.open) {
+                    details.open = true;
+                    details.dispatchEvent(new Event('toggle'));
+                    let attempts = 0;
+                    while (!details.dataset.loaded && attempts < 20) {
+                        await new Promise(r => setTimeout(r, 100));
+                        attempts++;
                     }
+                }
 
-                    // Now highlight text logic
+                // Now highlight text logic
+                container.classList.add('highlight-context');
+                setTimeout(() => container.classList.remove('highlight-context'), 2000);
+
+                let scrolled = false;
+
+                // Try to select the specific text if possible
+                if (window.getSelection) {
+                    let selectionRange = {};
+                    try { selectionRange = JSON.parse(comment.selection_range || '{}'); } catch (e) { }
+
+                    const targetOffset = selectionRange.startOffset !== undefined ? selectionRange.startOffset : -1;
+                    const range = App.comments.findBestRangeMatch(container, comment.original_content, targetOffset);
+
+                    if (range) {
+                        scrolled = true;
+
+                        // Precise scroll using a temporary anchor
+                        const anchor = document.createElement('span');
+                        range.startContainer.parentNode.insertBefore(anchor, range.startContainer);
+                        anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                        if (window.Highlight && window.CSS && CSS.highlights) {
+                            const highlight = new Highlight(range);
+                            CSS.highlights.set('comment-selection', highlight);
+                        }
+
+                        const sel = window.getSelection();
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+
+                        setTimeout(() => {
+                            if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
+                        }, 2000);
+                    }
+                }
+
+                if (!scrolled) {
                     container.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    container.classList.add('highlight-context');
-                    setTimeout(() => container.classList.remove('highlight-context'), 2000);
-
-                    // Try to select the specific text if possible
-                    if (window.getSelection) {
-                        // Find the text node containing the content
-                        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
-                        let node;
-                        while (node = walker.nextNode()) {
-                            const idx = node.textContent.indexOf(comment.original_content);
-                            if (idx !== -1) {
-                                const range = document.createRange();
-                                range.setStart(node, idx);
-                                range.setEnd(node, idx + comment.original_content.length);
-                                const sel = window.getSelection();
-                                sel.removeAllRanges();
-                                sel.addRange(range);
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    // Fallback to global search if ID not found or legacy comment
-                    const walker = document.createTreeWalker(logDisplay, NodeFilter.SHOW_TEXT, null, false);
-                    let node;
-                    while (node = walker.nextNode()) {
-                        if (node.textContent.includes(comment.original_content)) {
-                            // Ensure parent details is open
-                            const details = node.parentElement.closest('details');
-                            if (details && !details.open) {
-                                details.open = true;
-                                details.dispatchEvent(new Event('toggle'));
-                                await new Promise(r => setTimeout(r, 500)); // Wait for render
-                            }
-
-                            node.parentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            node.parentElement.classList.add('highlight-context');
-                            setTimeout(() => node.parentElement.classList.remove('highlight-context'), 2000);
-
-                            // Selection
-                            if (window.getSelection) {
-                                const range = document.createRange();
-                                const start = node.textContent.indexOf(comment.original_content);
-                                range.setStart(node, start);
-                                range.setEnd(node, start + comment.original_content.length);
-                                const sel = window.getSelection();
-                                sel.removeAllRanges();
-                                sel.addRange(range);
-                            }
-                            break;
-                        }
-                    }
                 }
-            }, 300); // Increased delay slightly
+            }, 300);
 
         } else if (comment.target_type === 'artifact') {
             // Need to open the file
@@ -453,16 +600,37 @@
             if (App.main && App.main.switchTab) App.main.switchTab('files');
 
             setTimeout(() => {
-                const items = document.querySelectorAll('.file-item, .file-tree-file');
-                let found = false;
-                items.forEach(item => {
-                    if (item.textContent.trim().includes(comment.target_ref)) {
-                        item.click();
-                        found = true;
-                    }
-                });
+                // Try precise match via data-full-path first
+                let targetItem = document.querySelector(`.file-tree-file[data-full-path="${comment.target_ref}"]`);
 
-                if (found) {
+                // Fallback to text search if not found
+                if (!targetItem) {
+                    const items = document.querySelectorAll('.file-item, .file-tree-file');
+                    for (const item of items) {
+                        if (item.textContent.trim() === comment.target_ref || item.textContent.trim().endsWith(comment.target_ref)) {
+                            targetItem = item;
+                            break;
+                        }
+                    }
+                }
+
+                if (targetItem) {
+                    // Auto-expand parent folders
+                    let parent = targetItem.parentElement;
+                    while (parent && !parent.classList.contains('file-list')) { // Stop at root container
+                        if (parent.classList.contains('file-tree-children') && !parent.classList.contains('expanded')) {
+                            // Find the toggle header
+                            const header = parent.previousElementSibling;
+                            if (header && header.classList.contains('file-tree-header')) {
+                                header.click(); // Simulate click to expand
+                            }
+                        }
+                        parent = parent.parentElement;
+                    }
+
+                    // Click the file itself
+                    targetItem.click();
+
                     // Wait for preview to open
                     setTimeout(() => {
                         const previewBody = document.getElementById('preview-body');
@@ -484,4 +652,98 @@
         }
     };
 
+    /**
+     * Find the best range match for a piece of text within a container, 
+     * prioritizing the one closest to the target character offset.
+     */
+    App.comments.findBestRangeMatch = function (container, text, targetOffset) {
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+        let currentTotalOffset = 0;
+        let bestMatch = null;
+        let minDistance = Infinity;
+
+        const occurrences = [];
+        let node;
+        while (node = walker.nextNode()) {
+            const content = node.textContent;
+            let idx = content.indexOf(text);
+            while (idx !== -1) {
+                occurrences.push({
+                    node: node,
+                    localOffset: idx,
+                    globalOffset: currentTotalOffset + idx
+                });
+                idx = content.indexOf(text, idx + 1);
+            }
+            currentTotalOffset += content.length;
+        }
+
+        if (occurrences.length === 0) return null;
+
+        // If targetOffset is -1 (legacy), we take the first match
+        if (targetOffset === -1) {
+            bestMatch = occurrences[0];
+        } else {
+            // Pick the one closest to targetOffset
+            occurrences.forEach(occ => {
+                const distance = Math.abs(occ.globalOffset - targetOffset);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    bestMatch = occ;
+                }
+            });
+        }
+
+        try {
+            const range = document.createRange();
+            range.setStart(bestMatch.node, bestMatch.localOffset);
+
+            // Handling multi-node selection is complex; if the text is split, 
+            // we fallback to single node end or approximate.
+            if (bestMatch.node.textContent.length >= bestMatch.localOffset + text.length) {
+                range.setEnd(bestMatch.node, bestMatch.localOffset + text.length);
+            } else {
+                // Very basic multi-node fallback: just end at the node end
+                range.setEnd(bestMatch.node, bestMatch.node.textContent.length);
+            }
+            return range;
+        } catch (e) {
+            return null;
+        }
+    };
+
+    /**
+     * Calculate character offset relative to a container
+     */
+    App.comments.calculateCharacterOffset = function (container, targetNode, targetOffset) {
+        let offset = 0;
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+        let node;
+        while (node = walker.nextNode()) {
+            if (node === targetNode) {
+                return offset + targetOffset;
+            }
+            offset += node.textContent.length;
+        }
+        return offset; // Fallback
+    };
+
+    /**
+     * Find text node and local offset from a global character offset
+     */
+    App.comments.findNodeAtCharacterOffset = function (container, globalOffset) {
+        let currentOffset = 0;
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+        let node;
+        while (node = walker.nextNode()) {
+            const len = node.textContent.length;
+            if (currentOffset + len >= globalOffset) {
+                return { node: node, offset: globalOffset - currentOffset };
+            }
+            currentOffset += len;
+        }
+        return null;
+    };
+
 })();
+
