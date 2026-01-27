@@ -738,11 +738,11 @@
 
         <!-- Tabs Nav -->
         <div class="tabs-nav">
-            <button class="tab-btn active" onclick="switchTab('tasks')">任务列表</button>
-            <button class="tab-btn" onclick="switchTab('models')">模型管理</button>
-            <button class="tab-btn" onclick="switchTab('eval')">评测配置</button>
-            <button class="tab-btn" onclick="switchTab('feedback-stats')">反馈统计</button>
-            <button class="tab-btn" onclick="switchTab('users')">用户管理</button>
+            <button class="tab-btn active" data-tab="tasks">任务列表</button>
+            <button class="tab-btn" data-tab="models">模型管理</button>
+            <button class="tab-btn" data-tab="eval">评测配置</button>
+            <button class="tab-btn" data-tab="feedback-stats">反馈统计</button>
+            <button class="tab-btn" data-tab="users">用户管理</button>
         </div>
 
         <!-- Task Management Tab -->
@@ -778,13 +778,13 @@
             <div class="filters">
                 <div class="filter-group">
                     <label>用户:</label>
-                    <select class="filter-select" id="filter-user" onchange="applyFilters()">
+                    <select class="filter-select" id="filter-user">
                         <option value="">全部用户</option>
                     </select>
                 </div>
                 <div class="filter-group">
                     <label>状态:</label>
-                    <select class="filter-select" id="filter-status" onchange="applyFilters()">
+                    <select class="filter-select" id="filter-status">
                         <option value="">全部状态</option>
                         <option value="running">运行中</option>
                         <option value="pending">排队中</option>
@@ -794,8 +794,7 @@
                 </div>
                 <div class="filter-group">
                     <label>搜索:</label>
-                    <input type="text" class="filter-input" id="filter-search" placeholder="搜索任务标题或 Prompt..."
-                        oninput="applyFilters()">
+                    <input type="text" class="filter-input" id="filter-search" placeholder="搜索任务标题或 Prompt...">
                 </div>
                 <!-- Legend -->
                 <div class="legend">
@@ -825,10 +824,11 @@
             <!-- Batch Actions -->
             <div class="batch-actions" id="batch-actions">
                 <span id="selected-count">已选择 0 个任务</span>
-                <button class="btn btn-warning" onclick="batchStop()">批量中止</button>
-                <button class="btn btn-danger" onclick="batchDelete()">批量删除</button>
-                <button class="btn" onclick="clearSelection()">取消选择</button>
+                <button class="btn btn-warning" id="batch-stop-btn">批量中止</button>
+                <button class="btn btn-danger" id="batch-delete-btn">批量删除</button>
+                <button class="btn" data-action="clear-selection">取消选择</button>
             </div>
+
 
             <!-- Table -->
             <div class="table-container" style="overflow-x: auto;">
@@ -836,8 +836,7 @@
                     <thead id="tasks-thead">
                         <tr>
                             <th class="checkbox-cell">
-                                <input type="checkbox" class="task-checkbox" id="select-all"
-                                    onchange="toggleSelectAll()">
+                                <input type="checkbox" class="task-checkbox" id="select-all">
                             </th>
                             <th>任务</th>
                             <th>用户</th>
@@ -862,7 +861,7 @@
         <div id="tab-models" class="tab-pane">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h2 style="font-size: 1.25rem; font-weight: 600;">模型管理</h2>
-                <button class="btn btn-primary" onclick="openModelModal()">+ 新增模型</button>
+                <button class="btn btn-primary" data-action="open-create-model">+ 新增模型</button>
             </div>
 
             <div class="table-container" style="overflow-x: auto;">
@@ -894,7 +893,7 @@
         <div id="tab-eval" class="tab-pane">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h2 style="font-size: 1.25rem; font-weight: 600;">评测问卷配置</h2>
-                <button class="btn btn-primary" onclick="openQuestionModal()">+ 新建题目</button>
+                <button class="btn btn-primary" data-action="open-create-question">+ 新建题目</button>
             </div>
 
             <div id="question-list" class="question-list">
@@ -910,8 +909,8 @@
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h2 style="font-size: 1.25rem; font-weight: 600;">反馈统计</h2>
                 <div style="display: flex; gap: 0.5rem;">
-                    <button class="btn" onclick="downloadFeedbackStatsCSV()">📥 下载 CSV</button>
-                    <button class="btn" onclick="refreshFeedbackStats()">🔄 刷新</button>
+                    <button class="btn" id="download-csv-btn">📥 下载 CSV</button>
+                    <button class="btn" data-action="refresh-feedback-stats">🔄 刷新</button>
                 </div>
             </div>
 
@@ -942,7 +941,7 @@
         <div id="tab-users" class="tab-pane">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h2 style="font-size: 1.25rem; font-weight: 600;">用户管理</h2>
-                <button class="btn" onclick="fetchUserManagementUsers()">🔄 刷新</button>
+                <button class="btn" data-action="refresh-users-management">🔄 刷新</button>
             </div>
 
             <div class="table-container" style="overflow-x: auto;">
@@ -974,7 +973,7 @@
         <div class="modal">
             <div class="modal-header">
                 <h3>设置最大并行子任务数</h3>
-                <button class="modal-close" onclick="closeConfigModal()">&times;</button>
+                <button class="modal-close" data-action="close-modal" data-modal-id="config-modal">&times;</button>
             </div>
             <div class="modal-body">
                 <div style="display: flex; flex-direction: column; gap: 1rem;">
@@ -985,7 +984,7 @@
                     </div>
                 </div>
                 <div style="margin-top: 2rem; display: flex; justify-content: flex-end; gap: 1rem;">
-                    <button class="btn" onclick="closeConfigModal()">取消</button>
+                    <button class="btn" data-action="close-modal" data-modal-id="config-modal">取消</button>
                     <button class="btn btn-primary" onclick="updateMaxParallel()">保存设置</button>
                 </div>
             </div>
@@ -997,10 +996,10 @@
         <div class="modal">
             <div class="modal-header">
                 <h3 id="question-modal-title">新建题目</h3>
-                <button class="modal-close" onclick="closeQuestionModal()">&times;</button>
+                <button class="modal-close" data-action="close-modal" data-modal-id="question-modal">&times;</button>
             </div>
             <div class="modal-body">
-                <form id="question-form" onsubmit="handleQuestionSubmit(event)">
+                <form id="question-form">
                     <input type="hidden" id="q-id">
 
                     <div class="form-group" style="margin-bottom: 1rem;">
@@ -1017,8 +1016,7 @@
 
                     <div class="form-group" style="margin-bottom: 1rem;">
                         <label style="display:block; margin-bottom:0.5rem; font-weight:500;">评分类型 (必填)</label>
-                        <select id="q-type" class="filter-select" style="width:100%" required
-                            onchange="toggleOptionsContainer()">
+                        <select id="q-type" class="filter-select" style="width:100%" required>
                             <option value="stars_5">五星评分 (1-5)</option>
                             <option value="stars_3">三星评分 (Good/Meh/Bad)</option>
                         </select>
@@ -1047,7 +1045,8 @@
                     </div>
 
                     <div style="display:flex; justify-content:flex-end; gap:1rem;">
-                        <button type="button" class="btn" onclick="closeQuestionModal()">取消</button>
+                        <button type="button" class="btn" data-action="close-modal"
+                            data-modal-id="question-modal">取消</button>
                         <button type="submit" class="btn btn-primary">保存</button>
                     </div>
                 </form>
@@ -1060,7 +1059,7 @@
             <div class="modal">
                 <div class="modal-header">
                     <h3>任务 Prompt</h3>
-                    <button class="modal-close" onclick="closePromptModal()">&times;</button>
+                    <button class="modal-close" data-action="close-modal" data-modal-id="prompt-modal">&times;</button>
                 </div>
                 <div class="modal-body">
                     <pre id="prompt-content"></pre>
@@ -1074,10 +1073,10 @@
         <div class="modal">
             <div class="modal-header">
                 <h3 id="model-modal-title">新增模型</h3>
-                <button class="modal-close" onclick="closeModelModal()">&times;</button>
+                <button class="modal-close" data-action="close-modal" data-modal-id="model-modal">&times;</button>
             </div>
             <div class="modal-body">
-                <form id="model-form" onsubmit="handleModelSubmit(event)">
+                <form id="model-form">
                     <input type="hidden" id="m-id">
 
                     <div class="form-group" style="margin-bottom: 1rem;">
@@ -1114,74 +1113,17 @@
                     </div>
 
                     <div style="display:flex; justify-content:flex-end; gap:1rem;">
-                        <button type="button" class="btn" onclick="closeModelModal()">取消</button>
+                        <button type="button" class="btn" data-action="close-modal"
+                            data-modal-id="model-modal">取消</button>
                         <button type="submit" class="btn btn-primary">保存</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-                <div class="modal-body">
-                    <pre id="prompt-content"></pre>
-                </div>
-            </div>
-        </div>
 
-        <!-- Model Modal moved to end to ensure stacking context correctness -->
-        <div class="modal-overlay" id="model-modal" style="z-index: 2000;">
-            <div class="modal">
-                <div class="modal-header">
-                    <h3 id="model-modal-title">新增模型</h3>
-                    <button class="modal-close" onclick="closeModelModal()">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <form id="model-form" onsubmit="handleModelSubmit(event)">
-                        <input type="hidden" id="m-id">
-
-                        <div class="form-group" style="margin-bottom: 1rem;">
-                            <label style="display:block; margin-bottom:0.5rem; font-weight:500;">模型名称 (必填)</label>
-                            <input type="text" id="m-name" class="filter-input" style="width:100%" required
-                                placeholder="例如：potato">
-                        </div>
-
-                        <div class="form-group" style="margin-bottom: 1rem;">
-                            <label style="display:block; margin-bottom:0.5rem; font-weight:500;">模型备注</label>
-                            <input type="text" id="m-desc" class="filter-input" style="width:100%"
-                                placeholder="例如：这是基于 GPT-4o 的模型">
-                        </div>
-
-                        <div class="form-group" style="margin-bottom: 1rem;">
-                            <label style="display:block; margin-bottom:0.5rem; font-weight:500;">角色启用设置</label>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
-                                <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                                    <input type="checkbox" id="m-enabled-internal" checked> 内部评测
-                                </label>
-                                <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                                    <input type="checkbox" id="m-enabled-external" checked> 外部评测
-                                </label>
-                                <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                                    <input type="checkbox" id="m-enabled-admin" checked> 管理员
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="form-group" style="margin-bottom: 1.5rem;">
-                            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                                <input type="checkbox" id="m-default-checked" checked> 默认勾选 (启动任务时)
-                            </label>
-                        </div>
-
-                        <div style="display:flex; justify-content:flex-end; gap:1rem;">
-                            <button type="button" class="btn" onclick="closeModelModal()">取消</button>
-                            <button type="submit" class="btn btn-primary">保存</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script src="task_manager.js?v=model_mgmt_debug_6"></script>
+    <!-- Main Logic -->
+    <script type="module" src="js/modules/main.js"></script>
 </body>
 
 </html>
