@@ -142,6 +142,7 @@
         // 重新获取数据
         App.fetchTaskDetails();
         App.fetchTaskHistory();
+        App.comments.loadComments();
 
         // 重启定时器
         App.state.refreshIntervalId = setInterval(App.fetchTaskDetails, 3000);
@@ -293,6 +294,11 @@
                 App.state.currentTaskId = null;
             }
         });
+
+        // 初始化评论模块
+        if (App.comments && App.comments.init) {
+            App.comments.init();
+        }
 
     };
 

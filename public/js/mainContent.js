@@ -14,9 +14,13 @@
     App.main.updateTabUI = function (tabName) {
         App.state.activeTab = tabName;
 
-        document.querySelectorAll('.tab').forEach(t => {
-            t.classList.toggle('active', t.dataset.tab === tabName);
-        });
+        // Only target tabs within the main panel header to avoid conflicting with feedback tabs or others
+        const mainTabsContainer = document.querySelector('.panel-header .tabs');
+        if (mainTabsContainer) {
+            mainTabsContainer.querySelectorAll('.tab').forEach(t => {
+                t.classList.toggle('active', t.dataset.tab === tabName);
+            });
+        }
 
         const trajectoryContent = document.getElementById('tab-content-trajectory');
         const filesContent = document.getElementById('tab-content-files');
@@ -80,6 +84,7 @@
                             if (textTypes.includes(event.type)) {
                                 const div = document.createElement('div');
                                 div.className = 'text-log-entry markdown-body';
+                                div.dataset.eventId = event.id;
                                 div.style.marginBottom = '0.7rem';
 
                                 let contentHtml = '';

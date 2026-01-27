@@ -7,6 +7,7 @@
     <title>Task Details - ClaudeCodex</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/task.css">
+    <link rel="stylesheet" href="css/comments.css">
     <!-- Highlight.js -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -244,15 +245,26 @@
                 <!-- Feedback Sidebar (Now Inline) -->
                 <div id="feedback-sidebar" class="feedback-sidebar">
                     <div class="feedback-header">
-                        <h3 style="font-size:1.1rem; font-weight:600;">反馈</h3>
+                        <div class="tabs">
+                            <button class="tab active" data-tab="scoring"
+                                onclick="App.feedback.switchTab('scoring')">打分评价</button>
+                            <button class="tab" data-tab="comments"
+                                onclick="App.feedback.switchTab('comments')">评论反馈</button>
+                        </div>
                     </div>
-                    <div id="feedback-body" class="feedback-body">
+                    <div id="feedback-body-scoring" class="feedback-body tab-content active">
                         <!-- Questions injected here -->
                         <div style="text-align:center; padding:2rem; color:#94a3b8;">加载中...</div>
                     </div>
-
+                    <div id="feedback-body-comments" class="feedback-body tab-content">
+                        <div id="comments-list" class="comments-list">
+                            <div style="text-align:center; padding:2rem; color:#94a3b8;">暂无评论</div>
+                        </div>
+                    </div>
                 </div>
             </main>
+
+
 
 
         </div>
@@ -349,6 +361,20 @@
     </div> <!-- End of app-layout -->
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Floating Comment Button -->
+    <button id="floating-comment-btn" class="floating-comment-btn" style="display:none;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" style="color: #1e293b;">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            <line x1="8" y1="12" x2="16" y2="12"></line>
+        </svg>
+    </button>
+
+    <!-- Comment Input Popover -->
+    <div id="comment-input-popover" class="comment-input-popover" style="display:none;">
+        <textarea id="comment-input-text" placeholder="请输入评论..." rows="3"></textarea>
+    </div>
+
     <!-- Context Menu for Task Items -->
     <div id="item-dropdown-menu" class="item-dropdown-menu">
         <div class="dropdown-item" id="download-task-menu-item">
@@ -373,6 +399,7 @@
     <script src="js/mainContent.js"></script>
     <script src="js/preview.js"></script>
     <script src="js/feedback.js"></script>
+    <script src="js/comments.js"></script>
     <script>
         // 初始化应用
         document.addEventListener('DOMContentLoaded', App.init);

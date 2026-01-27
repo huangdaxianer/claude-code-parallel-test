@@ -110,6 +110,20 @@ db.exec(`
         FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS feedback_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        user_id INTEGER,
+        target_type TEXT NOT NULL, -- 'trajectory' or 'artifact'
+        target_ref TEXT, -- run_id for trajectory, file_path for artifact
+        selection_range TEXT, -- JSON string
+        content TEXT NOT NULL,
+        original_content TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS model_configs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,

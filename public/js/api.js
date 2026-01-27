@@ -210,4 +210,40 @@
         return res.json();
     };
 
+    /**
+     * Get comments
+     */
+    App.api.getComments = async function (taskId, modelName) {
+        const res = await fetch(`/api/comments?taskId=${taskId}&modelName=${encodeURIComponent(modelName)}`);
+        if (!res.ok) throw new Error('Failed to fetch comments');
+        return await res.json();
+    };
+
+    /**
+     * Add comment
+     */
+    App.api.addComment = async function (data) {
+        const res = await fetch('/api/comments', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...App.api.getAuthHeaders()
+            },
+            body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error('Failed to add comment');
+        return await res.json();
+    };
+
+    /**
+     * Delete comment
+     */
+    App.api.deleteComment = async function (id) {
+        const res = await fetch(`/api/comments/${id}`, {
+            method: 'DELETE'
+        });
+        if (!res.ok) throw new Error('Failed to delete comment');
+        return await res.json();
+    };
+
 })();

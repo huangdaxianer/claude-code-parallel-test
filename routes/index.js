@@ -18,6 +18,7 @@ router.use('/admin', adminRoutes);
 router.use('/feedback', feedbackRoutes);
 router.use('/tasks', tasksRoutes);
 router.use('/preview', previewRoutes);
+router.use('/comments', require('./comments'));
 router.use('/', filesRoutes);
 router.use('/users', usersRoutes);
 

@@ -52,14 +52,19 @@
         if (!App.state.currentTaskId || !App.state.activeFolder) return;
 
         const sidebar = document.getElementById('feedback-sidebar');
-        const body = document.getElementById('feedback-body');
 
         if (sidebar.classList.contains('open') && sidebar.dataset.activeRun === App.state.activeFolder) {
             return;
         }
 
+        // 默认显示打分评价标签
+        App.feedback.switchTab(App.state.activeFeedbackTab || 'scoring');
+
         sidebar.classList.add('open');
-        body.innerHTML = '<div style="text-align:center; padding:2rem; color:#94a3b8;">加载中...</div>';
+        const scoringBody = document.getElementById('feedback-body-scoring');
+        if (scoringBody) {
+            scoringBody.innerHTML = '<div style="text-align:center; padding:2rem; color:#94a3b8;">加载中...</div>';
+        }
 
         const run = App.state.currentRuns.find(r => r.folderName === App.state.activeFolder);
         const shortModelName = run ? run.modelName : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
@@ -82,7 +87,10 @@
 
         } catch (e) {
             console.error("Failed to load feedback:", e);
-            body.innerHTML = '<div style="text-align:center; padding:2rem; color:#ef4444;">加载失败，请刷新重试</div>';
+            const scoringBody = document.getElementById('feedback-body-scoring');
+            if (scoringBody) {
+                scoringBody.innerHTML = '<div style="text-align:center; padding:2rem; color:#ef4444;">加载失败，请刷新重试</div>';
+            }
         }
     };
 
@@ -91,7 +99,9 @@
      */
     App.feedback.renderFeedbackForm = function (existingMap) {
         existingMap = existingMap || {};
-        const container = document.getElementById('feedback-body');
+        const container = document.getElementById('feedback-body-scoring');
+        if (!container) return;
+
         if (App.state.feedbackQuestions.length === 0) {
             container.innerHTML = '<div style="text-align:center; padding:2rem; color:#94a3b8;">暂无评测题目</div>';
             return;
@@ -257,6 +267,45 @@
         } catch (e) {
             console.error('Auto-save feedback failed:', e);
         }
+    };
+
+    /**
+     * 切换反馈标签
+     */
+    App.feedback.switchTab = function (tabName) {
+        tabName = tabName || 'scoring';
+        console.log('Switching feedback tab to:', tabName);
+        const sidebar = document.getElementById('feedback-sidebar');
+        if (!sidebar) return;
+
+        App.state.activeFeedbackTab = tabName;
+
+        // 更新按钮状态
+        const tabs = sidebar.querySelectorAll('.feedback-header .tab');
+        tabs.forEach(tab => {
+            if (tab.dataset.tab === tabName) {
+                tab.classList.add('active');
+            } else {
+                tab.classList.remove('active');
+            }
+        });
+
+        // 更新内容显示
+        const contents = sidebar.querySelectorAll('.tab-content');
+        contents.forEach(content => {
+            if (content.id === `feedback-body-${tabName}`) {
+                content.classList.add('active');
+                content.style.display = 'flex'; // Ensure flex for layout
+
+                // If switching to comments, load them
+                if (tabName === 'comments' && App.comments && App.comments.loadComments) {
+                    App.comments.loadComments();
+                }
+            } else if (content.id && content.id.startsWith('feedback-body-')) {
+                content.classList.remove('active');
+                content.style.display = 'none';
+            }
+        });
     };
 
 })();

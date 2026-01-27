@@ -416,6 +416,7 @@
      */
     App.preview.closePreview = function () {
         App.elements.previewModal.classList.remove('show');
+        document.querySelectorAll('.file-tree-file').forEach(el => el.classList.remove('active'));
     };
 
     /**

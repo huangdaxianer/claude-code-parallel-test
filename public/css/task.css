@@ -1998,8 +1998,29 @@
             border-bottom: 1px solid #e2e8f0;
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: stretch;
+            /* Stretch to let tabs reach the bottom */
             flex-shrink: 0;
+            background: #ffffff;
+        }
+
+        .feedback-header .tabs {
+            height: 100%;
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .feedback-header .tab {
+            height: 100%;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            /* Overlap with header border */
+            z-index: 1;
+        }
+
+        .feedback-header .tab.active {
+            color: #000;
+            border-bottom-color: #000;
         }
 
         .feedback-body {
