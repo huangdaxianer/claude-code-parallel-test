@@ -103,7 +103,10 @@
             const range = App.comments.findBestRangeMatch(container, comment.original_content, targetOffset);
 
             if (range) {
-                ranges.push(range);
+                // Determine if we need to split the range (cross-element)
+                const safe = App.comments.getSafeRanges(range);
+                ranges.push(...safe);
+
                 App.comments.state.commentRanges.push({ range, commentId: comment.id });
             }
         });
@@ -329,7 +332,22 @@
             return;
         }
 
-        const text = selection.toString().trim();
+        // Fix: Filter out tool call elements and UI artifacts from selection text
+        let text = '';
+        try {
+            const range = selection.getRangeAt(0);
+            const fragment = range.cloneContents();
+
+            // Remove unwanted elements that might be captured if selection overruns
+            const unwanted = fragment.querySelectorAll('.json-log-entry, .json-summary, .json-type-badge, .json-preview-text, .comment-more-btn, .comment-menu-popup');
+            unwanted.forEach(el => el.remove());
+
+            text = fragment.textContent.trim();
+        } catch (e) {
+            // Fallback
+            text = selection.toString().trim();
+        }
+
         if (text.length < 1) return;
 
         // 确定选区所在的上下文
@@ -361,12 +379,47 @@
         }
 
         if (targetType) {
-            // 保存选区信息
-            const range = selection.getRangeAt(0);
+            let range = selection.getRangeAt(0).cloneRange();
+
+            // 1. Determine Target/Entry
+            // Check if start and end are in the same event
+            const startNode = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer;
+            const endNode = range.endContainer.nodeType === 3 ? range.endContainer.parentElement : range.endContainer;
+
+            const startEntry = startNode.closest('[data-event-id]');
+            const endEntry = endNode.closest('[data-event-id]');
+
+            // If spanning multiple events (or outside any event), use global scope
+            if (startEntry && endEntry && startEntry === endEntry) {
+                // Intra-event: Keep targetRef specific
+                targetRef = startEntry.dataset.eventId;
+            } else {
+                // Inter-event or partial: Use global
+                targetRef = 'current';
+                targetType = 'trajectory'; // Enforce trajectory for global
+            }
+
+            // 2. Adjust Range if needed (only if we want to enforce boundaries of logDisplay)
+            if (logDisplay && !logDisplay.contains(range.commonAncestorContainer)) {
+                // Selection spills out of log display? Clamp it.
+                if (range.compareBoundaryPoints(Range.START_TO_START, document.createRange().selectNodeContents(logDisplay)) < 0) {
+                    // Start is before logDisplay? Too complex to fix perfectly, just ignore or let it be.
+                }
+            }
+
+            // 3. Extract text (Raw text needed for matching, but we can filter for QUOTE if needed)
+            // For now, we use raw text to ensure findBestRangeMatch works on restore.
+            const text = range.toString().trim();
+            if (text.length < 1) {
+                App.comments.hideFloatingButton();
+                return;
+            }
+
             const rect = range.getBoundingClientRect();
 
             // Calculate precise offset
             let startOffset = 0;
+            // If global, offset is relative to logDisplay
             const entry = (targetType === 'trajectory' && targetRef !== 'current') ?
                 document.querySelector(`[data-event-id="${targetRef}"]`) :
                 logDisplay;
@@ -380,7 +433,7 @@
                 targetType: targetType,
                 targetRef: targetRef,
                 rect: rect,
-                range: range.cloneRange(), // Keep a copy
+                range: range,
                 startOffset: startOffset
             };
 
@@ -388,6 +441,76 @@
         } else {
             App.comments.hideFloatingButton();
         }
+    };
+
+    /**
+     * Get safe ranges for highlighting (excluding sensitive UI elements like headers)
+     */
+    App.comments.getSafeRanges = function (range) {
+        const ranges = [];
+        const container = range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
+
+        // Find all summaries in the range
+        // Since we can't easily query "inside range", we query container and check intersection
+        const summaries = container.querySelectorAll('.json-summary');
+        let currentStart = range.startContainer;
+        let currentStartOffset = range.startOffset;
+
+        // We need to cut holes in the range
+        // Algorithm:
+        // 1. Collect all summaries that intersect the range
+        // 2. Sort them by position
+        // 3. Create sub-ranges between them
+
+        const intersections = [];
+        summaries.forEach(sum => {
+            if (range.intersectsNode(sum)) {
+                intersections.push(sum);
+            }
+        });
+
+        if (intersections.length === 0) {
+            return [range];
+        }
+
+        // Just return the original range if complex? 
+        // No, we want to solve the user's issue.
+        // Simple approach: Use TreeWalker to walk text nodes, skipping those in summary? 
+        // Too slow.
+
+        // Split approach:
+        let original = range.cloneRange();
+        const safeRanges = [];
+
+        // We iterate summaries and "subtract" them.
+        // However, Range subtraction is hard.
+        // Let's rely on the fact that summaries are BLOCK elements usually.
+
+        intersections.forEach(sum => {
+            const sumRange = document.createRange();
+            sumRange.selectNodeContents(sum);
+
+            // If original starts before sum, adds a segment before sum
+            if (original.compareBoundaryPoints(Range.START_TO_START, sumRange) < 0) {
+                const before = original.cloneRange();
+                before.setEnd(sumRange.startContainer, sumRange.startOffset);
+                safeRanges.push(before);
+            }
+
+            // Move start of original to end of sum
+            if (original.compareBoundaryPoints(Range.END_TO_END, sumRange) > 0) {
+                original.setStart(sumRange.endContainer, sumRange.endOffset);
+            } else {
+                // Original ends inside or at end of sum
+                original.collapse(false); // finish
+            }
+        });
+
+        if (!original.collapsed) {
+            safeRanges.push(original);
+        }
+
+        return safeRanges;
     };
 
     /**
@@ -511,7 +634,9 @@
         if (window.Highlight && window.CSS && CSS.highlights) {
             const range = App.comments.state.selection.range;
             if (range) {
-                const highlight = new Highlight(range);
+                // Use safe ranges to exclude headers
+                const safeRanges = App.comments.getSafeRanges(range);
+                const highlight = new Highlight(...safeRanges);
                 CSS.highlights.set('comment-selection', highlight);
             }
         }
@@ -692,7 +817,8 @@
                         anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
                         if (window.Highlight && window.CSS && CSS.highlights) {
-                            const highlight = new Highlight(range);
+                            const safeRanges = App.comments.getSafeRanges(range);
+                            const highlight = new Highlight(...safeRanges);
                             CSS.highlights.set('comment-selection', highlight);
                         }
 

@@ -38,6 +38,12 @@
                 return;
             }
 
+            // Only auto-start if completed
+            if (run.status !== 'completed') {
+                console.log(`[Preview] Skipping incomplete run: ${run.modelName} (${run.status})`);
+                return;
+            }
+
             const modelName = run.modelName;
             if (!modelName) return;
 

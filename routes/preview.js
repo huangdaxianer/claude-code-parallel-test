@@ -318,7 +318,7 @@ router.get('/status/:taskId/:modelName', (req, res) => {
         }
         res.json(infoToSend);
     } else {
-        res.status(404).json({ status: 'not_running', logs: [{ msg: 'Preview not running.', ts: Date.now() }] });
+        res.json({ status: 'not_running', logs: [{ msg: 'Preview not running.', ts: Date.now() }] });
     }
 });
 
