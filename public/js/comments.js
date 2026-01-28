@@ -875,81 +875,10 @@
         if (!comment) return;
 
         if (comment.target_type === 'trajectory') {
-            // Check if this is a file path selection in the JSON
-            const content = comment.original_content || '';
+            // Trajectory comments should always show in the trajectory view
+            // Do NOT try to detect file paths in the content - that's the wrong behavior
+            // The comment is about the trajectory content itself, not about opening files
             
-            // Try to extract file path from the content
-            let filePath = null;
-            
-            // Pattern 1: Full absolute path like "/Users/.../tasks/TASKID/MODEL/filename.ext"
-            const absolutePathMatch = content.match(/\/tasks\/[^/]+\/[^/]+\/(.+?)(?:"|,|$)/);
-            if (absolutePathMatch) {
-                filePath = absolutePathMatch[1];
-            }
-            
-            // Pattern 2: Relative path like "watermelon/package.json"
-            if (!filePath) {
-                const relativePathMatch = content.match(/([a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+)/);
-                if (relativePathMatch) {
-                    // Extract just the filename part after the last slash
-                    const parts = relativePathMatch[1].split('/');
-                    filePath = parts[parts.length - 1];
-                }
-            }
-            
-            // Pattern 3: Just a filename with extension
-            if (!filePath && /\.(js|json|html|css|txt|md|py|java|ts|tsx|jsx)$/.test(content)) {
-                filePath = content.trim().replace(/^["']|["']$/g, ''); // Remove quotes
-            }
-            
-            // If we found a file path, try to open it
-            if (filePath) {
-                // Try to find and open the file
-                if (App.main && App.main.switchTab) App.main.switchTab('files');
-                
-                setTimeout(() => {
-                    // Try to find the file in the file tree
-                    const fileItems = document.querySelectorAll('.file-tree-file');
-                    let targetItem = null;
-                    
-                    for (const item of fileItems) {
-                        const fullPath = item.dataset.fullPath || '';
-                        const fileName = fullPath.split('/').pop();
-                        
-                        // Match by filename or full path
-                        if (fileName === filePath || fullPath === filePath || fullPath.endsWith('/' + filePath)) {
-                            targetItem = item;
-                            break;
-                        }
-                    }
-                    
-                    if (targetItem) {
-                        // Expand parent folders
-                        let parent = targetItem.parentElement;
-                        while (parent && !parent.classList.contains('file-list')) {
-                            if (parent.classList.contains('file-tree-children') && !parent.classList.contains('expanded')) {
-                                const header = parent.previousElementSibling;
-                                if (header && header.classList.contains('file-tree-header')) {
-                                    header.click();
-                                }
-                            }
-                            parent = parent.parentElement;
-                        }
-                        
-                        // Click the file
-                        targetItem.click();
-                        return; // Successfully opened file, don't continue to trajectory
-                    }
-                    
-                    // If file not found, fallback to trajectory view
-                    if (App.main && App.main.switchTab) App.main.switchTab('trajectory');
-                    setTimeout(() => App.comments.jumpToContextTrajectory(comment), 200);
-                }, 100);
-                
-                return;
-            }
-            
-            // No file path detected, show trajectory
             if (App.main && App.main.switchTab) App.main.switchTab('trajectory');
             
             setTimeout(() => {
