@@ -919,61 +919,60 @@
     };
 
     /**
-     * Find the best range match for a piece of text within a container, 
+     * Find the best range match for a piece of text within a container,
      * prioritizing the one closest to the target character offset.
      */
     App.comments.findBestRangeMatch = function (container, text, targetOffset) {
-        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
-        let currentTotalOffset = 0;
-        let bestMatch = null;
-        let minDistance = Infinity;
-
+        // Get the full text content of the container
+        const fullText = container.textContent;
+        
+        // Find all occurrences of the target text in the full content
         const occurrences = [];
-        let node;
-        while (node = walker.nextNode()) {
-            const content = node.textContent;
-            let idx = content.indexOf(text);
-            while (idx !== -1) {
-                occurrences.push({
-                    node: node,
-                    localOffset: idx,
-                    globalOffset: currentTotalOffset + idx
-                });
-                idx = content.indexOf(text, idx + 1);
-            }
-            currentTotalOffset += content.length;
+        let searchFrom = 0;
+        while (true) {
+            const idx = fullText.indexOf(text, searchFrom);
+            if (idx === -1) break;
+            occurrences.push(idx);
+            searchFrom = idx + 1;
         }
-
-        if (occurrences.length === 0) return null;
-
-        // If targetOffset is -1 (legacy), we take the first match
+        
+        if (occurrences.length === 0) {
+            console.warn('[findBestRangeMatch] No occurrences found for:', text);
+            return null;
+        }
+        
+        // Pick the best occurrence based on distance from targetOffset
+        let bestGlobalOffset;
         if (targetOffset === -1) {
-            bestMatch = occurrences[0];
+            bestGlobalOffset = occurrences[0];
         } else {
-            // Pick the one closest to targetOffset
+            let minDistance = Infinity;
             occurrences.forEach(occ => {
-                const distance = Math.abs(occ.globalOffset - targetOffset);
+                const distance = Math.abs(occ - targetOffset);
                 if (distance < minDistance) {
                     minDistance = distance;
-                    bestMatch = occ;
+                    bestGlobalOffset = occ;
                 }
             });
         }
-
+        
+        // Now convert global character offsets to actual DOM Range
+        // We need to find the text nodes that contain these offsets
+        const startPosition = App.comments.findNodeAtCharacterOffset(container, bestGlobalOffset);
+        const endPosition = App.comments.findNodeAtCharacterOffset(container, bestGlobalOffset + text.length);
+        
+        if (!startPosition || !endPosition) {
+            console.warn('[findBestRangeMatch] Could not find positions for offsets:', bestGlobalOffset, bestGlobalOffset + text.length);
+            return null;
+        }
+        
         try {
             const range = document.createRange();
-            range.setStart(bestMatch.node, bestMatch.localOffset);
-
-            // Handling multi-node selection is complex; if the text is split, 
-            // we fallback to single node end or approximate.
-            if (bestMatch.node.textContent.length >= bestMatch.localOffset + text.length) {
-                range.setEnd(bestMatch.node, bestMatch.localOffset + text.length);
-            } else {
-                // Very basic multi-node fallback: just end at the node end
-                range.setEnd(bestMatch.node, bestMatch.node.textContent.length);
-            }
+            range.setStart(startPosition.node, startPosition.offset);
+            range.setEnd(endPosition.node, endPosition.offset);
             return range;
         } catch (e) {
+            console.error('[findBestRangeMatch] Error creating range:', e);
             return null;
         }
     };
