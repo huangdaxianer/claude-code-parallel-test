@@ -325,12 +325,21 @@
      */
     App.comments.renderComments = function (comments) {
         const container = document.getElementById('comments-list');
+        const emptyHint = document.getElementById('comment-empty-hint');
+        const highlightToggle = document.getElementById('highlight-toggle-wrapper');
         if (!container) return;
 
         if (comments.length === 0) {
-            container.innerHTML = '<div style="text-align:center; padding:2rem; color:#94a3b8;">暂无评论，选中文本即可添加</div>';
+            container.innerHTML = '';
+            // Show hint, hide toggle
+            if (emptyHint) emptyHint.style.display = '';
+            if (highlightToggle) highlightToggle.style.display = 'none';
             return;
         }
+
+        // Hide hint, show toggle
+        if (emptyHint) emptyHint.style.display = 'none';
+        if (highlightToggle) highlightToggle.style.display = '';
 
         let html = '';
         comments.forEach(c => {

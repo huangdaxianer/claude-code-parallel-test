@@ -310,15 +310,15 @@
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.ios-switch input:checked + .ios-switch-slider {
+.ios-switch input:checked+.ios-switch-slider {
     background-color: #34c759;
 }
 
-.ios-switch input:focus + .ios-switch-slider {
+.ios-switch input:focus+.ios-switch-slider {
     box-shadow: 0 0 1px #34c759;
 }
 
-.ios-switch input:checked + .ios-switch-slider:before {
+.ios-switch input:checked+.ios-switch-slider:before {
     -webkit-transform: translateX(20px);
     -ms-transform: translateX(20px);
     transform: translateX(20px);
@@ -370,6 +370,12 @@
     color: #64748b;
 }
 
+/* Comment empty hint */
+.comment-empty-hint {
+    font-size: 0.8rem;
+    color: #94a3b8;
+}
+
 /* Mini iOS Switch - Smaller and flatter */
 .ios-switch-mini {
     position: relative;
@@ -409,11 +415,11 @@
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-.ios-switch-mini input:checked + .ios-switch-mini-slider {
+.ios-switch-mini input:checked+.ios-switch-mini-slider {
     background-color: #34c759;
 }
 
-.ios-switch-mini input:checked + .ios-switch-mini-slider:before {
+.ios-switch-mini input:checked+.ios-switch-mini-slider:before {
     transform: translateX(18px);
 }
 

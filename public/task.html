@@ -278,8 +278,11 @@
                         <div class="feedback-section">
                             <div class="feedback-section-header">
                                 <span class="feedback-section-title">评论</span>
-                                <!-- 紧凑型高亮开关 -->
-                                <div class="highlight-toggle-wrapper">
+                                <!-- 无评论时显示的提示文字 -->
+                                <span id="comment-empty-hint" class="comment-empty-hint">选择轨迹来添加评论</span>
+                                <!-- 紧凑型高亮开关（有评论时显示） -->
+                                <div id="highlight-toggle-wrapper" class="highlight-toggle-wrapper"
+                                    style="display: none;">
                                     <span class="highlight-toggle-label">高亮原文</span>
                                     <label class="ios-switch-mini">
                                         <input type="checkbox" id="comment-highlight-toggle" checked
@@ -290,7 +293,7 @@
                             </div>
                             <div class="feedback-section-content">
                                 <div id="comments-list" class="comments-list">
-                                    <div style="text-align:center; padding:2rem; color:#94a3b8;">暂无评论，选中文本即可添加</div>
+                                    <!-- Comments will be rendered here -->
                                 </div>
                             </div>
                         </div>
