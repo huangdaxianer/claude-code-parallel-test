@@ -52,12 +52,18 @@
                 return;
             }
 
+            // Cache model display names for use in other parts of the app
+            App.state.modelDisplayNames = {};
+            models.forEach(model => {
+                App.state.modelDisplayNames[model.name] = model.displayName || model.name;
+            });
+
             container.innerHTML = models.map(model => `
                 <label class="checkbox-item" title="${escapeHtml(model.description || '')}">
-                    <input type="checkbox" name="model" value="${escapeHtml(model.name)}" 
+                    <input type="checkbox" name="model" value="${escapeHtml(model.name)}"
                            ${model.is_default_checked ? 'checked' : ''}>
                     <span class="checkmark"></span>
-                    ${escapeHtml(model.name)}
+                    ${escapeHtml(model.displayName || model.name)}
                 </label>
             `).join('');
 

@@ -59,8 +59,13 @@
 
     /**
      * 获取模型显示名称
+     * For admin users, shows description (备注) instead of model name
      */
     App.utils.getModelDisplayName = function (modelName) {
+        // If we have cached model display names, use them
+        if (App.state.modelDisplayNames && App.state.modelDisplayNames[modelName]) {
+            return App.state.modelDisplayNames[modelName];
+        }
         return modelName;
     };
 

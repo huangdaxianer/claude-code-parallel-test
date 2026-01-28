@@ -28,7 +28,8 @@
         feedbackDebounceTimer: null,
         feedbackDebounceTimer: null,
         expandedPaths: new Set(),
-        targetUser: null // The user whose tasks we are viewing (if different from currentUser)
+        targetUser: null, // The user whose tasks we are viewing (if different from currentUser)
+        modelDisplayNames: {} // Cached model display names (name -> displayName mapping)
     };
 
     // DOM 元素引用
@@ -149,20 +150,50 @@
     };
 
     /**
+     * 加载并缓存模型显示名称
+     */
+    App.loadModelDisplayNames = async function () {
+        try {
+            console.log('[App] Loading model display names for user:', App.state.currentUser?.username);
+            const models = await App.api.getEnabledModels();
+            
+            // Check if API returned an error
+            if (models.error) {
+                console.error('[App] Error from API:', models.error);
+                return;
+            }
+            
+            App.state.modelDisplayNames = {};
+            models.forEach(model => {
+                App.state.modelDisplayNames[model.name] = model.displayName || model.name;
+            });
+            console.log('[App] Model display names loaded:', App.state.modelDisplayNames);
+        } catch (e) {
+            console.error('[App] Failed to load model display names:', e);
+        }
+    };
+
+    /**
      * 应用初始化入口
      */
     App.init = async function () {
         // 先执行登录检查（auth.js 中已检查，但这里确保已完成）
-        if (!App.state.currentUser) {
-            // 等待认证完成
+        // Wait up to 2 seconds for auth to complete
+        let retries = 0;
+        while (!App.state.currentUser && retries < 20) {
             await new Promise(resolve => setTimeout(resolve, 100));
-            if (!App.state.currentUser) {
-                console.error('[App] No user logged in after auth check');
-                return;
-            }
+            retries++;
+        }
+        
+        if (!App.state.currentUser) {
+            console.error('[App] No user logged in after auth check');
+            return;
         }
 
         App.initElements();
+
+        // Load model display names early for task details rendering
+        await App.loadModelDisplayNames();
 
         // 获取 URL 参数（新格式：user/task/model/page）
         const urlParams = new URLSearchParams(window.location.search);

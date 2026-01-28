@@ -316,6 +316,8 @@ router.get('/models', (req, res) => {
 router.get('/models/enabled', (req, res) => {
     try {
         const username = req.cookies?.username || req.headers['x-username'];
+        console.log('[Models] Fetching enabled models for user:', username);
+        
         if (!username) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
@@ -325,18 +327,28 @@ router.get('/models/enabled', (req, res) => {
             return res.status(401).json({ error: 'User not found' });
         }
 
+        console.log('[Models] User role:', user.role);
+
         let roleCol = 'is_enabled_internal';
         if (user.role === 'admin') roleCol = 'is_enabled_admin';
         else if (user.role === 'external') roleCol = 'is_enabled_external';
 
         const models = db.prepare(`
-            SELECT name, description, is_default_checked 
-            FROM model_configs 
+            SELECT name, description, is_default_checked
+            FROM model_configs
             WHERE ${roleCol} = 1
             ORDER BY name ASC
         `).all();
 
-        res.json(models);
+        // For admin users, use description as displayName; for others, use name
+        const isAdmin = user.role === 'admin';
+        const modelsWithDisplayName = models.map(model => ({
+            ...model,
+            displayName: isAdmin && model.description ? model.description : model.name
+        }));
+
+        console.log('[Models] Returning models with displayNames:', modelsWithDisplayName.map(m => ({ name: m.name, displayName: m.displayName })));
+        res.json(modelsWithDisplayName);
     } catch (e) {
         console.error('Error fetching enabled models:', e);
         res.status(500).json({ error: 'Failed to fetch enabled models' });
