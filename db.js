@@ -124,6 +124,17 @@ db.exec(`
         FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS user_feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        user_id INTEGER,
+        content TEXT NOT NULL,
+        images TEXT, -- JSON array of image paths
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS model_configs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
@@ -138,6 +149,7 @@ db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_task_model_question ON feedback_responses(task_id, model_name, question_id);
     CREATE INDEX IF NOT EXISTS idx_queue_status ON task_queue(status);
     CREATE INDEX IF NOT EXISTS idx_feedback_task_model ON feedback_responses(task_id, model_name);
+    CREATE INDEX IF NOT EXISTS idx_user_feedback_task_id ON user_feedback(task_id);
 `);
 
 // Migration: Add new columns to log_entries if they don't exist

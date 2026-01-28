@@ -332,3 +332,235 @@
 ::highlight(comment-persistent):hover {
     background-color: rgba(59, 130, 246, 0.1);
 }
+
+/* Feedback Section Styles */
+.feedback-section {
+    margin-bottom: 1.5rem;
+}
+
+.feedback-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    margin-bottom: 0.75rem;
+}
+
+.feedback-section-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.feedback-section-content {
+    /* Container for section content */
+}
+
+.highlight-toggle-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.highlight-toggle-label {
+    font-size: 0.8rem;
+    color: #64748b;
+}
+
+/* Mini iOS Switch - Smaller and flatter */
+.ios-switch-mini {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 18px;
+}
+
+.ios-switch-mini input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.ios-switch-mini-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #e5e5ea;
+    transition: .3s;
+    border-radius: 18px;
+}
+
+.ios-switch-mini-slider:before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: .3s;
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.ios-switch-mini input:checked + .ios-switch-mini-slider {
+    background-color: #34c759;
+}
+
+.ios-switch-mini input:checked + .ios-switch-mini-slider:before {
+    transform: translateX(18px);
+}
+
+/* User Feedback Styles */
+.user-feedback-list {
+    margin-bottom: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.user-feedback-card {
+    /* Match comment card style - white background with gray border */
+    background: #fff !important;
+    border-color: #e2e8f0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+.user-feedback-card:hover {
+    border-color: #cbd5e1 !important;
+}
+
+.user-feedback-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.user-feedback-images img {
+    max-width: 100px;
+    max-height: 100px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #e2e8f0;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.user-feedback-images img:hover {
+    transform: scale(1.05);
+}
+
+/* Image upload button hover effect */
+.image-upload-btn:hover {
+    border-color: #94a3b8;
+    background-color: #f8fafc;
+}
+
+/* Feedback Modal Styles */
+.feedback-modal-content {
+    width: 500px !important;
+    height: auto !important;
+    max-height: 85vh !important;
+}
+
+.feedback-modal-body {
+    padding: 1.25rem 1.5rem !important;
+    font-family: 'Inter', sans-serif !important;
+    white-space: normal !important;
+}
+
+.feedback-form-group {
+    margin-bottom: 1.25rem;
+}
+
+.feedback-form-group:last-of-type {
+    margin-bottom: 1.5rem;
+}
+
+.feedback-label {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #334155;
+    margin-bottom: 0.5rem;
+}
+
+.feedback-label .required-mark {
+    color: #ef4444;
+    margin-left: 2px;
+}
+
+.feedback-modal-body textarea {
+    width: 100%;
+    padding: 0.875rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    font-size: 0.9rem;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 140px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-sizing: border-box;
+}
+
+.feedback-modal-body textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.feedback-image-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.feedback-upload-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.875rem;
+    border: 1px dashed #cbd5e1;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    color: #64748b;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+    background: #fff;
+}
+
+.feedback-upload-btn:hover {
+    border-color: #94a3b8;
+    background-color: #f8fafc;
+    color: #475569;
+}
+
+.feedback-upload-hint {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-top: 0.375rem;
+}
+
+/* Feedback image item */
+.feedback-image-item {
+    position: relative;
+    display: inline-block;
+}
+
+.feedback-image-item img {
+    transition: transform 0.2s;
+}
+
+.feedback-image-item img:hover {
+    transform: scale(1.05);
+}

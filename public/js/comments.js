@@ -88,7 +88,7 @@
             if (!comment.original_content) return;
 
             let container = null;
-            
+
             // Determine container based on target type
             if (comment.target_type === 'artifact') {
                 // For artifact comments, find the preview body
@@ -100,7 +100,7 @@
                 // For trajectory comments, find log display or specific event
                 const logDisplay = document.getElementById('log-display');
                 if (!logDisplay) return;
-                
+
                 container = logDisplay;
                 if (comment.target_ref && comment.target_ref !== 'current') {
                     const specific = document.querySelector(`[data-event-id="${comment.target_ref}"]`);
@@ -128,7 +128,7 @@
                     }
                 }
             }
-            
+
             if (!container) return;
 
             let selectionRange = {};
@@ -340,7 +340,7 @@
                     <button class="comment-more-btn" onclick="event.stopPropagation(); App.comments.toggleMenu(${c.id}, event)">⋮</button>
                     <div id="comment-menu-${c.id}" class="comment-menu-popup">
                         <button class="comment-delete-item" onclick="event.stopPropagation(); App.comments.deleteComment(${c.id})">
-                            🗑️ 删除任务
+                            🗑️ 删除反馈
                         </button>
                     </div>` : ''}
                     ${c.original_content ? `<div class="comment-quote">${App.utils.escapeHtml(c.original_content)}</div>` : ''}
@@ -369,21 +369,21 @@
 
         // Get the initial range
         let range = selection.getRangeAt(0).cloneRange();
-        
+
         // Extract text from range, excluding problematic elements like .json-summary
         // Clone the range contents and remove unwanted elements before getting text
         let text = '';
         try {
             const fragment = range.cloneContents();
-            
+
             // Remove all .json-summary, .json-type-badge, and .json-preview-text elements
             const unwanted = fragment.querySelectorAll('.json-summary, .json-type-badge, .json-preview-text, .json-log-entry details');
             unwanted.forEach(el => el.remove());
-            
+
             // Also remove closed details elements (they shouldn't contribute to selection)
             const details = fragment.querySelectorAll('details:not([open])');
             details.forEach(el => el.remove());
-            
+
             text = fragment.textContent.trim();
         } catch (e) {
             // Fallback to simple toString
@@ -408,7 +408,7 @@
             const filenameEl = document.getElementById('preview-filename');
             targetRef = filenameEl ? filenameEl.textContent.trim() : 'unknown';
         }
-        
+
         // 2. 如果不在预览中，检查是否在 Log Display 中 (Trajectory)
         if (!targetType) {
             const logDisplay2 = document.getElementById('log-display');
@@ -433,7 +433,7 @@
             // Calculate precise offset based on target type
             let startOffset = 0;
             let entryForOffset = null;
-            
+
             if (targetType === 'artifact') {
                 // For artifacts, offset is relative to the preview body
                 entryForOffset = previewBody;
@@ -454,7 +454,7 @@
                     // Inter-event or partial: Use global
                     targetRef = 'current';
                 }
-                
+
                 const logDisplay = document.getElementById('log-display');
 
                 // If global, offset is relative to logDisplay
@@ -810,7 +810,7 @@
         if (comment.target_ref && comment.target_ref !== 'current') {
             const specific = document.querySelector(`[data-event-id="${comment.target_ref}"]`);
             if (specific) container = specific;
-       }
+        }
 
         // Check if it is a details element and open it if needed
         const details = container.closest('details') || (container.tagName === 'DETAILS' ? container : null);
@@ -878,9 +878,9 @@
             // Trajectory comments should always show in the trajectory view
             // Do NOT try to detect file paths in the content - that's the wrong behavior
             // The comment is about the trajectory content itself, not about opening files
-            
+
             if (App.main && App.main.switchTab) App.main.switchTab('trajectory');
-            
+
             setTimeout(() => {
                 App.comments.jumpToContextTrajectory(comment);
             }, 300);
@@ -934,39 +934,39 @@
             }, 100);
         }
     };
-    
+
     /**
      * 高亮 artifact 评论中的文本
      */
     App.comments.highlightArtifactComment = function (comment) {
         const previewBody = document.getElementById('preview-body');
         if (!previewBody || !comment.original_content) return;
-        
+
         // Parse selection range to get the offset
         let selectionRange = {};
         try { selectionRange = JSON.parse(comment.selection_range || '{}'); } catch (e) { }
-        
+
         const targetOffset = selectionRange.startOffset !== undefined ? selectionRange.startOffset : -1;
         const range = App.comments.findBestRangeMatch(previewBody, comment.original_content, targetOffset);
-        
+
         if (range) {
             // Scroll to the highlighted text
             const anchor = document.createElement('span');
             range.startContainer.parentNode.insertBefore(anchor, range.startContainer);
             anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            
+
             // Apply CSS Highlight API for persistent highlighting
             if (window.Highlight && window.CSS && CSS.highlights) {
                 const safeRanges = App.comments.getSafeRanges(range);
                 const highlight = new Highlight(...safeRanges);
                 CSS.highlights.set('comment-selection', highlight);
             }
-            
+
             // Also select the text
             const sel = window.getSelection();
             sel.removeAllRanges();
             sel.addRange(range);
-            
+
             // Remove the anchor after scrolling
             setTimeout(() => {
                 if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
@@ -983,7 +983,7 @@
     App.comments.findBestRangeMatch = function (container, text, targetOffset) {
         // Get the full text content of the container
         const fullText = container.textContent;
-        
+
         // Find all occurrences of the target text in the full content
         const occurrences = [];
         let searchFrom = 0;
@@ -993,12 +993,12 @@
             occurrences.push(idx);
             searchFrom = idx + 1;
         }
-        
+
         if (occurrences.length === 0) {
             console.warn('[findBestRangeMatch] No occurrences found for:', text);
             return null;
         }
-        
+
         // Pick the best occurrence based on distance from targetOffset
         let bestGlobalOffset;
         if (targetOffset === -1) {
@@ -1013,17 +1013,17 @@
                 }
             });
         }
-        
+
         // Now convert global character offsets to actual DOM Range
         // We need to find the text nodes that contain these offsets
         const startPosition = App.comments.findNodeAtCharacterOffset(container, bestGlobalOffset);
         const endPosition = App.comments.findNodeAtCharacterOffset(container, bestGlobalOffset + text.length);
-        
+
         if (!startPosition || !endPosition) {
             console.warn('[findBestRangeMatch] Could not find positions for offsets:', bestGlobalOffset, bestGlobalOffset + text.length);
             return null;
         }
-        
+
         try {
             const range = document.createRange();
             range.setStart(startPosition.node, startPosition.offset);
@@ -1083,6 +1083,314 @@
                 CSS.highlights.delete('comment-persistent');
             }
         }
+    };
+
+    // ==================== User Feedback Functions ====================
+
+    /**
+     * State for user feedback modal
+     */
+    App.comments.feedbackState = {
+        selectedImages: [],
+        userFeedback: [],
+        currentModelName: null
+    };
+
+    /**
+     * Open the feedback modal
+     */
+    App.comments.openFeedbackModal = function () {
+        const modal = document.getElementById('add-feedback-modal');
+        if (!modal) {
+            console.error('Feedback modal not found');
+            return;
+        }
+
+        // Check if there's an active folder/model selected
+        if (!App.state.activeFolder) {
+            App.toast.show('请先选择一个子任务', 'warning');
+            return;
+        }
+
+        // Get the model name from the active folder
+        const run = App.state.currentRuns.find(r => r.folderName === App.state.activeFolder);
+        const modelName = run ? run.modelName : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
+
+        // Store the current model name for submission
+        App.comments.feedbackState.currentModelName = modelName;
+
+        // Reset form
+        App.comments.feedbackState.selectedImages = [];
+        const contentInput = document.getElementById('feedback-content-input');
+        const imagePreview = document.getElementById('feedback-image-preview');
+        const imageInput = document.getElementById('feedback-image-input');
+        const modelNameInput = document.getElementById('feedback-model-name');
+        
+        if (contentInput) contentInput.value = '';
+        if (imagePreview) imagePreview.innerHTML = '';
+        if (imageInput) imageInput.value = '';
+        if (modelNameInput) modelNameInput.value = modelName;
+
+        modal.classList.add('show');
+    };
+
+    /**
+     * Close the feedback modal
+     */
+    App.comments.closeFeedbackModal = function () {
+        const modal = document.getElementById('add-feedback-modal');
+        if (modal) modal.classList.remove('show');
+
+        // Clear state
+        App.comments.feedbackState.selectedImages = [];
+        App.comments.feedbackState.currentModelName = null;
+    };
+
+    /**
+     * Handle image selection
+     */
+    App.comments.handleImageSelect = function (event) {
+        const files = Array.from(event.target.files);
+        const maxImages = 10;
+        
+        // Limit to max images
+        const currentCount = App.comments.feedbackState.selectedImages.length;
+        const remainingSlots = maxImages - currentCount;
+        const newFiles = files.slice(0, remainingSlots);
+
+        if (files.length > remainingSlots) {
+            App.toast.show(`最多只能上传${maxImages}张图片`, 'warning');
+        }
+
+        // Add new files to state
+        App.comments.feedbackState.selectedImages.push(...newFiles);
+
+        // Update preview
+        App.comments.updateImagePreview();
+    };
+
+    /**
+     * Update image preview
+     */
+    App.comments.updateImagePreview = function () {
+        const container = document.getElementById('feedback-image-preview');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        App.comments.feedbackState.selectedImages.forEach((file, index) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'feedback-image-item';
+            wrapper.style.cssText = 'position: relative; display: inline-block;';
+
+            const img = document.createElement('img');
+            img.style.cssText = 'width: 60px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid #e2e8f0;';
+            
+            // Create preview URL
+            const url = URL.createObjectURL(file);
+            img.src = url;
+            img.onload = () => URL.revokeObjectURL(url);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.innerHTML = '×';
+            removeBtn.style.cssText = 'position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: #ef4444; color: white; border: none; cursor: pointer; font-size: 12px; line-height: 1; display: flex; align-items: center; justify-content: center;';
+            removeBtn.onclick = () => App.comments.removeImage(index);
+
+            wrapper.appendChild(img);
+            wrapper.appendChild(removeBtn);
+            container.appendChild(wrapper);
+        });
+    };
+
+    /**
+     * Remove an image from selection
+     */
+    App.comments.removeImage = function (index) {
+        App.comments.feedbackState.selectedImages.splice(index, 1);
+        App.comments.updateImagePreview();
+    };
+
+    /**
+     * Submit user feedback
+     */
+    App.comments.submitUserFeedback = async function () {
+        const contentInput = document.getElementById('feedback-content-input');
+        
+        const modelName = App.comments.feedbackState.currentModelName;
+        const content = contentInput.value.trim();
+
+        if (!modelName) {
+            App.toast.show('无法确定子任务', 'warning');
+            return;
+        }
+
+        if (!content) {
+            App.toast.show('请输入反馈内容', 'warning');
+            return;
+        }
+
+        const submitBtn = document.getElementById('submit-feedback-btn');
+        submitBtn.disabled = true;
+        submitBtn.textContent = '提交中...';
+
+        try {
+            await App.api.addUserFeedback({
+                taskId: App.state.currentTaskId,
+                modelName: modelName,
+                userId: App.state.currentUser ? App.state.currentUser.id : null,
+                content: content,
+                images: App.comments.feedbackState.selectedImages
+            });
+
+            App.toast.show('反馈已提交', 'success');
+            App.comments.closeFeedbackModal();
+            
+            // Reload user feedback
+            App.comments.loadUserFeedback();
+
+        } catch (e) {
+            console.error('Submit user feedback failed:', e);
+            App.toast.show('提交失败', 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '提交反馈';
+        }
+    };
+
+    /**
+     * Load user feedback for the current task
+     */
+    App.comments.loadUserFeedback = async function () {
+        if (!App.state.currentTaskId || !App.state.activeFolder) return;
+
+        try {
+            const feedback = await App.api.getUserFeedback(App.state.currentTaskId);
+            App.comments.feedbackState.userFeedback = feedback;
+            
+            // Filter feedback for current model only
+            const run = App.state.currentRuns.find(r => r.folderName === App.state.activeFolder);
+            const currentModelName = run ? run.modelName : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
+            
+            const filteredFeedback = feedback.filter(f => f.model_name === currentModelName);
+            App.comments.renderUserFeedback(filteredFeedback);
+        } catch (e) {
+            console.error('Failed to load user feedback:', e);
+        }
+    };
+
+    /**
+     * Render user feedback (already filtered by current model)
+     */
+    App.comments.renderUserFeedback = function (feedback) {
+        const container = document.getElementById('user-feedback-list');
+        if (!container) return;
+
+        if (!feedback || feedback.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        // Parse images for each feedback item
+        const processedFeedback = feedback.map(f => {
+            let images = [];
+            if (f.images) {
+                try { images = JSON.parse(f.images); } catch (e) {}
+            }
+            return { ...f, parsedImages: images };
+        });
+
+        // Render all feedback items together (no grouping by image/text type)
+        let html = '';
+        processedFeedback.forEach(f => {
+            const hasImages = f.parsedImages && f.parsedImages.length > 0;
+            html += App.comments.renderUserFeedbackCard(f, hasImages);
+        });
+
+        container.innerHTML = html;
+    };
+
+    /**
+     * Render a single user feedback card
+     */
+    App.comments.renderUserFeedbackCard = function (feedback, hasImages) {
+        const images = feedback.parsedImages || [];
+        
+        let imagesHtml = '';
+        if (hasImages && images.length > 0) {
+            imagesHtml = `<div class="user-feedback-images">`;
+            images.forEach(imgPath => {
+                imagesHtml += `<img src="/artifacts/${imgPath}" onclick="App.comments.showFullImage('/artifacts/${imgPath}')" />`;
+            });
+            imagesHtml += '</div>';
+        }
+
+        return `
+            <div class="comment-card user-feedback-card" data-feedback-id="${feedback.id}">
+                ${App.state.currentUser && (App.state.currentUser.id === feedback.user_id || App.state.currentUser.role === 'admin') ? `
+                <button class="comment-more-btn" onclick="event.stopPropagation(); App.comments.toggleUserFeedbackMenu(${feedback.id}, event)">⋮</button>
+                <div id="user-feedback-menu-${feedback.id}" class="comment-menu-popup">
+                    <button class="comment-delete-item" onclick="event.stopPropagation(); App.comments.deleteUserFeedback(${feedback.id})">
+                        🗑️ 删除反馈
+                    </button>
+                </div>` : ''}
+                <div class="comment-text">${App.utils.escapeHtml(feedback.content)}</div>
+                ${imagesHtml}
+            </div>
+        `;
+    };
+
+    /**
+     * Toggle user feedback menu
+     */
+    App.comments.toggleUserFeedbackMenu = function (id, event) {
+        // Close all other menus
+        document.querySelectorAll('.comment-menu-popup').forEach(el => {
+            if (el.id !== `user-feedback-menu-${id}`) el.classList.remove('show');
+        });
+
+        const menu = document.getElementById(`user-feedback-menu-${id}`);
+        if (menu) {
+            menu.classList.toggle('show');
+        }
+    };
+
+    /**
+     * Delete user feedback
+     */
+    App.comments.deleteUserFeedback = async function (id) {
+        try {
+            await App.api.deleteUserFeedback(id);
+            App.toast.show('反馈已删除', 'success');
+            App.comments.loadUserFeedback();
+        } catch (e) {
+            console.error('Delete user feedback failed:', e);
+            App.toast.show('删除失败', 'error');
+        }
+    };
+
+    /**
+     * Show full size image in a modal/lightbox
+     */
+    App.comments.showFullImage = function (src) {
+        // Create lightbox overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'image-lightbox';
+        overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 9999; display: flex; align-items: center; justify-content: center; cursor: zoom-out;';
+        overlay.onclick = () => overlay.remove();
+
+        const img = document.createElement('img');
+        img.src = src;
+        img.style.cssText = 'max-width: 90%; max-height: 90%; object-fit: contain; border-radius: 4px;';
+
+        overlay.appendChild(img);
+        document.body.appendChild(overlay);
+    };
+
+    // Override loadComments to also load user feedback
+    const originalLoadComments = App.comments.loadComments;
+    App.comments.loadComments = async function () {
+        await originalLoadComments.call(this);
+        await App.comments.loadUserFeedback();
     };
 
 })();

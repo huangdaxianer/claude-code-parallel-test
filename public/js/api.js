@@ -246,4 +246,50 @@
         return await res.json();
     };
 
+    /**
+     * Get user feedback (non-selection based feedback)
+     */
+    App.api.getUserFeedback = async function (taskId) {
+        const res = await fetch(`/api/comments/user-feedback?taskId=${taskId}`);
+        if (!res.ok) throw new Error('Failed to fetch user feedback');
+        return await res.json();
+    };
+
+    /**
+     * Add user feedback with optional images
+     */
+    App.api.addUserFeedback = async function (data) {
+        const formData = new FormData();
+        formData.append('taskId', data.taskId);
+        formData.append('modelName', data.modelName || '');
+        if (data.userId) formData.append('userId', data.userId);
+        formData.append('content', data.content);
+        
+        // Append images if any
+        if (data.images && data.images.length > 0) {
+            for (const file of data.images) {
+                formData.append('images', file);
+            }
+        }
+
+        const res = await fetch('/api/comments/user-feedback', {
+            method: 'POST',
+            headers: App.api.getAuthHeaders(),
+            body: formData
+        });
+        if (!res.ok) throw new Error('Failed to add user feedback');
+        return await res.json();
+    };
+
+    /**
+     * Delete user feedback
+     */
+    App.api.deleteUserFeedback = async function (id) {
+        const res = await fetch(`/api/comments/user-feedback/${id}`, {
+            method: 'DELETE'
+        });
+        if (!res.ok) throw new Error('Failed to delete user feedback');
+        return await res.json();
+    };
+
 })();
