@@ -80,9 +80,6 @@
             return;
         }
 
-        const logDisplay = document.getElementById('log-display');
-        if (!logDisplay) return;
-
         const ranges = [];
         App.comments.state.commentRanges = []; // Reset storage
         const comments = App.comments.state.comments || [];
@@ -90,32 +87,49 @@
         comments.forEach(comment => {
             if (!comment.original_content) return;
 
-            let container = logDisplay;
-            if (comment.target_ref && comment.target_ref !== 'current') {
-                const specific = document.querySelector(`[data-event-id="${comment.target_ref}"]`);
-                if (specific) {
-                    // 检查是否是折叠的details元素，如果是则展开它
-                    if (specific.tagName === 'DETAILS' || specific.tagName === 'DETAILS') {
-                        if (!specific.open) {
-                            // 暂时展开以加载内容
-                            specific.open = true;
-                            // 触发toggle事件来加载内容
-                            specific.dispatchEvent(new Event('toggle'));
-                        }
-                        // 等待内容加载
-                        if (!specific.dataset.loaded) {
-                            // 等待内容加载（最多5次，每次100ms）
-                            let attempts = 0;
-                            while (!specific.dataset.loaded && attempts < 50) {
-                                // 使用同步等待避免异步问题
-                                new Promise(resolve => setTimeout(resolve, 10));
-                                attempts++;
+            let container = null;
+            
+            // Determine container based on target type
+            if (comment.target_type === 'artifact') {
+                // For artifact comments, find the preview body
+                const previewBody = document.getElementById('preview-body');
+                if (previewBody) {
+                    container = previewBody;
+                }
+            } else if (comment.target_type === 'trajectory') {
+                // For trajectory comments, find log display or specific event
+                const logDisplay = document.getElementById('log-display');
+                if (!logDisplay) return;
+                
+                container = logDisplay;
+                if (comment.target_ref && comment.target_ref !== 'current') {
+                    const specific = document.querySelector(`[data-event-id="${comment.target_ref}"]`);
+                    if (specific) {
+                        // 检查是否是折叠的details元素，如果是则展开它
+                        if (specific.tagName === 'DETAILS') {
+                            if (!specific.open) {
+                                // 暂时展开以加载内容
+                                specific.open = true;
+                                // 触发toggle事件来加载内容
+                                specific.dispatchEvent(new Event('toggle'));
+                            }
+                            // 等待内容加载
+                            if (!specific.dataset.loaded) {
+                                // 等待内容加载（最多5次，每次100ms）
+                                let attempts = 0;
+                                while (!specific.dataset.loaded && attempts < 50) {
+                                    // 使用同步等待避免异步问题
+                                    new Promise(resolve => setTimeout(resolve, 10));
+                                    attempts++;
+                                }
                             }
                         }
+                        container = specific;
                     }
-                    container = specific;
                 }
             }
+            
+            if (!container) return;
 
             let selectionRange = {};
             try { selectionRange = JSON.parse(comment.selection_range || '{}'); } catch (e) { }
@@ -353,44 +367,40 @@
             return;
         }
 
-        // Fix: Filter out tool call elements and UI artifacts from selection text
+        // Get the initial range
+        let range = selection.getRangeAt(0).cloneRange();
+        
+        // Extract text from range, excluding problematic elements like .json-summary
+        // Clone the range contents and remove unwanted elements before getting text
         let text = '';
         try {
-            const range = selection.getRangeAt(0);
             const fragment = range.cloneContents();
-
-            // Remove unwanted elements that might be captured if selection overruns
-            const unwanted = fragment.querySelectorAll('.json-log-entry, .json-summary, .json-type-badge, .json-preview-text, .comment-more-btn, .comment-menu-popup');
+            
+            // Remove all .json-summary, .json-type-badge, and .json-preview-text elements
+            const unwanted = fragment.querySelectorAll('.json-summary, .json-type-badge, .json-preview-text, .json-log-entry details');
             unwanted.forEach(el => el.remove());
-
+            
+            // Also remove closed details elements (they shouldn't contribute to selection)
+            const details = fragment.querySelectorAll('details:not([open])');
+            details.forEach(el => el.remove());
+            
             text = fragment.textContent.trim();
         } catch (e) {
-            // Fallback
-            text = selection.toString().trim();
+            // Fallback to simple toString
+            text = range.toString().trim();
         }
-
-        if (text.length < 1) return;
+        if (text.length < 1) {
+            App.comments.hideFloatingButton();
+            return;
+        }
 
         // 确定选区所在的上下文
         let targetType = null;
         let targetRef = null;
 
-        // 1. 检查是否在 Log Display 中 (Trajectory)
-        const logDisplay = document.getElementById('log-display');
         const anchorNode = selection.anchorNode.nodeType === 3 ? selection.anchorNode.parentElement : selection.anchorNode;
 
-        if (logDisplay && logDisplay.contains(anchorNode)) {
-            targetType = 'trajectory';
-            // 尝试找到所属的 event-id
-            const entry = (anchorNode.nodeType === 3 ? anchorNode.parentElement : anchorNode).closest('[data-event-id]');
-            if (entry) {
-                targetRef = entry.dataset.eventId;
-            } else {
-                targetRef = 'current'; // Fallback
-            }
-        }
-
-        // 2. 检查是否在代码预览中 (Preview Modal or Code Tab)
+        // 1. 优先检查是否在代码预览中 (Preview Modal) - 更高优先级
         const previewBody = document.getElementById('preview-body');
         if (previewBody && previewBody.contains(anchorNode)) {
             targetType = 'artifact';
@@ -398,55 +408,63 @@
             const filenameEl = document.getElementById('preview-filename');
             targetRef = filenameEl ? filenameEl.textContent.trim() : 'unknown';
         }
-
-        if (targetType) {
-            let range = selection.getRangeAt(0).cloneRange();
-
-            // 1. Determine Target/Entry
-            // Check if start and end are in the same event
-            const startNode = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer;
-            const endNode = range.endContainer.nodeType === 3 ? range.endContainer.parentElement : range.endContainer;
-
-            const startEntry = startNode.closest('[data-event-id]');
-            const endEntry = endNode.closest('[data-event-id]');
-
-            // If spanning multiple events (or outside any event), use global scope
-            if (startEntry && endEntry && startEntry === endEntry) {
-                // Intra-event: Keep targetRef specific
-                targetRef = startEntry.dataset.eventId;
-            } else {
-                // Inter-event or partial: Use global
-                targetRef = 'current';
-                targetType = 'trajectory'; // Enforce trajectory for global
-            }
-
-            // 2. Adjust Range if needed (only if we want to enforce boundaries of logDisplay)
-            if (logDisplay && !logDisplay.contains(range.commonAncestorContainer)) {
-                // Selection spills out of log display? Clamp it.
-                if (range.compareBoundaryPoints(Range.START_TO_START, document.createRange().selectNodeContents(logDisplay)) < 0) {
-                    // Start is before logDisplay? Too complex to fix perfectly, just ignore or let it be.
+        
+        // 2. 如果不在预览中，检查是否在 Log Display 中 (Trajectory)
+        if (!targetType) {
+            const logDisplay2 = document.getElementById('log-display');
+            if (logDisplay2 && logDisplay2.contains(anchorNode)) {
+                targetType = 'trajectory';
+                // 尝试找到所属的 event-id
+                const entry = (anchorNode.nodeType === 3 ? anchorNode.parentElement : anchorNode).closest('[data-event-id]');
+                if (entry) {
+                    targetRef = entry.dataset.eventId;
+                } else {
+                    targetRef = 'current'; // Fallback
                 }
             }
+        }
 
-            // 3. Extract text (Raw text needed for matching, but we can filter for QUOTE if needed)
-            // For now, we use raw text to ensure findBestRangeMatch works on restore.
-            const text = range.toString().trim();
-            if (text.length < 1) {
-                App.comments.hideFloatingButton();
-                return;
-            }
+        if (targetType) {
+            // Use the trimmed range we already have instead of getting a new one
+            // let range = selection.getRangeAt(0).cloneRange(); // WRONG: This gets the original untrimmed range
 
             const rect = range.getBoundingClientRect();
 
-            // Calculate precise offset
+            // Calculate precise offset based on target type
             let startOffset = 0;
-            // If global, offset is relative to logDisplay
-            const entry = (targetType === 'trajectory' && targetRef !== 'current') ?
-                document.querySelector(`[data-event-id="${targetRef}"]`) :
-                logDisplay;
+            let entryForOffset = null;
+            
+            if (targetType === 'artifact') {
+                // For artifacts, offset is relative to the preview body
+                entryForOffset = previewBody;
+            } else if (targetType === 'trajectory') {
+                // 1. Determine Target/Entry
+                // Check if start and end are in the same event
+                const startNode = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer;
+                const endNode = range.endContainer.nodeType === 3 ? range.endContainer.parentElement : range.endContainer;
 
-            if (entry && entry.contains(range.startContainer)) {
-                startOffset = App.comments.calculateCharacterOffset(entry, range.startContainer, range.startOffset);
+                const startEntry = startNode.closest('[data-event-id]');
+                const endEntry = endNode.closest('[data-event-id]');
+
+                // If spanning multiple events (or outside any event), use global scope
+                if (startEntry && endEntry && startEntry === endEntry) {
+                    // Intra-event: Keep targetRef specific
+                    targetRef = startEntry.dataset.eventId;
+                } else {
+                    // Inter-event or partial: Use global
+                    targetRef = 'current';
+                }
+                
+                const logDisplay = document.getElementById('log-display');
+
+                // If global, offset is relative to logDisplay
+                entryForOffset = (targetRef !== 'current') ?
+                    document.querySelector(`[data-event-id="${targetRef}"]`) :
+                    logDisplay;
+            }
+
+            if (entryForOffset && entryForOffset.contains(range.startContainer)) {
+                startOffset = App.comments.calculateCharacterOffset(entryForOffset, range.startContainer, range.startOffset);
             }
 
             App.comments.state.selection = {
@@ -781,6 +799,75 @@
     };
 
     /**
+     * 跳转到轨迹，作为辅助函数供jumpToContext使用
+     */
+    App.comments.jumpToContextTrajectory = async function (comment) {
+        const logDisplay = document.getElementById('log-display');
+        if (!logDisplay) return;
+
+        // 1. Try to find specific event block by ID
+        let container = logDisplay;
+        if (comment.target_ref && comment.target_ref !== 'current') {
+            const specific = document.querySelector(`[data-event-id="${comment.target_ref}"]`);
+            if (specific) container = specific;
+       }
+
+        // Check if it is a details element and open it if needed
+        const details = container.closest('details') || (container.tagName === 'DETAILS' ? container : null);
+        if (details && !details.open) {
+            details.open = true;
+            details.dispatchEvent(new Event('toggle'));
+            let attempts = 0;
+            while (!details.dataset.loaded && attempts < 20) {
+                await new Promise(r => setTimeout(r, 100));
+                attempts++;
+            }
+        }
+
+        // Now highlight text logic
+        container.classList.add('highlight-context');
+        setTimeout(() => container.classList.remove('highlight-context'), 2000);
+
+        let scrolled = false;
+
+        // Try to select the specific text if possible
+        if (window.getSelection) {
+            let selectionRange = {};
+            try { selectionRange = JSON.parse(comment.selection_range || '{}'); } catch (e) { }
+
+            const targetOffset = selectionRange.startOffset !== undefined ? selectionRange.startOffset : -1;
+            const range = App.comments.findBestRangeMatch(container, comment.original_content, targetOffset);
+
+            if (range) {
+                scrolled = true;
+
+                // Precise scroll using a temporary anchor
+                const anchor = document.createElement('span');
+                range.startContainer.parentNode.insertBefore(anchor, range.startContainer);
+                anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                if (window.Highlight && window.CSS && CSS.highlights) {
+                    const safeRanges = App.comments.getSafeRanges(range);
+                    const highlight = new Highlight(...safeRanges);
+                    CSS.highlights.set('comment-selection', highlight);
+                }
+
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+
+                setTimeout(() => {
+                    if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
+                }, 2000);
+            }
+        }
+
+        if (!scrolled) {
+            container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    };
+
+    /**
      * 跳转到上下文
      */
     App.comments.jumpToContext = function (commentId) {
@@ -788,74 +875,85 @@
         if (!comment) return;
 
         if (comment.target_type === 'trajectory') {
-            // Switch to trajectory tab
-            if (App.main && App.main.switchTab) App.main.switchTab('trajectory');
-
-            // Wait for render
-            setTimeout(async () => {
-                const logDisplay = document.getElementById('log-display');
-                if (!logDisplay) return;
-
-                // 1. Try to find specific event block by ID
-                let container = logDisplay;
-                if (comment.target_ref && comment.target_ref !== 'current') {
-                    const specific = document.querySelector(`[data-event-id="${comment.target_ref}"]`);
-                    if (specific) container = specific;
+            // Check if this is a file path selection in the JSON
+            const content = comment.original_content || '';
+            
+            // Try to extract file path from the content
+            let filePath = null;
+            
+            // Pattern 1: Full absolute path like "/Users/.../tasks/TASKID/MODEL/filename.ext"
+            const absolutePathMatch = content.match(/\/tasks\/[^/]+\/[^/]+\/(.+?)(?:"|,|$)/);
+            if (absolutePathMatch) {
+                filePath = absolutePathMatch[1];
+            }
+            
+            // Pattern 2: Relative path like "watermelon/package.json"
+            if (!filePath) {
+                const relativePathMatch = content.match(/([a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+)/);
+                if (relativePathMatch) {
+                    // Extract just the filename part after the last slash
+                    const parts = relativePathMatch[1].split('/');
+                    filePath = parts[parts.length - 1];
                 }
-
-                // Check if it is a details element and open it if needed
-                const details = container.closest('details') || (container.tagName === 'DETAILS' ? container : null);
-                if (details && !details.open) {
-                    details.open = true;
-                    details.dispatchEvent(new Event('toggle'));
-                    let attempts = 0;
-                    while (!details.dataset.loaded && attempts < 20) {
-                        await new Promise(r => setTimeout(r, 100));
-                        attempts++;
-                    }
-                }
-
-                // Now highlight text logic
-                container.classList.add('highlight-context');
-                setTimeout(() => container.classList.remove('highlight-context'), 2000);
-
-                let scrolled = false;
-
-                // Try to select the specific text if possible
-                if (window.getSelection) {
-                    let selectionRange = {};
-                    try { selectionRange = JSON.parse(comment.selection_range || '{}'); } catch (e) { }
-
-                    const targetOffset = selectionRange.startOffset !== undefined ? selectionRange.startOffset : -1;
-                    const range = App.comments.findBestRangeMatch(container, comment.original_content, targetOffset);
-
-                    if (range) {
-                        scrolled = true;
-
-                        // Precise scroll using a temporary anchor
-                        const anchor = document.createElement('span');
-                        range.startContainer.parentNode.insertBefore(anchor, range.startContainer);
-                        anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-                        if (window.Highlight && window.CSS && CSS.highlights) {
-                            const safeRanges = App.comments.getSafeRanges(range);
-                            const highlight = new Highlight(...safeRanges);
-                            CSS.highlights.set('comment-selection', highlight);
+            }
+            
+            // Pattern 3: Just a filename with extension
+            if (!filePath && /\.(js|json|html|css|txt|md|py|java|ts|tsx|jsx)$/.test(content)) {
+                filePath = content.trim().replace(/^["']|["']$/g, ''); // Remove quotes
+            }
+            
+            // If we found a file path, try to open it
+            if (filePath) {
+                // Try to find and open the file
+                if (App.main && App.main.switchTab) App.main.switchTab('files');
+                
+                setTimeout(() => {
+                    // Try to find the file in the file tree
+                    const fileItems = document.querySelectorAll('.file-tree-file');
+                    let targetItem = null;
+                    
+                    for (const item of fileItems) {
+                        const fullPath = item.dataset.fullPath || '';
+                        const fileName = fullPath.split('/').pop();
+                        
+                        // Match by filename or full path
+                        if (fileName === filePath || fullPath === filePath || fullPath.endsWith('/' + filePath)) {
+                            targetItem = item;
+                            break;
                         }
-
-                        const sel = window.getSelection();
-                        sel.removeAllRanges();
-                        sel.addRange(range);
-
-                        setTimeout(() => {
-                            if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
-                        }, 2000);
                     }
-                }
-
-                if (!scrolled) {
-                    container.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
+                    
+                    if (targetItem) {
+                        // Expand parent folders
+                        let parent = targetItem.parentElement;
+                        while (parent && !parent.classList.contains('file-list')) {
+                            if (parent.classList.contains('file-tree-children') && !parent.classList.contains('expanded')) {
+                                const header = parent.previousElementSibling;
+                                if (header && header.classList.contains('file-tree-header')) {
+                                    header.click();
+                                }
+                            }
+                            parent = parent.parentElement;
+                        }
+                        
+                        // Click the file
+                        targetItem.click();
+                        return; // Successfully opened file, don't continue to trajectory
+                    }
+                    
+                    // If file not found, fallback to trajectory view
+                    if (App.main && App.main.switchTab) App.main.switchTab('trajectory');
+                    setTimeout(() => App.comments.jumpToContextTrajectory(comment), 200);
+                }, 100);
+                
+                return;
+            }
+            
+            // No file path detected, show trajectory
+            if (App.main && App.main.switchTab) App.main.switchTab('trajectory');
+            
+            setTimeout(() => {
+                App.comments.jumpToContextTrajectory(comment);
             }, 300);
 
         } else if (comment.target_type === 'artifact') {
@@ -897,24 +995,55 @@
                     // Click the file itself
                     targetItem.click();
 
-                    // Wait for preview to open
+                    // Wait for preview to open and highlight the text
                     setTimeout(() => {
-                        const previewBody = document.getElementById('preview-body');
-                        if (previewBody) {
-                            // Search text
-                            const content = previewBody.textContent;
-                            const idx = content.indexOf(comment.original_content);
-                            if (idx !== -1) {
-                                if (window.find && window.getSelection) {
-                                    window.find(comment.original_content);
-                                }
-                            }
-                        }
+                        App.comments.highlightArtifactComment(comment);
                     }, 500);
                 } else {
                     App.toast.show('找不到关联的文件');
                 }
             }, 100);
+        }
+    };
+    
+    /**
+     * 高亮 artifact 评论中的文本
+     */
+    App.comments.highlightArtifactComment = function (comment) {
+        const previewBody = document.getElementById('preview-body');
+        if (!previewBody || !comment.original_content) return;
+        
+        // Parse selection range to get the offset
+        let selectionRange = {};
+        try { selectionRange = JSON.parse(comment.selection_range || '{}'); } catch (e) { }
+        
+        const targetOffset = selectionRange.startOffset !== undefined ? selectionRange.startOffset : -1;
+        const range = App.comments.findBestRangeMatch(previewBody, comment.original_content, targetOffset);
+        
+        if (range) {
+            // Scroll to the highlighted text
+            const anchor = document.createElement('span');
+            range.startContainer.parentNode.insertBefore(anchor, range.startContainer);
+            anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // Apply CSS Highlight API for persistent highlighting
+            if (window.Highlight && window.CSS && CSS.highlights) {
+                const safeRanges = App.comments.getSafeRanges(range);
+                const highlight = new Highlight(...safeRanges);
+                CSS.highlights.set('comment-selection', highlight);
+            }
+            
+            // Also select the text
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            
+            // Remove the anchor after scrolling
+            setTimeout(() => {
+                if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
+            }, 2000);
+        } else {
+            console.warn('[highlightArtifactComment] Could not find text:', comment.original_content);
         }
     };
 
