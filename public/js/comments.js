@@ -93,7 +93,28 @@
             let container = logDisplay;
             if (comment.target_ref && comment.target_ref !== 'current') {
                 const specific = document.querySelector(`[data-event-id="${comment.target_ref}"]`);
-                if (specific) container = specific;
+                if (specific) {
+                    // 检查是否是折叠的details元素，如果是则展开它
+                    if (specific.tagName === 'DETAILS' || specific.tagName === 'DETAILS') {
+                        if (!specific.open) {
+                            // 暂时展开以加载内容
+                            specific.open = true;
+                            // 触发toggle事件来加载内容
+                            specific.dispatchEvent(new Event('toggle'));
+                        }
+                        // 等待内容加载
+                        if (!specific.dataset.loaded) {
+                            // 等待内容加载（最多5次，每次100ms）
+                            let attempts = 0;
+                            while (!specific.dataset.loaded && attempts < 50) {
+                                // 使用同步等待避免异步问题
+                                new Promise(resolve => setTimeout(resolve, 10));
+                                attempts++;
+                            }
+                        }
+                    }
+                    container = specific;
+                }
             }
 
             let selectionRange = {};

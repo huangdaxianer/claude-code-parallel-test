@@ -137,6 +137,17 @@
 
         console.log(`[Upload] Starting folder upload: ${totalFiles} files, ${sizeInMB} MB`);
 
+        // Validate file count and size before upload
+        if (totalFiles > 100000) {
+            alert('文件数量超过上限（最多 100,000 个文件），请减少文件数量后重试。');
+            return;
+        }
+
+        if (totalSize > 500 * 1024 * 1024) {
+            const confirmUpload = confirm(`文件总大小为 ${sizeInMB} MB，上传可能需要较长时间。是否继续？`);
+            if (!confirmUpload) return;
+        }
+
         try {
             browseBtn.disabled = true;
             browseBtn.classList.add('uploading');
@@ -147,9 +158,17 @@
             const folderName = relativePath.split('/')[0];
 
             formData.append('folderName', folderName);
+
+            // Collect paths and send as a single JSON field to reduce multipart overhead
+            const paths = [];
+            for (let i = 0; i < files.length; i++) {
+                paths.push(files[i].webkitRelativePath);
+            }
+            formData.append('filePaths', JSON.stringify(paths));
+
+            // Append all files
             for (let i = 0; i < files.length; i++) {
                 formData.append('files', files[i]);
-                formData.append('filePaths', files[i].webkitRelativePath);
             }
 
             console.log(`[Upload] FormData prepared. Sending request to server...`);
@@ -163,11 +182,25 @@
             circle.style.strokeDashoffset = circumference;
 
             const uploadPromise = new Promise((resolve, reject) => {
+                // Set timeout to 10 minutes for large uploads
+                xhr.timeout = 600000;
+                
+                let lastProgressUpdate = Date.now();
+
                 xhr.upload.onprogress = (event) => {
                     if (event.lengthComputable) {
                         const percent = event.loaded / event.total;
                         const offset = circumference - (percent * circumference);
                         circle.style.strokeDashoffset = offset;
+                        
+                        // Log progress every 2 seconds
+                        const now = Date.now();
+                        if (now - lastProgressUpdate > 2000) {
+                            const percentStr = (percent * 100).toFixed(1);
+                            const uploadedMB = (event.loaded / (1024 * 1024)).toFixed(2);
+                            console.log(`[Upload] Progress: ${percentStr}% (${uploadedMB}/${sizeInMB} MB)`);
+                            lastProgressUpdate = now;
+                        }
                     }
                 };
 
@@ -176,17 +209,39 @@
                     console.log(`[Upload] Server responded in ${duration}s. Status: ${xhr.status}`);
                     if (xhr.status >= 200 && xhr.status < 300) {
                         try {
-                            resolve(JSON.parse(xhr.responseText));
+                            const response = JSON.parse(xhr.responseText);
+                            console.log(`[Upload] Server response:`, response);
+                            resolve(response);
                         } catch (e) {
+                            console.error(`[Upload] Failed to parse response:`, xhr.responseText);
                             reject(new Error('Invalid JSON response from server'));
                         }
                     } else {
-                        reject(new Error(xhr.responseText || `Server returned ${xhr.status}`));
+                        let errorMsg = `Server returned ${xhr.status}`;
+                        try {
+                            const errorData = JSON.parse(xhr.responseText);
+                            errorMsg = errorData.error || errorData.detail || errorMsg;
+                            console.error(`[Upload] Server error:`, errorData);
+                        } catch (e) {
+                            errorMsg = xhr.responseText || errorMsg;
+                            console.error(`[Upload] Server error (raw):`, xhr.responseText);
+                        }
+                        reject(new Error(errorMsg));
                     }
                 };
 
-                xhr.onerror = () => reject(new Error('Network error during upload'));
+                xhr.onerror = () => {
+                    console.error(`[Upload] Network error occurred`);
+                    reject(new Error('Network error during upload'));
+                };
+                
+                xhr.ontimeout = () => {
+                    console.error(`[Upload] Upload timeout after ${xhr.timeout}ms`);
+                    reject(new Error('Upload timeout - the folder may be too large. Try uploading a smaller folder.'));
+                };
+                
                 xhr.open('POST', '/api/tasks/upload');
+                console.log(`[Upload] XHR request opened, starting upload...`);
                 xhr.send(formData);
             });
 
@@ -202,15 +257,35 @@
                 if (csvBtn) csvBtn.style.display = 'none';
             } else {
                 console.error(`[Upload] Upload failed according to data payload:`, data);
-                alert('Upload failed: ' + (data.error || 'Unknown error'));
+                const errorMsg = data.error || 'Unknown error';
+                alert('上传失败: ' + errorMsg);
             }
         } catch (err) {
             console.error(`[Upload] Catch block caught an error:`, err);
-            alert('Upload error: ' + err.message);
+            let errorMsg = err.message;
+            
+            // Provide more specific error messages
+            if (err.message.includes('timeout')) {
+                errorMsg = '上传超时，文件夹可能过大。请尝试上传较小的文件夹或减少文件数量。';
+            } else if (err.message.includes('Network error')) {
+                errorMsg = '网络连接错误，请检查网络后重试。';
+            } else if (err.message.includes('413') || err.message.includes('too large')) {
+                errorMsg = '文件夹过大，请减小文件夹大小后重试。';
+            } else if (err.message.includes('400')) {
+                errorMsg = '请求格式错误，请重新选择文件夹。';
+            } else if (err.message.includes('500')) {
+                errorMsg = '服务器处理错误，请稍后重试。';
+            }
+            
+            alert('上传错误: ' + errorMsg);
         } finally {
             browseBtn.disabled = false;
             browseBtn.classList.remove('uploading');
-            if (!App.state.selectedFolderPath) iconSpan.textContent = '📁';
+            if (!App.state.selectedFolderPath) {
+                iconSpan.textContent = '📁';
+                // Reset progress ring
+                circle.style.strokeDashoffset = circumference;
+            }
         }
     };
 

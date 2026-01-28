@@ -18,7 +18,14 @@ const storage = multer.diskStorage({
         cb(null, config.UPLOAD_DIR);
     }
 });
-const upload = multer({ storage: storage });
+const upload = multer({
+    storage: storage,
+    limits: {
+        fieldSize: 10 * 1024 * 1024, // Increase field size limit to 10MB for large JSON payloads
+        fileSize: 500 * 1024 * 1024, // 500MB per file
+        files: 100000 // Maximum 100,000 files
+    }
+});
 
 // 获取所有任务 (支持用户过滤)
 router.get('/', (req, res) => {
@@ -94,7 +101,7 @@ router.post('/upload', upload.any(), (req, res) => {
     const folderName = req.body.folderName;
     if (!folderName) {
         console.error('[Upload] Error: Missing folderName in request body');
-        return res.status(400).json({ error: 'Missing folderName' });
+        return res.status(400).json({ error: '缺少文件夹名称' });
     }
 
     const uploadId = Date.now();
@@ -102,19 +109,37 @@ router.post('/upload', upload.any(), (req, res) => {
     console.log(`[Upload] Starting process for folder: ${folderName} (ID: ${uploadId})`);
 
     try {
+        // Create upload directory if it doesn't exist
+        if (!fs.existsSync(config.UPLOAD_DIR)) {
+            fs.mkdirSync(config.UPLOAD_DIR, { recursive: true });
+            console.log(`[Upload] Created upload directory: ${config.UPLOAD_DIR}`);
+        }
+
         if (!fs.existsSync(targetBase)) {
             fs.mkdirSync(targetBase, { recursive: true });
         }
 
         if (!req.files || req.files.length === 0) {
             console.error('[Upload] Error: No files received from multer');
-            return res.status(400).json({ error: '没有接收到文件' });
+            return res.status(400).json({ error: '没有接收到文件，请重新选择文件夹' });
         }
 
         const filesToProcess = req.files.filter(f => f.fieldname === 'files');
         const fileCount = filesToProcess.length;
 
         let filePaths = req.body.filePaths;
+
+        // Handle JSON string for large file counts
+        if (typeof filePaths === 'string') {
+            try {
+                filePaths = JSON.parse(filePaths);
+            } catch (e) {
+                // If parse fails, assume it's a single path string (shouldn't happen with new frontend logic but good for safety)
+                filePaths = [filePaths];
+            }
+        }
+
+        filePaths = filePaths || [];
         if (!Array.isArray(filePaths)) {
             filePaths = [filePaths];
         }
@@ -125,26 +150,65 @@ router.post('/upload', upload.any(), (req, res) => {
 
         console.log(`[Upload] Received ${fileCount} files, total size: ${sizeInMB} MB`);
 
+        let processedCount = 0;
         filesToProcess.forEach((file, index) => {
-            const relPath = filePaths[index] || file.originalname;
-            const parentDir = path.dirname(targetBase);
-            const fullPath = path.join(parentDir, `${uploadId}_${relPath}`);
-            const dir = path.dirname(fullPath);
+            try {
+                const relPath = filePaths[index] || file.originalname;
+                const parentDir = path.dirname(targetBase);
+                const fullPath = path.join(parentDir, `${uploadId}_${relPath}`);
+                const dir = path.dirname(fullPath);
 
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                if (!fs.existsSync(dir)) {
+                    fs.mkdirSync(dir, { recursive: true });
+                }
 
-            fs.renameSync(file.path, fullPath);
+                // Check if source file exists before moving
+                if (!fs.existsSync(file.path)) {
+                    console.error(`[Upload] Source file missing: ${file.path}`);
+                    throw new Error(`源文件不存在: ${file.originalname}`);
+                }
 
-            if (index % 100 === 0 || index === fileCount - 1) {
-                console.log(`[Upload] Processing: ${index + 1}/${fileCount} files...`);
+                fs.renameSync(file.path, fullPath);
+                processedCount++;
+
+                if (index % 100 === 0 || index === fileCount - 1) {
+                    console.log(`[Upload] Processing: ${index + 1}/${fileCount} files...`);
+                }
+            } catch (err) {
+                console.error(`[Upload] Error processing file ${index}:`, err);
+                // Clean up temp file if it exists
+                try {
+                    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+                } catch (e) { /* ignore cleanup errors */ }
+                throw err;
             }
         });
 
-        console.log(`[Upload] Successfully processed folder: ${targetBase}`);
-        res.json({ path: targetBase });
+        console.log(`[Upload] Successfully processed ${processedCount}/${fileCount} files to: ${targetBase}`);
+        res.json({ path: targetBase, fileCount: processedCount });
     } catch (err) {
         console.error('[Upload] Fatal server error during processing:', err);
-        res.status(500).json({ error: `处理上传文件失败: ${err.message}` });
+        
+        // Clean up partial upload on error
+        try {
+            if (fs.existsSync(targetBase)) {
+                fs.rmSync(targetBase, { recursive: true, force: true });
+                console.log(`[Upload] Cleaned up partial upload: ${targetBase}`);
+            }
+        } catch (cleanupErr) {
+            console.error('[Upload] Failed to clean up:', cleanupErr);
+        }
+        
+        let errorMsg = '处理上传文件失败';
+        if (err.code === 'ENOSPC') {
+            errorMsg = '服务器磁盘空间不足';
+        } else if (err.code === 'EACCES') {
+            errorMsg = '服务器权限不足';
+        } else if (err.message) {
+            errorMsg = err.message;
+        }
+        
+        res.status(500).json({ error: errorMsg });
     }
 });
 

@@ -19,8 +19,22 @@ const PORT = 3001;
 
 // 中间件配置
 app.use(cors());
-app.use(bodyParser.json({ limit: '50mb' }));
-app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+
+// Body parser should skip multipart/form-data (handled by multer)
+app.use((req, res, next) => {
+    if (req.is('multipart/form-data')) {
+        return next();
+    }
+    bodyParser.json({ limit: '100mb' })(req, res, next);
+});
+
+app.use((req, res, next) => {
+    if (req.is('multipart/form-data')) {
+        return next();
+    }
+    bodyParser.urlencoded({ limit: '100mb', extended: true, parameterLimit: 100000 })(req, res, next);
+});
+
 app.use(express.static('public'));
 app.use('/artifacts', express.static(config.TASKS_DIR));
 
@@ -36,17 +50,58 @@ app.use('/api', routes);
 app.use((err, req, res, next) => {
     if (err instanceof multer.MulterError) {
         console.error('[MulterError]', err);
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({
+                error: '文件过大。单个文件大小不能超过 500MB。',
+                detail: err.message,
+                code: err.code
+            });
+        }
+        if (err.code === 'LIMIT_FILE_COUNT') {
+            return res.status(413).json({
+                error: '文件数量超过上限。最多只能上传 100,000 个文件。',
+                detail: err.message,
+                code: err.code
+            });
+        }
+        if (err.code === 'LIMIT_FIELD_KEY') {
+            return res.status(413).json({
+                error: '字段名过长。',
+                detail: err.message,
+                code: err.code
+            });
+        }
+        if (err.code === 'LIMIT_FIELD_VALUE') {
+            return res.status(413).json({
+                error: '字段值过大。',
+                detail: err.message,
+                code: err.code
+            });
+        }
+        if (err.code === 'LIMIT_FIELD_COUNT') {
+            return res.status(413).json({
+                error: '字段数量超过上限。',
+                detail: err.message,
+                code: err.code
+            });
+        }
         if (err.code === 'LIMIT_UNEXPECTED_FILE') {
             return res.status(400).json({
                 error: '文件数量超过上限或字段名错误。请检查上传的文件数量（当前上限 100,000）或联系管理员。',
-                detail: err.message
+                detail: err.message,
+                code: err.code
             });
         }
-        return res.status(400).json({ error: `上传错误: ${err.message}`, code: err.code });
+        return res.status(400).json({
+            error: `上传错误: ${err.message}`,
+            code: err.code
+        });
     }
     // 通用错误处理
     console.error('[ServerError]', err);
-    res.status(500).json({ error: err.message || 'Internal Server Error' });
+    if (!res.headersSent) {
+        res.status(500).json({ error: err.message || 'Internal Server Error' });
+    }
 });
 
 // 启动队列处理
