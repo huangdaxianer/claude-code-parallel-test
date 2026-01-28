@@ -24,7 +24,7 @@
         const icon = document.createElement('span');
         if (type === 'error') icon.textContent = '❌';
         else if (type === 'warning') icon.textContent = '⚠️';
-        else if (type === 'success') icon.textContent = '✅';
+        // Success type has no icon now
 
         const text = document.createElement('span');
         text.textContent = message;
