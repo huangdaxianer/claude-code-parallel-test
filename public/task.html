@@ -257,6 +257,15 @@
                         <div style="text-align:center; padding:2rem; color:#94a3b8;">加载中...</div>
                     </div>
                     <div id="feedback-body-comments" class="feedback-body tab-content">
+                        <!-- iOS风格的高亮开关 -->
+                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 1rem; border-bottom: 1px solid #e2e8f0; margin-bottom: 1rem;">
+                            <span style="font-size: 0.9rem; font-weight: 500; color: #334155;">显示轨迹高亮</span>
+                            <label class="ios-switch">
+                                <input type="checkbox" id="comment-highlight-toggle" checked onchange="App.comments.toggleHighlight(this.checked)">
+                                <span class="ios-switch-slider"></span>
+                            </label>
+                        </div>
+                        
                         <div id="comments-list" class="comments-list">
                             <div style="text-align:center; padding:2rem; color:#94a3b8;">暂无评论</div>
                         </div>

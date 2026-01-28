@@ -300,6 +300,15 @@
                 // If switching to comments, load them
                 if (tabName === 'comments' && App.comments && App.comments.loadComments) {
                     App.comments.loadComments();
+
+                    // 同步开关状态
+                    setTimeout(() => {
+                        const toggle = document.getElementById('comment-highlight-toggle');
+                        if (toggle) {
+                            // 确保开关与状态一致
+                            toggle.checked = App.comments.state.highlightEnabled;
+                        }
+                    }, 0);
                 }
             } else if (content.id && content.id.startsWith('feedback-body-')) {
                 content.classList.remove('active');

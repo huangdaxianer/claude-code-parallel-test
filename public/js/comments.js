@@ -11,7 +11,8 @@
         selection: null,
         comments: [],
         commentRanges: [], // Store ranges for hit testing
-        activeRefIcon: null
+        activeRefIcon: null,
+        highlightEnabled: true // 默认开启高亮
     };
 
     /**
@@ -41,8 +42,8 @@
             }
         });
 
-
-        App.comments.initHoverInteraction();
+        // 初始化点击交互，用于点击高亮评论区域跳转
+        App.comments.initClickInteraction();
     };
 
     /**
@@ -70,6 +71,14 @@
      */
     App.comments.highlightAllComments = function () {
         if (!window.Highlight || !window.CSS || !CSS.highlights) return;
+
+        // 如果高亮开关关闭，则不显示高亮
+        if (!App.comments.state.highlightEnabled) {
+            if (CSS.highlights.get('comment-persistent')) {
+                CSS.highlights.delete('comment-persistent');
+            }
+            return;
+        }
 
         const logDisplay = document.getElementById('log-display');
         if (!logDisplay) return;
@@ -104,20 +113,60 @@
     };
 
     /**
-     * Initialize hover interaction for reverse lookup
+     * Initialize click interaction for comments
      */
-    App.comments.initHoverInteraction = function () {
-        let hoverTimeout;
-        const container = document.body; // Listen globally or on main-content
+    App.comments.initClickInteraction = function () {
+        const container = document.body;
 
-        container.addEventListener('mousemove', function (e) {
-            if (hoverTimeout) clearTimeout(hoverTimeout);
-
-            // Throttle slightly
-            hoverTimeout = setTimeout(() => {
-                App.comments.handleHover(e);
-            }, 50);
+        container.addEventListener('click', function (e) {
+            // Check if click is on a highlighted comment range
+            App.comments.handleClick(e);
         });
+    };
+
+    /**
+     * Handle click to detect if over a highlighted comment
+     */
+    App.comments.handleClick = function (e) {
+        // Ignore clicks on UI elements
+        if (e.target.closest('.floating-comment-btn') ||
+            e.target.closest('.comment-input-popover') ||
+            e.target.closest('.comment-more-btn') ||
+            e.target.closest('.comment-menu-popup') ||
+            e.target.closest('.comment-card')) {
+            return;
+        }
+
+        // Get selection/caret position from click
+        let range;
+        try {
+            if (document.caretRangeFromPoint) {
+                range = document.caretRangeFromPoint(e.clientX, e.clientY);
+            } else if (document.caretPositionFromPoint) {
+                const pos = document.caretPositionFromPoint(e.clientX, e.clientY);
+                if (pos) {
+                    range = document.createRange();
+                    range.setStart(pos.offsetNode, pos.offset);
+                    range.setEnd(pos.offsetNode, pos.offset);
+                }
+            }
+        } catch (err) {
+            // Ignore errors (e.g. out of bounds)
+        }
+
+        if (!range) return;
+
+        // Check intersection with known valid ranges
+        const hit = App.comments.state.commentRanges.find(item => {
+            return range.compareBoundaryPoints(Range.START_TO_START, item.range) >= 0 &&
+                range.compareBoundaryPoints(Range.END_TO_END, item.range) <= 0;
+        });
+
+        if (hit) {
+            e.preventDefault();
+            e.stopPropagation();
+            App.comments.jumpToComment(hit.commentId);
+        }
     };
 
     /**
@@ -375,13 +424,68 @@
     App.comments.hideFloatingButton = function () {
         const btn = document.getElementById('floating-comment-btn');
         if (btn) btn.style.display = 'none';
+        App.comments.state.selection = null;
+    };
+
+    /**
+     * Handle click to detect if over a highlighted comment
+     */
+    App.comments.handleClick = function (e) {
+        // 如果高亮关闭，不处理点击（但保留跳转到评论卡片的功能）
+        if (!App.comments.state.highlightEnabled) {
+            return;
+        }
+
+        // Ignore clicks on UI elements
+        if (e.target.closest('.floating-comment-btn') ||
+            e.target.closest('.comment-input-popover') ||
+            e.target.closest('.comment-more-btn') ||
+            e.target.closest('.comment-menu-popup') ||
+            e.target.closest('.comment-card')) {
+            return;
+        }
+
+        // Get selection/caret position from click
+        let range;
+        try {
+            if (document.caretRangeFromPoint) {
+                range = document.caretRangeFromPoint(e.clientX, e.clientY);
+            } else if (document.caretPositionFromPoint) {
+                const pos = document.caretPositionFromPoint(e.clientX, e.clientY);
+                if (pos) {
+                    range = document.createRange();
+                    range.setStart(pos.offsetNode, pos.offset);
+                    range.setEnd(pos.offsetNode, pos.offset);
+                }
+            }
+        } catch (err) {
+            // Ignore errors (e.g. out of bounds)
+        }
+
+        if (!range) return;
+
+        // Check intersection with known valid ranges
+        const hit = App.comments.state.commentRanges.find(item => {
+            return range.compareBoundaryPoints(Range.START_TO_START, item.range) >= 0 &&
+                range.compareBoundaryPoints(Range.END_TO_END, item.range) <= 0;
+        });
+
+        if (hit) {
+            e.preventDefault();
+            e.stopPropagation();
+            App.comments.jumpToComment(hit.commentId);
+        }
     };
 
     /**
      * 显示输入框
      */
     App.comments.showInput = function (rect) {
-        App.comments.hideFloatingButton();
+        // Start Step 1: Hide button manually to preserve selection state
+        const btn = document.getElementById('floating-comment-btn');
+        if (btn) btn.style.display = 'none';
+        // App.comments.hideFloatingButton(); // Do not call this as it clears selection
+        // End Step 1
 
         const popover = document.getElementById('comment-input-popover');
         if (!popover) return;
@@ -413,13 +517,22 @@
         }
 
         // Bind Enter to submit
-        input.onkeydown = function (e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                App.comments.submitComment();
-            }
-        };
+        input.removeEventListener('keydown', App.comments.handleInputKeydown);
+        input.addEventListener('keydown', App.comments.handleInputKeydown);
     };
+
+    /**
+     * Input keydown handler
+     */
+    App.comments.handleInputKeydown = function (e) {
+        if (e.isComposing) return;
+        if ((e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            App.comments.submitComment();
+        }
+    };
+
 
     /**
      * 隐藏输入框
@@ -433,7 +546,13 @@
             CSS.highlights.delete('comment-selection');
         }
 
+        const input = document.getElementById('comment-input-text');
+        if (input) {
+            input.removeEventListener('keydown', App.comments.handleInputKeydown);
+        }
+
         window.getSelection().removeAllRanges(); // 清除选区
+        App.comments.state.selection = null; // Clear selection state
     };
 
     /**
@@ -743,6 +862,23 @@
             currentOffset += len;
         }
         return null;
+    };
+
+    /**
+     * 切换评论高亮显示
+     */
+    App.comments.toggleHighlight = function (enabled) {
+        App.comments.state.highlightEnabled = enabled;
+
+        // 重新应用高亮
+        if (enabled) {
+            App.comments.highlightAllComments();
+        } else {
+            // 删除所有高亮
+            if (window.CSS && CSS.highlights && CSS.highlights.get('comment-persistent')) {
+                CSS.highlights.delete('comment-persistent');
+            }
+        }
     };
 
 })();
