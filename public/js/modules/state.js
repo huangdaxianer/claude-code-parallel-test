@@ -27,6 +27,7 @@ export const AppState = {
 
     // User Management
     managementUsers: [],
+    userGroups: [],
 
     // Feedback Stats
     feedbackStatsData: [],

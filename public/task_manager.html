@@ -864,28 +864,11 @@
                 <button class="btn btn-primary" data-action="open-create-model">+ 新增模型</button>
             </div>
 
-            <div class="table-container" style="overflow-x: auto;">
-                <table class="tasks-table">
-                    <thead>
-                        <tr>
-                            <th>模型名称</th>
-                            <th>备注</th>
-                            <th style="width: 100px;">内部启用</th>
-                            <th style="width: 100px;">外部启用</th>
-                            <th style="width: 100px;">管理员启用</th>
-                            <th style="width: 100px;">默认勾选</th>
-                            <th>创建时间</th>
-                            <th style="width: 120px;">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="models-tbody">
-                        <tr>
-                            <td colspan="8" class="empty-state">
-                                <p>加载中...</p>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+
+            <div id="models-container" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <div class="empty-state" style="background: white; border-radius: 0.5rem; border: 1px solid #e2e8f0;">
+                    <p>加载中...</p>
+                </div>
             </div>
         </div>
 
@@ -941,28 +924,35 @@
         <div id="tab-users" class="tab-pane">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h2 style="font-size: 1.25rem; font-weight: 600;">用户管理</h2>
-                <button class="btn" data-action="refresh-users-management">🔄 刷新</button>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-primary" data-action="open-create-group">+ 新增用户组</button>
+                    <button class="btn" data-action="refresh-users-management">🔄 刷新</button>
+                </div>
             </div>
 
-            <div class="table-container" style="overflow-x: auto;">
-                <table class="tasks-table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>用户名</th>
-                            <th>角色</th>
-                            <th>创建时间</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="users-tbody">
-                        <tr>
-                            <td colspan="5" class="empty-state">
-                                <p>加载中...</p>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+            <div id="users-management-container">
+                <!-- User groups and users will be rendered here by JS -->
+                <div class="table-container" style="overflow-x: auto;">
+                    <table class="tasks-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>用户名</th>
+                                <th>角色</th>
+                                <th>分组</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-tbody">
+                            <tr>
+                                <td colspan="6" class="empty-state">
+                                    <p>加载中...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -1115,6 +1105,33 @@
                     <div style="display:flex; justify-content:flex-end; gap:1rem;">
                         <button type="button" class="btn" data-action="close-modal"
                             data-modal-id="model-modal">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Group Modal -->
+    <div class="modal-overlay" id="group-modal" style="z-index: 2000;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="group-modal-title">新建用户组</h3>
+                <button class="modal-close" data-action="close-modal" data-modal-id="group-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="group-form">
+                    <input type="hidden" id="g-id">
+
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">用户组名称 (必填)</label>
+                        <input type="text" id="g-name" class="filter-input" style="width:100%" required
+                            placeholder="例如：客户A">
+                    </div>
+
+                    <div style="display:flex; justify-content:flex-end; gap:1rem;">
+                        <button type="button" class="btn" data-action="close-modal"
+                            data-modal-id="group-modal">取消</button>
                         <button type="submit" class="btn btn-primary">保存</button>
                     </div>
                 </form>

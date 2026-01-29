@@ -29,10 +29,19 @@ try {
 
 // Initialize Tables
 db.exec(`
+    CREATE TABLE IF NOT EXISTS user_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        is_default INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        group_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(group_id) REFERENCES user_groups(id)
     );
 
     CREATE TABLE IF NOT EXISTS tasks (
@@ -146,6 +155,19 @@ db.exec(`
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS model_group_settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_id INTEGER NOT NULL,
+        group_id INTEGER NOT NULL,
+        is_enabled INTEGER DEFAULT 1,
+        is_default_checked INTEGER DEFAULT 1,
+        display_name TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(model_id, group_id),
+        FOREIGN KEY(model_id) REFERENCES model_configs(id) ON DELETE CASCADE,
+        FOREIGN KEY(group_id) REFERENCES user_groups(id) ON DELETE CASCADE
+    );
+
     CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_task_model_question ON feedback_responses(task_id, model_name, question_id);
     CREATE INDEX IF NOT EXISTS idx_queue_status ON task_queue(status);
     CREATE INDEX IF NOT EXISTS idx_feedback_task_model ON feedback_responses(task_id, model_name);
@@ -167,16 +189,42 @@ try { db.exec("ALTER TABLE feedback_questions ADD COLUMN display_order INTEGER D
 // Migration: Add user_id column to tasks if it doesn't exist
 try { db.exec("ALTER TABLE tasks ADD COLUMN user_id INTEGER"); } catch (e) { }
 try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'internal'"); } catch (e) { }
+try { db.exec("ALTER TABLE users ADD COLUMN group_id INTEGER"); } catch (e) { }
 
 // Now safe to create index
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_log_tool_use_id ON log_entries(tool_use_id)"); } catch (e) { }
 try { db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)"); } catch (e) { }
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_users_group_id ON users(group_id)"); } catch (e) { }
+
+// Create default user group and migrate existing users
+try {
+    // First create the default group if it doesn't exist
+    const defaultGroup = db.prepare("SELECT id FROM user_groups WHERE is_default = 1").get();
+    let defaultGroupId;
+    
+    if (!defaultGroup) {
+        const result = db.prepare("INSERT INTO user_groups (name, is_default) VALUES (?, 1)").run('默认');
+        defaultGroupId = result.lastInsertRowid;
+        console.log('[DB] Created default user group: 默认 (id:', defaultGroupId, ')');
+    } else {
+        defaultGroupId = defaultGroup.id;
+    }
+    
+    // Migrate existing users without group_id to the default group
+    const migrateResult = db.prepare("UPDATE users SET group_id = ? WHERE group_id IS NULL").run(defaultGroupId);
+    if (migrateResult.changes > 0) {
+        console.log(`[DB] Migrated ${migrateResult.changes} existing users to default group`);
+    }
+} catch (e) {
+    console.error('[DB] User groups migration error:', e.message);
+}
 
 // Create default user 'huangpenghao' and migrate existing tasks
 try {
+    const defaultGroup = db.prepare("SELECT id FROM user_groups WHERE is_default = 1").get();
     const existingUser = db.prepare("SELECT id FROM users WHERE username = ?").get('huangpenghao');
     if (!existingUser) {
-        db.prepare("INSERT INTO users (username, role) VALUES (?, ?)").run('huangpenghao', 'admin');
+        db.prepare("INSERT INTO users (username, role, group_id) VALUES (?, ?, ?)").run('huangpenghao', 'admin', defaultGroup?.id);
         console.log('[DB] Created default user: huangpenghao (admin)');
     } else if (existingUser && !existingUser.role) {
         db.prepare("UPDATE users SET role = ? WHERE username = ?").run('admin', 'huangpenghao');
@@ -206,6 +254,31 @@ try {
     }
 } catch (e) {
     console.error('[DB] Seeding error:', e.message);
+}
+
+// Initialize model_group_settings for all model/group combinations that don't exist
+try {
+    const models = db.prepare("SELECT id, is_default_checked FROM model_configs").all();
+    const groups = db.prepare("SELECT id FROM user_groups").all();
+    
+    const insertStmt = db.prepare(`
+        INSERT OR IGNORE INTO model_group_settings (model_id, group_id, is_enabled, is_default_checked, display_name)
+        VALUES (?, ?, 1, ?, NULL)
+    `);
+    
+    let insertedCount = 0;
+    for (const model of models) {
+        for (const group of groups) {
+            const result = insertStmt.run(model.id, group.id, model.is_default_checked);
+            if (result.changes > 0) insertedCount++;
+        }
+    }
+    
+    if (insertedCount > 0) {
+        console.log(`[DB] Initialized ${insertedCount} model_group_settings entries`);
+    }
+} catch (e) {
+    console.error('[DB] Model group settings initialization error:', e.message);
 }
 
 module.exports = db;

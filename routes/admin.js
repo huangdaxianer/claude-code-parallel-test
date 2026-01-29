@@ -63,10 +63,102 @@ router.get('/tasks', (req, res) => {
     }
 });
 
-// 获取所有用户列表
+// 获取所有用户组
+router.get('/user-groups', (req, res) => {
+    try {
+        const groups = db.prepare('SELECT * FROM user_groups ORDER BY is_default DESC, created_at ASC').all();
+        return res.json(groups);
+    } catch (e) {
+        console.error('Error fetching user groups:', e);
+        return res.status(500).json({ error: 'Failed to fetch user groups' });
+    }
+});
+
+// 创建新用户组
+router.post('/user-groups', express.json(), (req, res) => {
+    try {
+        const { name } = req.body;
+        
+        if (!name || !name.trim()) {
+            return res.status(400).json({ error: '用户组名称不能为空' });
+        }
+
+        const result = db.prepare('INSERT INTO user_groups (name, is_default) VALUES (?, 0)').run(name.trim());
+        res.json({ success: true, id: result.lastInsertRowid });
+    } catch (e) {
+        console.error('Error creating user group:', e);
+        if (e.message.includes('UNIQUE constraint failed')) {
+            return res.status(400).json({ error: '用户组名称已存在' });
+        }
+        return res.status(500).json({ error: 'Failed to create user group' });
+    }
+});
+
+// 更新用户组名称
+router.put('/user-groups/:id', express.json(), (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name } = req.body;
+        
+        if (!name || !name.trim()) {
+            return res.status(400).json({ error: '用户组名称不能为空' });
+        }
+
+        const result = db.prepare('UPDATE user_groups SET name = ? WHERE id = ?').run(name.trim(), id);
+
+        if (result.changes > 0) {
+            res.json({ success: true });
+        } else {
+            res.status(404).json({ error: 'User group not found' });
+        }
+    } catch (e) {
+        console.error('Error updating user group:', e);
+        if (e.message.includes('UNIQUE constraint failed')) {
+            return res.status(400).json({ error: '用户组名称已存在' });
+        }
+        return res.status(500).json({ error: 'Failed to update user group' });
+    }
+});
+
+// 删除用户组
+router.delete('/user-groups/:id', (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // 检查是否是默认用户组
+        const group = db.prepare('SELECT is_default FROM user_groups WHERE id = ?').get(id);
+        if (!group) {
+            return res.status(404).json({ error: 'User group not found' });
+        }
+        
+        if (group.is_default) {
+            return res.status(400).json({ error: '默认用户组不可删除' });
+        }
+
+        // 获取默认用户组ID，将用户迁移到默认组
+        const defaultGroup = db.prepare('SELECT id FROM user_groups WHERE is_default = 1').get();
+        if (defaultGroup) {
+            db.prepare('UPDATE users SET group_id = ? WHERE group_id = ?').run(defaultGroup.id, id);
+        }
+
+        const result = db.prepare('DELETE FROM user_groups WHERE id = ?').run(id);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error deleting user group:', e);
+        return res.status(500).json({ error: 'Failed to delete user group' });
+    }
+});
+
+// 获取所有用户列表（包含用户组信息）
 router.get('/users', (req, res) => {
     try {
-        const users = db.prepare('SELECT id, username, role, created_at FROM users ORDER BY created_at DESC').all();
+        const users = db.prepare(`
+            SELECT u.id, u.username, u.role, u.group_id, u.created_at,
+                   g.name as group_name, g.is_default as group_is_default
+            FROM users u
+            LEFT JOIN user_groups g ON u.group_id = g.id
+            ORDER BY u.created_at DESC
+        `).all();
         return res.json(users);
     } catch (e) {
         console.error('Error fetching users:', e);
@@ -94,6 +186,49 @@ router.put('/users/:id/role', (req, res) => {
         }
     } catch (e) {
         console.error('[API] Update user role error:', e);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// 更新用户分组
+router.put('/users/:id/group', express.json(), (req, res) => {
+    try {
+        const { id } = req.params;
+        const { group_id } = req.body;
+
+        // 验证分组是否存在
+        const group = db.prepare('SELECT id FROM user_groups WHERE id = ?').get(group_id);
+        if (!group) {
+            return res.status(400).json({ error: 'Invalid group' });
+        }
+
+        const result = db.prepare('UPDATE users SET group_id = ? WHERE id = ?').run(group_id, id);
+
+        if (result.changes > 0) {
+            res.json({ success: true });
+        } else {
+            res.status(404).json({ error: 'User not found' });
+        }
+    } catch (e) {
+        console.error('[API] Update user group error:', e);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// 删除用户
+router.delete('/users/:id', (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const result = db.prepare('DELETE FROM users WHERE id = ?').run(id);
+        
+        if (result.changes > 0) {
+            res.json({ success: true });
+        } else {
+            res.status(404).json({ error: 'User not found' });
+        }
+    } catch (e) {
+        console.error('[API] Delete user error:', e);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -301,18 +436,47 @@ router.get('/feedback-stats', (req, res) => {
     }
 });
 
-// 获取所有模型配置 (Admin)
+// 获取所有模型配置 (Admin) - 包含每个用户组的设置
 router.get('/models', (req, res) => {
     try {
         const models = db.prepare('SELECT * FROM model_configs ORDER BY created_at DESC').all();
-        res.json(models);
+        const groups = db.prepare('SELECT * FROM user_groups ORDER BY is_default DESC, name ASC').all();
+        
+        // Get all model group settings
+        const allSettings = db.prepare('SELECT * FROM model_group_settings').all();
+        const settingsMap = {};
+        allSettings.forEach(s => {
+            if (!settingsMap[s.model_id]) settingsMap[s.model_id] = {};
+            settingsMap[s.model_id][s.group_id] = s;
+        });
+        
+        // Attach group settings to each model
+        const modelsWithGroupSettings = models.map(model => {
+            const groupSettings = groups.map(group => {
+                const setting = settingsMap[model.id]?.[group.id];
+                return {
+                    group_id: group.id,
+                    group_name: group.name,
+                    is_default: group.is_default,
+                    is_enabled: setting ? setting.is_enabled : 1,
+                    is_default_checked: setting ? setting.is_default_checked : model.is_default_checked,
+                    display_name: setting ? setting.display_name : null
+                };
+            });
+            return {
+                ...model,
+                group_settings: groupSettings
+            };
+        });
+        
+        res.json(modelsWithGroupSettings);
     } catch (e) {
         console.error('Error fetching model configs:', e);
         res.status(500).json({ error: 'Failed to fetch model configs' });
     }
 });
 
-// 获取对当前角色启用的模型 (Public/User)
+// 获取对当前用户组启用的模型 (Public/User)
 router.get('/models/enabled', (req, res) => {
     try {
         const username = req.cookies?.username || req.headers['x-username'];
@@ -322,36 +486,76 @@ router.get('/models/enabled', (req, res) => {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const user = db.prepare('SELECT role FROM users WHERE username = ?').get(username);
+        const user = db.prepare('SELECT id, group_id FROM users WHERE username = ?').get(username);
         if (!user) {
             return res.status(401).json({ error: 'User not found' });
         }
 
-        console.log('[Models] User role:', user.role);
+        console.log('[Models] User group_id:', user.group_id);
 
-        let roleCol = 'is_enabled_internal';
-        if (user.role === 'admin') roleCol = 'is_enabled_admin';
-        else if (user.role === 'external') roleCol = 'is_enabled_external';
-
+        // Get models enabled for this user's group
         const models = db.prepare(`
-            SELECT name, description, is_default_checked
-            FROM model_configs
-            WHERE ${roleCol} = 1
-            ORDER BY name ASC
-        `).all();
+            SELECT
+                mc.name,
+                mc.description,
+                COALESCE(mgs.is_enabled, 1) as is_enabled,
+                COALESCE(mgs.is_default_checked, mc.is_default_checked) as is_default_checked,
+                COALESCE(mgs.display_name, mc.description, mc.name) as displayName
+            FROM model_configs mc
+            LEFT JOIN model_group_settings mgs ON mc.id = mgs.model_id AND mgs.group_id = ?
+            WHERE COALESCE(mgs.is_enabled, 1) = 1
+            ORDER BY mc.name ASC
+        `).all(user.group_id);
 
-        // For admin users, use description as displayName; for others, use name
-        const isAdmin = user.role === 'admin';
-        const modelsWithDisplayName = models.map(model => ({
-            ...model,
-            displayName: isAdmin && model.description ? model.description : model.name
-        }));
-
-        console.log('[Models] Returning models with displayNames:', modelsWithDisplayName.map(m => ({ name: m.name, displayName: m.displayName })));
-        res.json(modelsWithDisplayName);
+        console.log('[Models] Returning models for group:', models.map(m => ({ name: m.name, displayName: m.displayName })));
+        res.json(models);
     } catch (e) {
         console.error('Error fetching enabled models:', e);
         res.status(500).json({ error: 'Failed to fetch enabled models' });
+    }
+});
+
+// 更新模型的用户组设置 (Admin)
+router.put('/models/:modelId/group-settings/:groupId', express.json(), (req, res) => {
+    const { modelId, groupId } = req.params;
+    const { is_enabled, is_default_checked, display_name } = req.body;
+
+    try {
+        // Check if setting exists
+        const existing = db.prepare('SELECT id FROM model_group_settings WHERE model_id = ? AND group_id = ?').get(modelId, groupId);
+        
+        if (existing) {
+            // Update existing
+            const updates = [];
+            const params = [];
+
+            if (is_enabled !== undefined) { updates.push('is_enabled = ?'); params.push(is_enabled ? 1 : 0); }
+            if (is_default_checked !== undefined) { updates.push('is_default_checked = ?'); params.push(is_default_checked ? 1 : 0); }
+            if (display_name !== undefined) { updates.push('display_name = ?'); params.push(display_name || null); }
+
+            if (updates.length > 0) {
+                params.push(modelId, groupId);
+                const sql = `UPDATE model_group_settings SET ${updates.join(', ')} WHERE model_id = ? AND group_id = ?`;
+                db.prepare(sql).run(...params);
+            }
+        } else {
+            // Insert new
+            db.prepare(`
+                INSERT INTO model_group_settings (model_id, group_id, is_enabled, is_default_checked, display_name)
+                VALUES (?, ?, ?, ?, ?)
+            `).run(
+                modelId,
+                groupId,
+                is_enabled !== undefined ? (is_enabled ? 1 : 0) : 1,
+                is_default_checked !== undefined ? (is_default_checked ? 1 : 0) : 1,
+                display_name || null
+            );
+        }
+        
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error updating model group settings:', e);
+        res.status(500).json({ error: 'Failed to update model group settings' });
     }
 });
 

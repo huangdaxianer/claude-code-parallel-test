@@ -525,11 +525,98 @@ export const UI = {
         `).join('');
     },
 
-    // --- Model List ---
+    // --- Model List with Expandable Group Settings ---
     renderModels(models) {
-        const tbody = Elements.modelsTbody();
-        if (!tbody) return;
+        const container = document.getElementById('models-container');
+        if (!container) {
+            // Fallback to old tbody behavior
+            const tbody = Elements.modelsTbody();
+            if (!tbody) return;
+            this.renderModelsLegacy(models, tbody);
+            return;
+        }
 
+        if (models.length === 0) {
+            container.innerHTML = '<div class="empty-state"><p>暂无模型，请点击右上角新增</p></div>';
+            return;
+        }
+
+        container.innerHTML = models.map(model => `
+            <div class="model-card" data-model-id="${model.id}">
+                <div class="model-header" data-action="toggle-model-expand" data-model-id="${model.id}" style="display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; cursor: pointer; background: #f8fafc; border-radius: 0.5rem; border: 1px solid #e2e8f0; margin-bottom: 0;">
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <span class="expand-icon" data-model-id="${model.id}" style="transition: transform 0.2s; font-size: 0.75rem; color: #64748b;">▶</span>
+                        <div>
+                            <div style="font-weight: 600; font-size: 1rem; color: #1e293b;">${escapeHtml(model.name)}</div>
+                            <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;">${escapeHtml(model.description || '无备注')}</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <span class="timestamp">${formatDateTime(model.created_at)}</span>
+                        <div class="action-buttons">
+                            <button class="action-btn action-btn-view" data-action="edit-model" data-id="${model.id}" onclick="event.stopPropagation()">编辑</button>
+                            <button class="action-btn action-btn-delete" data-action="delete-model" data-id="${model.id}" data-name="${escapeHtml(model.name)}" onclick="event.stopPropagation()">删除</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="model-group-settings" data-model-id="${model.id}" style="display: none; padding: 1.25rem; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 0.5rem 0.5rem; margin-bottom: 1rem;">
+                    <table class="tasks-table" style="border: 1px solid #f1f5f9; border-radius: 0.5rem; overflow: hidden; table-layout: fixed;">
+                        <thead>
+                            <tr>
+                                <th style="padding: 0.75rem 1rem; background: #f8fafc; width: 180px;">用户组</th>
+                                <th style="padding: 0.75rem 1rem; background: #f8fafc; width: 120px;">是否启用</th>
+                                <th style="padding: 0.75rem 1rem; background: #f8fafc; width: 140px;">是否默认勾选</th>
+                                <th style="padding: 0.75rem 1rem; background: #f8fafc;">备注名称</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${(model.group_settings || []).map(gs => `
+                                <tr>
+                                    <td style="padding: 0.75rem 1rem;">
+                                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                            <span style="font-weight: 500; color: #334155;">${escapeHtml(gs.group_name)}</span>
+                                            ${gs.is_default ? '<span style="font-size: 0.7rem; background: #dbeafe; color: #1e40af; padding: 0.1rem 0.4rem; border-radius: 0.25rem;">默认</span>' : ''}
+                                        </div>
+                                    </td>
+                                    <td style="padding: 0.75rem 1rem;">
+                                        <label class="toggle-switch" title="是否启用">
+                                            <input type="checkbox" ${gs.is_enabled ? 'checked' : ''}
+                                                   data-action="update-model-group-setting"
+                                                   data-model-id="${model.id}"
+                                                   data-group-id="${gs.group_id}"
+                                                   data-field="is_enabled">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </td>
+                                    <td style="padding: 0.75rem 1rem;">
+                                        <label class="toggle-switch" title="默认勾选">
+                                            <input type="checkbox" ${gs.is_default_checked ? 'checked' : ''}
+                                                   data-action="update-model-group-setting"
+                                                   data-model-id="${model.id}"
+                                                   data-group-id="${gs.group_id}"
+                                                   data-field="is_default_checked">
+                                            <span class="slider"></span>
+                                        </label>
+                                    </td>
+                                    <td style="padding: 0.75rem 1rem;">
+                                        <input type="text" class="filter-input"
+                                               style="width: 100%; padding: 0.4rem 0.6rem; font-size: 0.85rem;"
+                                               placeholder="${escapeHtml(model.description || model.name)}"
+                                               value="${escapeHtml(gs.display_name || '')}"
+                                               data-action="update-model-group-display-name"
+                                               data-model-id="${model.id}"
+                                               data-group-id="${gs.group_id}">
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `).join('');
+    },
+
+    renderModelsLegacy(models, tbody) {
         if (models.length === 0) {
             tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><p>暂无模型，请点击右上角新增</p></td></tr>';
             return;
@@ -541,28 +628,28 @@ export const UI = {
                 <td>${escapeHtml(model.description || '-')}</td>
                 <td>
                     <label class="toggle-switch">
-                        <input type="checkbox" ${model.is_enabled_internal ? 'checked' : ''} 
+                        <input type="checkbox" ${model.is_enabled_internal ? 'checked' : ''}
                                data-action="update-model-status" data-id="${model.id}" data-field="is_enabled_internal">
                         <span class="slider"></span>
                     </label>
                 </td>
                 <td>
                     <label class="toggle-switch">
-                        <input type="checkbox" ${model.is_enabled_external ? 'checked' : ''} 
+                        <input type="checkbox" ${model.is_enabled_external ? 'checked' : ''}
                                data-action="update-model-status" data-id="${model.id}" data-field="is_enabled_external">
                         <span class="slider"></span>
                     </label>
                 </td>
                 <td>
                     <label class="toggle-switch">
-                        <input type="checkbox" ${model.is_enabled_admin ? 'checked' : ''} 
+                        <input type="checkbox" ${model.is_enabled_admin ? 'checked' : ''}
                                data-action="update-model-status" data-id="${model.id}" data-field="is_enabled_admin">
                         <span class="slider"></span>
                     </label>
                 </td>
                 <td>
                     <label class="toggle-switch">
-                        <input type="checkbox" ${model.is_default_checked ? 'checked' : ''} 
+                        <input type="checkbox" ${model.is_default_checked ? 'checked' : ''}
                                data-action="update-model-status" data-id="${model.id}" data-field="is_default_checked">
                         <span class="slider"></span>
                     </label>
@@ -578,13 +665,139 @@ export const UI = {
         `).join('');
     },
 
-    // --- User List ---
-    renderUserManagement(users) {
-        const tbody = Elements.usersTbody();
-        if (!tbody) return;
+    toggleModelExpand(modelId) {
+        const settingsDiv = document.querySelector(`.model-group-settings[data-model-id="${modelId}"]`);
+        const expandIcon = document.querySelector(`.expand-icon[data-model-id="${modelId}"]`);
+        const header = document.querySelector(`.model-header[data-model-id="${modelId}"]`);
 
+        if (settingsDiv) {
+            const isExpanded = settingsDiv.style.display !== 'none';
+            settingsDiv.style.display = isExpanded ? 'none' : 'block';
+            if (expandIcon) {
+                expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
+            }
+            if (header) {
+                header.style.borderRadius = isExpanded ? '0.5rem' : '0.5rem 0.5rem 0 0';
+                header.style.marginBottom = isExpanded ? '0' : '0';
+            }
+        }
+    },
+
+    // --- User List ---
+    renderUserManagement(users, groups = []) {
+        const container = document.getElementById('users-management-container');
+        if (!container) {
+            // Fallback to old behavior if container not found
+            const tbody = Elements.usersTbody();
+            if (!tbody) return;
+            this.renderUserManagementSimple(users, groups, tbody);
+            return;
+        }
+
+        // Group users by their group_id
+        const groupMap = {};
+        groups.forEach(g => {
+            groupMap[g.id] = { ...g, users: [] };
+        });
+
+        // Add an "Ungrouped" category for users without a group
+        const ungrouped = { id: null, name: '未分组', is_default: 0, users: [] };
+
+        users.forEach(user => {
+            if (user.group_id && groupMap[user.group_id]) {
+                groupMap[user.group_id].users.push(user);
+            } else {
+                ungrouped.users.push(user);
+            }
+        });
+
+        // Sort groups: default first, then by name
+        const sortedGroups = Object.values(groupMap).sort((a, b) => {
+            if (a.is_default) return -1;
+            if (b.is_default) return 1;
+            return a.name.localeCompare(b.name);
+        });
+
+        // Add ungrouped at the end if there are any
+        if (ungrouped.users.length > 0) {
+            sortedGroups.push(ungrouped);
+        }
+
+        let html = '';
+        sortedGroups.forEach(group => {
+            const isDefault = group.is_default;
+            const userCount = group.users.length;
+
+            html += `
+                <div class="user-group-section" style="margin-bottom: 2rem;">
+                    <div class="group-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; padding: 0.75rem 1rem; background: #f8fafc; border-radius: 0.5rem; border: 1px solid #e2e8f0;">
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <h3 style="font-size: 1rem; font-weight: 600; margin: 0;">${escapeHtml(group.name)}</h3>
+                            ${isDefault ? '<span style="font-size: 0.75rem; background: #dbeafe; color: #1e40af; padding: 0.2rem 0.5rem; border-radius: 0.25rem;">默认</span>' : ''}
+                            <span style="font-size: 0.85rem; color: #64748b;">(${userCount} 人)</span>
+                        </div>
+                        ${group.id !== null ? `
+                            <div class="action-buttons">
+                                <button class="action-btn action-btn-view" data-action="edit-group" data-id="${group.id}">编辑</button>
+                                ${!isDefault ? `<button class="action-btn action-btn-delete" data-action="delete-group" data-id="${group.id}" data-name="${escapeHtml(group.name)}">删除</button>` : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div class="table-container" style="overflow-x: auto;">
+                        <table class="tasks-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 60px;">ID</th>
+                                    <th>用户名</th>
+                                    <th>角色</th>
+                                    <th>分组</th>
+                                    <th>创建时间</th>
+                                    <th style="width: 150px;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${group.users.length === 0 ? `
+                                    <tr><td colspan="6" class="empty-state"><p>暂无用户</p></td></tr>
+                                ` : group.users.map(user => `
+                                    <tr>
+                                        <td>${user.id}</td>
+                                        <td><strong>${escapeHtml(user.username)}</strong></td>
+                                        <td>
+                                            <select class="filter-select" data-action="update-user-role" data-id="${user.id}" style="min-width: 120px;">
+                                                <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>管理员</option>
+                                                <option value="internal" ${user.role === 'internal' ? 'selected' : ''}>内部评测人员</option>
+                                                <option value="external" ${user.role === 'external' ? 'selected' : ''}>外部评测人员</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select class="filter-select" data-action="update-user-group" data-id="${user.id}" style="min-width: 100px;">
+                                                ${groups.map(g => `
+                                                    <option value="${g.id}" ${user.group_id === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>
+                                                `).join('')}
+                                            </select>
+                                        </td>
+                                        <td><span class="timestamp">${formatDateTime(user.created_at)}</span></td>
+                                        <td>
+                                            <div class="action-buttons">
+                                                <button class="action-btn action-btn-view" data-action="view-user-tasks" data-username="${escapeHtml(user.username)}">查看</button>
+                                                <button class="action-btn action-btn-delete" data-action="delete-user" data-id="${user.id}" data-name="${escapeHtml(user.username)}">删除</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    },
+
+    renderUserManagementSimple(users, groups, tbody) {
         if (users.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><p>暂无用户</p></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><p>暂无用户</p></td></tr>';
             return;
         }
 
@@ -599,15 +812,48 @@ export const UI = {
                         <option value="external" ${user.role === 'external' ? 'selected' : ''}>外部评测人员</option>
                     </select>
                 </td>
+                <td>
+                    <select class="filter-select" data-action="update-user-group" data-id="${user.id}" style="min-width: 100px;">
+                        ${groups.map(g => `
+                            <option value="${g.id}" ${user.group_id === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>
+                        `).join('')}
+                    </select>
+                </td>
                 <td><span class="timestamp">${formatDateTime(user.created_at)}</span></td>
                 <td>
                     <div class="action-buttons">
                         <button class="action-btn action-btn-view" data-action="view-user-tasks" data-username="${escapeHtml(user.username)}">查看</button>
-                        <button class="btn btn-warning btn-sm" onclick="alert('暂不支持删除用户')">删除</button>
+                        <button class="action-btn action-btn-delete" data-action="delete-user" data-id="${user.id}" data-name="${escapeHtml(user.username)}">删除</button>
                     </div>
                 </td>
             </tr>
         `).join('');
+    },
+
+    // --- Group Modal ---
+    openGroupModal(group = null) {
+        const modal = document.getElementById('group-modal');
+        if (!modal) return;
+
+        const title = document.getElementById('group-modal-title');
+        const form = document.getElementById('group-form');
+        if (form) form.reset();
+
+        const idField = document.getElementById('g-id');
+        const nameField = document.getElementById('g-name');
+
+        if (idField) idField.value = '';
+        if (nameField) nameField.value = '';
+
+        if (group) {
+            if (title) title.textContent = '编辑用户组';
+            if (idField) idField.value = group.id;
+            if (nameField) nameField.value = group.name || '';
+        } else {
+            if (title) title.textContent = '新建用户组';
+        }
+
+        modal.classList.add('show');
     },
 
     // --- Feedback Stats ---

@@ -14,6 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function init() {
+    // Handle initial tab from URL
+    initTabFromURL();
+
     // Initial Load
     fetchUsers();
     fetchQueueStatus();
@@ -29,6 +32,38 @@ function init() {
     // Event Listeners
     setupEventListeners();
     setupDragAndDrop();
+
+    // Handle browser back/forward navigation
+    window.addEventListener('popstate', handlePopState);
+}
+
+/**
+ * Initialize tab state from URL parameter
+ */
+function initTabFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab');
+    
+    // Valid tab names
+    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'users'];
+    
+    // Default to 'tasks' if no valid tab parameter
+    const tabId = validTabs.includes(tabParam) ? tabParam : 'tasks';
+    
+    // Activate the tab without updating URL (since we're reading from it)
+    activateTab(tabId, false);
+}
+
+/**
+ * Handle browser back/forward button
+ */
+function handlePopState(e) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab');
+    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'users'];
+    const tabId = validTabs.includes(tabParam) ? tabParam : 'tasks';
+    
+    activateTab(tabId, false);
 }
 
 function setupEventListeners() {
@@ -42,7 +77,7 @@ function setupEventListeners() {
     document.getElementById('filter-search')?.addEventListener('input', applyFilters);
 
     // Modal Outside Clicks
-    const modalIds = ['prompt-modal', 'config-modal', 'question-modal', 'model-modal'];
+    const modalIds = ['prompt-modal', 'config-modal', 'question-modal', 'model-modal', 'group-modal'];
     modalIds.forEach(id => {
         document.getElementById(id)?.addEventListener('click', (e) => {
             if (e.target.id === id) UI.closeModal(id);
@@ -78,6 +113,7 @@ function setupEventListeners() {
     // Forms
     document.getElementById('question-form')?.addEventListener('submit', handleQuestionSubmit);
     document.getElementById('model-form')?.addEventListener('submit', handleModelSubmit);
+    document.getElementById('group-form')?.addEventListener('submit', handleGroupSubmit);
 
     // Specific change listeners
     document.getElementById('q-type')?.addEventListener('change', () => UI.toggleOptionsContainer());
@@ -142,7 +178,29 @@ async function handleGlobalClick(e) {
                 break;
 
             case 'refresh-users-management':
-                fetchUserManagementUsers();
+                fetchUserManagementData();
+                break;
+
+            case 'open-create-group':
+                UI.openGroupModal(null);
+                break;
+
+            case 'edit-group': {
+                const g = AppState.userGroups.find(i => String(i.id) === String(id));
+                UI.openGroupModal(g);
+                break;
+            }
+
+            case 'delete-group':
+                deleteUserGroup(id, actionBtn.dataset.name);
+                break;
+
+            case 'delete-user':
+                deleteUser(id, actionBtn.dataset.name);
+                break;
+
+            case 'toggle-model-expand':
+                UI.toggleModelExpand(actionBtn.dataset.modelId);
                 break;
         }
     }
@@ -202,10 +260,54 @@ async function handleGlobalChange(e) {
             UI.showToast('角色更新成功');
         } catch (e) {
             UI.showToast('更新失败: ' + e.message, 'error');
-            fetchUserManagementUsers(); // revert
+            fetchUserManagementData(); // revert
+        }
+    }
+
+    if (target.dataset.action === 'update-user-group') {
+        const id = target.dataset.id;
+        const groupId = target.value;
+        try {
+            await TaskAPI.updateUserGroupAssignment(id, groupId);
+            UI.showToast('分组更新成功');
+            fetchUserManagementData(); // refresh list after successful group change
+        } catch (e) {
+            UI.showToast('更新失败: ' + e.message, 'error');
+            fetchUserManagementData(); // revert
+        }
+    }
+
+    // Handle model group setting toggle (is_enabled or is_default_checked)
+    if (target.dataset.action === 'update-model-group-setting') {
+        const modelId = target.dataset.modelId;
+        const groupId = target.dataset.groupId;
+        const field = target.dataset.field;
+        const val = target.checked;
+        try {
+            await TaskAPI.updateModelGroupSetting(modelId, groupId, { [field]: val });
+            UI.showToast('设置更新成功');
+        } catch (e) {
+            UI.showToast('更新失败: ' + e.message, 'error');
+            target.checked = !val;
         }
     }
 }
+
+// Handle display name input blur
+document.body.addEventListener('blur', async (e) => {
+    const target = e.target;
+    if (target.dataset.action === 'update-model-group-display-name') {
+        const modelId = target.dataset.modelId;
+        const groupId = target.dataset.groupId;
+        const displayName = target.value.trim();
+        try {
+            await TaskAPI.updateModelGroupSetting(modelId, groupId, { display_name: displayName });
+            UI.showToast('备注名称更新成功');
+        } catch (e) {
+            UI.showToast('更新失败: ' + e.message, 'error');
+        }
+    }
+}, true);
 
 // --- Data Fetching ---
 
@@ -262,8 +364,50 @@ async function fetchUserManagementUsers() {
     try {
         const users = await TaskAPI.fetchUsers(); // API endpoint is same currently '/api/admin/users'
         AppState.managementUsers = users;
-        UI.renderUserManagement(users);
+        UI.renderUserManagement(users, AppState.userGroups);
     } catch (e) { console.error(e); }
+}
+
+async function fetchUserGroups() {
+    try {
+        const groups = await TaskAPI.fetchUserGroups();
+        AppState.userGroups = groups;
+        return groups;
+    } catch (e) {
+        console.error(e);
+        return [];
+    }
+}
+
+async function fetchUserManagementData() {
+    try {
+        await fetchUserGroups();
+        const users = await TaskAPI.fetchUsers();
+        AppState.managementUsers = users;
+        UI.renderUserManagement(users, AppState.userGroups);
+    } catch (e) { console.error(e); }
+}
+
+async function deleteUserGroup(id, name) {
+    if (!confirm(`确定要删除用户组 "${name}" 吗？该组内的用户将被移至默认组。`)) return;
+    try {
+        await TaskAPI.deleteUserGroup(id);
+        await fetchUserManagementData();
+        UI.showToast('删除成功');
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+async function deleteUser(id, name) {
+    if (!confirm(`确定要删除用户 "${name}" 吗？`)) return;
+    try {
+        await TaskAPI.deleteUser(id);
+        await fetchUserManagementData();
+        UI.showToast('删除成功');
+    } catch (e) {
+        alert(e.message);
+    }
 }
 
 async function fetchFeedbackStats() {
@@ -378,6 +522,31 @@ async function deleteModel(id, name) {
     }
 }
 
+async function handleGroupSubmit(e) {
+    if (e) e.preventDefault();
+
+    const id = document.getElementById('g-id')?.value;
+    const name = document.getElementById('g-name')?.value?.trim();
+
+    if (!name) {
+        alert('用户组名称不能为空');
+        return;
+    }
+
+    try {
+        if (id) {
+            await TaskAPI.updateUserGroup(id, name);
+        } else {
+            await TaskAPI.createUserGroup(name);
+        }
+        UI.closeModal('group-modal');
+        await fetchUserManagementData();
+        UI.showToast('保存成功');
+    } catch (e) {
+        alert('保存失败: ' + e.message);
+    }
+}
+
 // --- Drag & Drop ---
 let dragSrcEl = null;
 
@@ -448,20 +617,49 @@ document.addEventListener('dragend', (e) => {
 });
 
 
-// --- Globals/Legacy Support ---
+// --- Tab Navigation with URL Support ---
+
+/**
+ * Switch to a tab and update the URL
+ * This is called when user clicks on a tab button
+ */
 function switchTab(tabId) {
+    activateTab(tabId, true);
+}
+
+/**
+ * Activate a tab with optional URL update
+ * @param {string} tabId - The tab identifier
+ * @param {boolean} updateURL - Whether to update the browser URL
+ */
+function activateTab(tabId, updateURL = true) {
+    // Update tab button active state
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.tab === tabId);
     });
 
+    // Update tab pane visibility
     document.querySelectorAll('.tab-pane').forEach(pane => {
         pane.classList.remove('active');
     });
     const pane = document.getElementById(`tab-${tabId}`);
     if (pane) pane.classList.add('active');
 
+    // Update URL if required
+    if (updateURL) {
+        const url = new URL(window.location);
+        if (tabId === 'tasks') {
+            // Remove tab parameter for default tab
+            url.searchParams.delete('tab');
+        } else {
+            url.searchParams.set('tab', tabId);
+        }
+        window.history.pushState({ tab: tabId }, '', url);
+    }
+
+    // Load tab-specific data
     if (tabId === 'feedback-stats') fetchFeedbackStats();
-    if (tabId === 'users') fetchUserManagementUsers();
+    if (tabId === 'users') fetchUserManagementData();
     if (tabId === 'models') fetchModels();
 }
 

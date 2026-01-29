@@ -86,6 +86,19 @@ export const TaskAPI = {
         return await res.json();
     },
 
+    async updateModelGroupSetting(modelId, groupId, data) {
+        const res = await fetch(`/api/admin/models/${modelId}/group-settings/${groupId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || '未知错误');
+        }
+        return await res.json();
+    },
+
     // Question APIs
     async saveQuestion(question) {
         const id = question.id;
@@ -133,6 +146,73 @@ export const TaskAPI = {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ role })
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || '未知错误');
+        }
+        return await res.json();
+    },
+
+    // User Groups APIs
+    async fetchUserGroups() {
+        const res = await fetch('/api/admin/user-groups');
+        return await res.json();
+    },
+
+    async createUserGroup(name) {
+        const res = await fetch('/api/admin/user-groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || '未知错误');
+        }
+        return await res.json();
+    },
+
+    async updateUserGroup(id, name) {
+        const res = await fetch(`/api/admin/user-groups/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || '未知错误');
+        }
+        return await res.json();
+    },
+
+    async deleteUserGroup(id) {
+        const res = await fetch(`/api/admin/user-groups/${id}`, {
+            method: 'DELETE'
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || '未知错误');
+        }
+        return await res.json();
+    },
+
+    async updateUserGroupAssignment(userId, groupId) {
+        const res = await fetch(`/api/admin/users/${userId}/group`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId })
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || '未知错误');
+        }
+        return await res.json();
+    },
+
+    async deleteUser(userId) {
+        const res = await fetch(`/api/admin/users/${userId}`, {
+            method: 'DELETE'
         });
         if (!res.ok) {
             const error = await res.json();
