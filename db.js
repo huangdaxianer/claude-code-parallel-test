@@ -172,6 +172,45 @@ db.exec(`
     CREATE INDEX IF NOT EXISTS idx_queue_status ON task_queue(status);
     CREATE INDEX IF NOT EXISTS idx_feedback_task_model ON feedback_responses(task_id, model_name);
     CREATE INDEX IF NOT EXISTS idx_user_feedback_task_id ON user_feedback(task_id);
+
+    -- GSB 打分功能表
+    CREATE TABLE IF NOT EXISTS gsb_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        model_a TEXT NOT NULL,
+        model_b TEXT NOT NULL,
+        user_id INTEGER,
+        status TEXT DEFAULT 'scoring',
+        total_count INTEGER DEFAULT 0,
+        completed_count INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS gsb_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id INTEGER NOT NULL,
+        task_id TEXT NOT NULL,
+        display_order INTEGER DEFAULT 0,
+        rating TEXT,
+        rated_at DATETIME,
+        FOREIGN KEY(job_id) REFERENCES gsb_jobs(id) ON DELETE CASCADE,
+        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS gsb_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id INTEGER NOT NULL UNIQUE,
+        model_a_wins INTEGER DEFAULT 0,
+        model_b_wins INTEGER DEFAULT 0,
+        same_count INTEGER DEFAULT 0,
+        failed_count INTEGER DEFAULT 0,
+        FOREIGN KEY(job_id) REFERENCES gsb_jobs(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gsb_jobs_user_id ON gsb_jobs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_gsb_tasks_job_id ON gsb_tasks(job_id);
 `);
 
 // Migration: Add new columns to log_entries if they don't exist
@@ -201,7 +240,7 @@ try {
     // First create the default group if it doesn't exist
     const defaultGroup = db.prepare("SELECT id FROM user_groups WHERE is_default = 1").get();
     let defaultGroupId;
-    
+
     if (!defaultGroup) {
         const result = db.prepare("INSERT INTO user_groups (name, is_default) VALUES (?, 1)").run('默认');
         defaultGroupId = result.lastInsertRowid;
@@ -209,7 +248,7 @@ try {
     } else {
         defaultGroupId = defaultGroup.id;
     }
-    
+
     // Migrate existing users without group_id to the default group
     const migrateResult = db.prepare("UPDATE users SET group_id = ? WHERE group_id IS NULL").run(defaultGroupId);
     if (migrateResult.changes > 0) {
@@ -260,12 +299,12 @@ try {
 try {
     const models = db.prepare("SELECT id, is_default_checked FROM model_configs").all();
     const groups = db.prepare("SELECT id FROM user_groups").all();
-    
+
     const insertStmt = db.prepare(`
         INSERT OR IGNORE INTO model_group_settings (model_id, group_id, is_enabled, is_default_checked, display_name)
         VALUES (?, ?, 1, ?, NULL)
     `);
-    
+
     let insertedCount = 0;
     for (const model of models) {
         for (const group of groups) {
@@ -273,7 +312,7 @@ try {
             if (result.changes > 0) insertedCount++;
         }
     }
-    
+
     if (insertedCount > 0) {
         console.log(`[DB] Initialized ${insertedCount} model_group_settings entries`);
     }

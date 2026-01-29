@@ -51,6 +51,13 @@
                 <span class="text">新建任务</span>
             </button>
 
+            <!-- GSB Entry Button (only visible for internal users) -->
+            <button id="gsb-entry-btn" class="btn-gsb-entry" style="display: none;"
+                onclick="window.location.href='/gsb.html'">
+                <span class="icon">⚖️</span>
+                <span class="text">进入 GSB 评测</span>
+            </button>
+
             <div class="task-history-list" id="task-history-list">
                 <!-- History Items injected via JS -->
                 <div style="padding:1rem; color:#94a3b8; font-size:0.8rem;">Loading...</div>

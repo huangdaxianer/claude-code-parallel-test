@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GSB 评测 - ClaudeCodex</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/gsb.css">
+</head>
+
+<body>
+    <div class="gsb-layout">
+        <!-- Sidebar -->
+        <aside class="gsb-sidebar">
+            <div class="gsb-sidebar-header">
+                <a href="/task.html" class="gsb-back-link">← 返回任务列表</a>
+                <h1>GSB 评测</h1>
+                <button class="btn-new-job" onclick="GSB.openCreateModal()">
+                    <span>+</span> 新建 GSB 评测
+                </button>
+            </div>
+            <div class="gsb-job-list" id="gsb-job-list">
+                <div class="gsb-empty-state" style="padding: 2rem; text-align: center;">
+                    <p style="color: #94a3b8;">加载中...</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Area -->
+        <main class="gsb-main">
+            <div class="gsb-work-area" id="gsb-work-area">
+                <!-- Empty State -->
+                <div class="gsb-empty-state" id="gsb-empty-state">
+                    <div class="icon">⚖️</div>
+                    <p>选择一个评测作业开始打分</p>
+                    <p style="font-size: 0.85rem; margin-top: 0.5rem;">或点击「新建 GSB 评测」创建新作业</p>
+                </div>
+
+                <!-- Scoring View (hidden by default) -->
+                <div id="gsb-scoring-view" style="display: none; flex: 1; flex-direction: column;">
+                    <div class="gsb-scoring-header">
+                        <div class="gsb-task-info">
+                            <h2 id="scoring-task-title">任务标题</h2>
+                            <div class="prompt-preview" id="scoring-task-prompt">任务 Prompt...</div>
+                        </div>
+                        <div class="gsb-progress-info" id="scoring-progress">1 / 10</div>
+                    </div>
+                    <div class="gsb-preview-area">
+                        <div class="gsb-preview-panel">
+                            <div class="gsb-preview-header left">
+                                <span class="model-label" id="model-a-label">Model A</span>
+                            </div>
+                            <iframe id="preview-iframe-a" class="gsb-preview-iframe"></iframe>
+                        </div>
+                        <div class="gsb-preview-panel">
+                            <div class="gsb-preview-header right">
+                                <span class="model-label" id="model-b-label">Model B</span>
+                            </div>
+                            <iframe id="preview-iframe-b" class="gsb-preview-iframe"></iframe>
+                        </div>
+                    </div>
+                    <div class="gsb-rating-area">
+                        <button class="gsb-rating-btn left" onclick="GSB.submitRating('left_better')">
+                            👈 左边的好
+                        </button>
+                        <button class="gsb-rating-btn same" onclick="GSB.submitRating('same')">
+                            🤝 差不多
+                        </button>
+                        <button class="gsb-rating-btn right" onclick="GSB.submitRating('right_better')">
+                            右边的好 👉
+                        </button>
+                        <button class="gsb-rating-btn failed" onclick="GSB.submitRating('failed')">
+                            ❌ 加载失败
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Results View (hidden by default) -->
+                <div id="gsb-results-view" class="gsb-results-view" style="display: none;">
+                    <div class="gsb-results-header">
+                        <h2 id="results-job-name">作业名称</h2>
+                        <p id="results-models">Model A vs Model B</p>
+                    </div>
+                    <div class="gsb-results-cards">
+                        <div class="gsb-result-card left">
+                            <div class="value" id="result-model-a-wins">0</div>
+                            <div class="label" id="result-model-a-label">Model A 胜出</div>
+                        </div>
+                        <div class="gsb-result-card right">
+                            <div class="value" id="result-model-b-wins">0</div>
+                            <div class="label" id="result-model-b-label">Model B 胜出</div>
+                        </div>
+                        <div class="gsb-result-card same">
+                            <div class="value" id="result-same">0</div>
+                            <div class="label">平局</div>
+                        </div>
+                        <div class="gsb-result-card failed">
+                            <div class="value" id="result-failed">0</div>
+                            <div class="label">加载失败</div>
+                        </div>
+                    </div>
+
+                    <!-- Task Details Table -->
+                    <div class="gsb-results-details">
+                        <h3>分任务评分详情</h3>
+                        <table class="gsb-results-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;">#</th>
+                                    <th>任务标题</th>
+                                    <th style="width: 120px;">评分结果</th>
+                                </tr>
+                            </thead>
+                            <tbody id="results-task-tbody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Create Job Modal -->
+    <div class="gsb-modal" id="create-job-modal">
+        <div class="gsb-modal-content">
+            <div class="gsb-modal-header">
+                <h3>新建 GSB 评测</h3>
+                <button class="gsb-modal-close" onclick="GSB.closeCreateModal()">&times;</button>
+            </div>
+            <div class="gsb-modal-body">
+                <!-- Step 1: Model Selection -->
+                <div id="create-step-1">
+                    <div class="gsb-steps">
+                        <div class="gsb-step active">
+                            <span class="gsb-step-number">1</span>
+                            <span>选择模型</span>
+                        </div>
+                        <div class="gsb-step-divider"></div>
+                        <div class="gsb-step">
+                            <span class="gsb-step-number">2</span>
+                            <span>选择任务</span>
+                        </div>
+                    </div>
+
+                    <div class="gsb-form-group">
+                        <label>作业名称</label>
+                        <input type="text" id="job-name-input" placeholder="例如：potato vs tomato 对比评测">
+                    </div>
+                    <div class="gsb-form-group">
+                        <label>左侧模型 (Model A)</label>
+                        <select id="model-a-select">
+                            <option value="">请选择模型...</option>
+                        </select>
+                    </div>
+                    <div class="gsb-form-group">
+                        <label>右侧模型 (Model B)</label>
+                        <select id="model-b-select">
+                            <option value="">请选择模型...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Step 2: Task Selection -->
+                <div id="create-step-2" style="display: none;">
+                    <div class="gsb-steps">
+                        <div class="gsb-step">
+                            <span class="gsb-step-number">✓</span>
+                            <span>选择模型</span>
+                        </div>
+                        <div class="gsb-step-divider"></div>
+                        <div class="gsb-step active">
+                            <span class="gsb-step-number">2</span>
+                            <span>选择任务</span>
+                        </div>
+                    </div>
+
+                    <p style="margin-bottom: 1rem; color: #64748b; font-size: 0.9rem;">
+                        选择要评测的任务。只有两个模型都生成了可预览结果的任务才能被选中。
+                    </p>
+
+                    <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 0.5rem;">
+                        <table class="gsb-task-table">
+                            <thead id="task-selection-thead">
+                                <tr>
+                                    <th style="width: 40px;">
+                                        <input type="checkbox" class="gsb-checkbox" id="select-all-tasks"
+                                            onchange="GSB.toggleAllTasks(this.checked)">
+                                    </th>
+                                    <th style="width: 100px;">任务标题</th>
+                                    <th>Prompt</th>
+                                    <th style="width: 90px;" id="th-model-a">
+                                        <div class="model-header">
+                                            <span class="model-name">Model A</span>
+                                            <span class="preview-label">预览状态</span>
+                                        </div>
+                                    </th>
+                                    <th style="width: 90px;" id="th-model-b">
+                                        <div class="model-header">
+                                            <span class="model-name">Model B</span>
+                                            <span class="preview-label">预览状态</span>
+                                        </div>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="task-selection-tbody">
+                                <tr>
+                                    <td colspan="5" style="text-align: center; color: #94a3b8; padding: 2rem;">
+                                        加载中...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="margin-top: 1rem; display: flex; align-items: center; justify-content: space-between;">
+                        <span id="selected-task-count" style="color: #64748b; font-size: 0.9rem;">已选择 0 个任务</span>
+                    </div>
+                </div>
+            </div>
+            <div class="gsb-modal-footer">
+                <button class="gsb-btn" id="modal-back-btn" onclick="GSB.prevStep()" style="display: none;">上一步</button>
+                <button class="gsb-btn" onclick="GSB.closeCreateModal()">取消</button>
+                <button class="gsb-btn gsb-btn-primary" id="modal-next-btn" onclick="GSB.nextStep()">下一步</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Job Dropdown Menu -->
+    <div class="gsb-job-dropdown" id="gsb-job-dropdown">
+        <button class="gsb-job-dropdown-item" onclick="GSB.deleteJobFromMenu()">删除</button>
+    </div>
+
+    <script src="js/gsb.js"></script>
+</body>
+
+</html>

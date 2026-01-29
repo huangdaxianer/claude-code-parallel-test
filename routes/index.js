@@ -21,5 +21,6 @@ router.use('/preview', previewRoutes);
 router.use('/comments', require('./comments'));
 router.use('/', filesRoutes);
 router.use('/users', usersRoutes);
+router.use('/gsb', require('./gsb'));
 
 module.exports = router;

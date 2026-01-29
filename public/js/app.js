@@ -156,13 +156,13 @@
         try {
             console.log('[App] Loading model display names for user:', App.state.currentUser?.username);
             const models = await App.api.getEnabledModels();
-            
+
             // Check if API returned an error
             if (models.error) {
                 console.error('[App] Error from API:', models.error);
                 return;
             }
-            
+
             App.state.modelDisplayNames = {};
             models.forEach(model => {
                 App.state.modelDisplayNames[model.name] = model.displayName || model.name;
@@ -184,7 +184,7 @@
             await new Promise(resolve => setTimeout(resolve, 100));
             retries++;
         }
-        
+
         if (!App.state.currentUser) {
             console.error('[App] No user logged in after auth check');
             return;
@@ -329,6 +329,12 @@
         // 初始化评论模块
         if (App.comments && App.comments.init) {
             App.comments.init();
+        }
+
+        // 显示 GSB 入口按钮（仅 internal 角色）
+        const gsbBtn = document.getElementById('gsb-entry-btn');
+        if (gsbBtn && App.state.currentUser?.role === 'internal') {
+            gsbBtn.style.display = 'flex';
         }
 
     };
