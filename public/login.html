@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
+    <title>方舟众测平台</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
         * {
@@ -89,22 +90,31 @@
         .error-message.show {
             display: block;
         }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .login-header h1 {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #000;
+            letter-spacing: -0.025em;
+        }
     </style>
 </head>
+
 <body>
     <div class="login-container">
+        <div class="login-header">
+            <h1>方舟众测平台</h1>
+        </div>
         <div id="error-message" class="error-message"></div>
 
         <form id="login-form">
             <div class="form-group">
-                <input 
-                    type="text" 
-                    id="username" 
-                    name="username" 
-                    placeholder="输入你的用户名"
-                    autocomplete="off"
-                    required
-                >
+                <input type="text" id="username" name="username" placeholder="输入你的用户名" autocomplete="off" required>
             </div>
 
             <button type="submit" class="btn-login" id="login-btn">
@@ -122,11 +132,11 @@
 
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const username = document.getElementById('username').value.trim();
             const errorEl = document.getElementById('error-message');
             const btn = document.getElementById('login-btn');
-            
+
             if (!username) {
                 errorEl.textContent = '请输入用户名';
                 errorEl.classList.add('show');
@@ -162,7 +172,7 @@
                     };
                     console.log('[Login] Storing user info:', userInfo);
                     localStorage.setItem('claude_user', JSON.stringify(userInfo));
-                    
+
                     // Redirect to task page
                     window.location.href = '/task.html';
                 } else {
@@ -181,4 +191,5 @@
         });
     </script>
 </body>
+
 </html>
