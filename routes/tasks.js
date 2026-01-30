@@ -188,7 +188,7 @@ router.post('/upload', upload.any(), (req, res) => {
         res.json({ path: targetBase, fileCount: processedCount });
     } catch (err) {
         console.error('[Upload] Fatal server error during processing:', err);
-        
+
         // Clean up partial upload on error
         try {
             if (fs.existsSync(targetBase)) {
@@ -198,7 +198,7 @@ router.post('/upload', upload.any(), (req, res) => {
         } catch (cleanupErr) {
             console.error('[Upload] Failed to clean up:', cleanupErr);
         }
-        
+
         let errorMsg = '处理上传文件失败';
         if (err.code === 'ENOSPC') {
             errorMsg = '服务器磁盘空间不足';
@@ -207,7 +207,7 @@ router.post('/upload', upload.any(), (req, res) => {
         } else if (err.message) {
             errorMsg = err.message;
         }
-        
+
         res.status(500).json({ error: errorMsg });
     }
 });
@@ -470,7 +470,7 @@ router.post('/:taskId/start', (req, res) => {
                 console.log(`[Control] Model directory does not exist: ${modelDir}`);
             }
 
-            const logFile = path.join(config.TASKS_DIR, taskId, `${modelName}.txt`);
+            const logFile = path.join(config.TASKS_DIR, taskId, 'logs', `${modelName}.txt`);
             console.log(`[Control] Checking log file: ${logFile}`);
             if (fs.existsSync(logFile)) {
                 fs.unlinkSync(logFile);

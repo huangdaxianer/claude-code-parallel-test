@@ -83,7 +83,7 @@ router.get('/task_details/:taskId', (req, res) => {
 // 获取特定模型的完整日志
 router.get('/task_logs/:taskId/:modelName', (req, res) => {
     const { taskId, modelName } = req.params;
-    const logFilePath = path.join(config.TASKS_DIR, taskId, `${modelName}.txt`);
+    const logFilePath = path.join(config.TASKS_DIR, taskId, 'logs', `${modelName}.txt`);
 
     if (fs.existsSync(logFilePath)) {
         try {

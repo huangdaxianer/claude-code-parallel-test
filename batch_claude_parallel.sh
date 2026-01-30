@@ -91,6 +91,7 @@ run_single_model() {
     
     # Ensure directories exist
     mkdir -p "$folder_path"
+    mkdir -p "$task_root/logs"
     
     # Copy base files if needed (check if folder is empty)
     local base_dir=$(node -e "
@@ -163,10 +164,8 @@ run_single_model() {
             fi
         done
         
-        for log_file in "$TASK_DIR"/*.txt; do
-            local log_name=$(basename "$log_file" .txt)
-            FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$log_file"
-        done
+        # 黑名单：整个 logs 目录（无论什么时候生成日志都无法访问）
+        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$TASK_DIR/logs"
         
         FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.ssh"
         FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.gnupg"
@@ -186,7 +185,7 @@ run_single_model() {
             --disallowedTools 'EnterPlanMode,ExitPlanMode' \
             --dangerously-skip-permissions \
             --output-format stream-json --verbose 2>&1 | \
-            tee "$task_root/${model_name}.txt" | \
+            tee "$task_root/logs/${model_name}.txt" | \
             node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
         then
             EXIT_CODE=$?
@@ -205,7 +204,7 @@ run_single_model() {
             --disallowedTools 'EnterPlanMode,ExitPlanMode' \
             --dangerously-skip-permissions \
             --output-format stream-json --verbose 2>&1 | \
-            tee "$task_root/${model_name}.txt" | \
+            tee "$task_root/logs/${model_name}.txt" | \
             node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
         then
             EXIT_CODE=$?
