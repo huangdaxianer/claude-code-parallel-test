@@ -2,7 +2,8 @@
 
 # 获取脚本所在目录并定义任务目录
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-TASKS_DIR="$SCRIPT_DIR/../tasks"
+mkdir -p "$SCRIPT_DIR/../tasks"
+TASKS_DIR="$( cd "$SCRIPT_DIR/../tasks" && pwd )"
 mkdir -p "$TASKS_DIR"
 
 # Set Locale to UTF-8 to support Chinese prompts
@@ -147,8 +148,14 @@ run_single_model() {
         local CURRENT_TASK="$(basename $TASK_DIR)"
         local CURRENT_MODEL="$model_name"
         
-        FIREJAIL_ARGS="--blacklist=$PROJECT_ROOT/claude-code-parallel-test"
+        # 移除 whitelist 模式，因为它会导致路径访问权限异常
+        # 依靠严格的 blacklist 和用户隔离来提供安全保障
+        FIREJAIL_ARGS=""
         
+        # 黑名单：阻止访问其他项目
+        FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$PROJECT_ROOT/claude-code-parallel-test"
+        
+        # 黑名单：阻止访问其他任务目录
         for dir in "$TASKS_ROOT"/*/; do
             local dir_name=$(basename "$dir")
             if [ "$dir_name" != "$CURRENT_TASK" ] && [ "$dir_name" != "temp_uploads" ]; then
@@ -156,6 +163,7 @@ run_single_model() {
             fi
         done
         
+        # 黑名单：阻止访问同任务下的其他模型目录
         for model_dir in "$TASK_DIR"/*/; do
             local model_dir_name=$(basename "$model_dir")
             if [ "$model_dir_name" != "$CURRENT_MODEL" ]; then
@@ -163,11 +171,14 @@ run_single_model() {
             fi
         done
         
+        # 黑名单：阻止访问任务目录下的所有日志文件（除了 prompt.txt 和 title.txt）
+        # 注意：移除了对 $CURRENT_MODEL.txt 的豁免，防止访问父目录的同名文件
         for log_file in "$TASK_DIR"/*.txt; do
             local log_name=$(basename "$log_file" .txt)
             FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$log_file"
         done
         
+        # 黑名单：阻止访问敏感系统文件
         FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.ssh"
         FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.gnupg"
         FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/etc/shadow"
