@@ -148,8 +148,9 @@ run_single_model() {
         local CURRENT_TASK="$(basename $TASK_DIR)"
         local CURRENT_MODEL="$model_name"
         
-        # 使用 whitelist 模式：只允许访问当前模型目录
-        FIREJAIL_ARGS="--whitelist=$folder_path"
+        # 移除 whitelist 模式，因为它会导致路径访问权限异常
+        # 依靠严格的 blacklist 和用户隔离来提供安全保障
+        FIREJAIL_ARGS=""
         
         # 黑名单：阻止访问其他项目
         FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$PROJECT_ROOT/claude-code-parallel-test"
