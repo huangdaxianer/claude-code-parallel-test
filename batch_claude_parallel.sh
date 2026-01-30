@@ -165,9 +165,7 @@ run_single_model() {
         
         for log_file in "$TASK_DIR"/*.txt; do
             local log_name=$(basename "$log_file" .txt)
-            if [ "$log_name" != "$CURRENT_MODEL" ] && [ "$log_name" != "prompt" ] && [ "$log_name" != "title" ]; then
-                FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$log_file"
-            fi
+            FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=$log_file"
         done
         
         FIREJAIL_ARGS="$FIREJAIL_ARGS --blacklist=/root/.ssh"
