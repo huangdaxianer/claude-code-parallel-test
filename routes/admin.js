@@ -30,9 +30,10 @@ router.get('/tasks', (req, res) => {
 
         const tasksWithRuns = tasks.map(task => {
             const runs = db.prepare(`
-                SELECT model_name, status, duration, input_tokens, output_tokens
-                FROM model_runs 
-                WHERE task_id = ?
+                SELECT mr.model_id, mr.status, mr.duration, mr.input_tokens, mr.output_tokens, mc.endpoint_name
+                FROM model_runs mr
+                LEFT JOIN model_configs mc ON mc.model_id = mr.model_id
+                WHERE mr.task_id = ?
             `).all(task.task_id);
 
             return {
@@ -47,7 +48,8 @@ router.get('/tasks', (req, res) => {
                 startedAt: task.started_at,
                 completedAt: task.completed_at,
                 runs: runs.map(r => ({
-                    modelName: r.model_name,
+                    modelId: r.model_id,
+                    modelName: r.endpoint_name || r.model_id, // Use endpoint_name for display, fallback to ID
                     status: r.status,
                     duration: r.duration,
                     inputTokens: r.input_tokens,
@@ -78,7 +80,7 @@ router.get('/user-groups', (req, res) => {
 router.post('/user-groups', express.json(), (req, res) => {
     try {
         const { name } = req.body;
-        
+
         if (!name || !name.trim()) {
             return res.status(400).json({ error: '用户组名称不能为空' });
         }
@@ -99,7 +101,7 @@ router.put('/user-groups/:id', express.json(), (req, res) => {
     try {
         const { id } = req.params;
         const { name } = req.body;
-        
+
         if (!name || !name.trim()) {
             return res.status(400).json({ error: '用户组名称不能为空' });
         }
@@ -124,13 +126,13 @@ router.put('/user-groups/:id', express.json(), (req, res) => {
 router.delete('/user-groups/:id', (req, res) => {
     try {
         const { id } = req.params;
-        
+
         // 检查是否是默认用户组
         const group = db.prepare('SELECT is_default FROM user_groups WHERE id = ?').get(id);
         if (!group) {
             return res.status(404).json({ error: 'User group not found' });
         }
-        
+
         if (group.is_default) {
             return res.status(400).json({ error: '默认用户组不可删除' });
         }
@@ -219,9 +221,9 @@ router.put('/users/:id/group', express.json(), (req, res) => {
 router.delete('/users/:id', (req, res) => {
     try {
         const { id } = req.params;
-        
+
         const result = db.prepare('DELETE FROM users WHERE id = ?').run(id);
-        
+
         if (result.changes > 0) {
             res.json({ success: true });
         } else {
@@ -381,7 +383,8 @@ router.get('/feedback-stats', (req, res) => {
                 t.task_id,
                 t.title,
                 u.username,
-                fr.model_name,
+                fr.model_id,
+                mc.endpoint_name,
                 fq.id as question_id,
                 fq.stem as question_stem,
                 fq.short_name as question_short_name,
@@ -392,19 +395,21 @@ router.get('/feedback-stats', (req, res) => {
             JOIN feedback_questions fq ON fr.question_id = fq.id
             JOIN tasks t ON fr.task_id = t.task_id
             JOIN users u ON t.user_id = u.id
+            LEFT JOIN model_configs mc ON mc.model_id = fr.model_id
             WHERE fq.is_active = 1
-            ORDER BY t.created_at DESC, u.username, fr.model_name, fq.id
+            ORDER BY t.created_at DESC, u.username, fr.model_id, fq.id
         `).all();
 
         const grouped = {};
         feedbackData.forEach(row => {
-            const key = `${row.task_id}|${row.username}|${row.model_name}`;
+            const key = `${row.task_id}|${row.username}|${row.model_id}`;
             if (!grouped[key]) {
                 grouped[key] = {
                     taskId: row.task_id,
                     title: row.title,
                     username: row.username,
-                    modelName: row.model_name,
+                    modelId: row.model_id,
+                    modelName: row.endpoint_name || row.model_id,
                     responses: []
                 };
             }
@@ -439,9 +444,9 @@ router.get('/feedback-stats', (req, res) => {
 // 获取所有模型配置 (Admin) - 包含每个用户组的设置
 router.get('/models', (req, res) => {
     try {
-        const models = db.prepare('SELECT * FROM model_configs ORDER BY created_at DESC').all();
+        const models = db.prepare('SELECT id as internal_id, model_id as id, endpoint_name as name, description, is_default_checked, created_at FROM model_configs ORDER BY created_at DESC').all();
         const groups = db.prepare('SELECT * FROM user_groups ORDER BY is_default DESC, name ASC').all();
-        
+
         // Get all model group settings
         const allSettings = db.prepare('SELECT * FROM model_group_settings').all();
         const settingsMap = {};
@@ -449,11 +454,11 @@ router.get('/models', (req, res) => {
             if (!settingsMap[s.model_id]) settingsMap[s.model_id] = {};
             settingsMap[s.model_id][s.group_id] = s;
         });
-        
+
         // Attach group settings to each model
         const modelsWithGroupSettings = models.map(model => {
             const groupSettings = groups.map(group => {
-                const setting = settingsMap[model.id]?.[group.id];
+                const setting = settingsMap[model.internal_id]?.[group.id];
                 return {
                     group_id: group.id,
                     group_name: group.name,
@@ -463,12 +468,16 @@ router.get('/models', (req, res) => {
                     display_name: setting ? setting.display_name : null
                 };
             });
+
+            // Remove internal_id from the object to keep the API clean
+            const { internal_id, ...modelData } = model;
+
             return {
-                ...model,
+                ...modelData,
                 group_settings: groupSettings
             };
         });
-        
+
         res.json(modelsWithGroupSettings);
     } catch (e) {
         console.error('Error fetching model configs:', e);
@@ -481,7 +490,7 @@ router.get('/models/enabled', (req, res) => {
     try {
         const username = req.cookies?.username || req.headers['x-username'];
         console.log('[Models] Fetching enabled models for user:', username);
-        
+
         if (!username) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
@@ -496,18 +505,21 @@ router.get('/models/enabled', (req, res) => {
         // Get models enabled for this user's group
         const models = db.prepare(`
             SELECT
-                mc.name,
+                mc.model_id as id,
+                mc.model_id,
+                mc.endpoint_name as name,
+                mc.endpoint_name,
                 mc.description,
                 COALESCE(mgs.is_enabled, 1) as is_enabled,
                 COALESCE(mgs.is_default_checked, mc.is_default_checked) as is_default_checked,
-                COALESCE(mgs.display_name, mc.description, mc.name) as displayName
+                COALESCE(mgs.display_name, mc.description, mc.endpoint_name) as displayName
             FROM model_configs mc
             LEFT JOIN model_group_settings mgs ON mc.id = mgs.model_id AND mgs.group_id = ?
-            WHERE COALESCE(mgs.is_enabled, 1) = 1
-            ORDER BY mc.name ASC
+            WHERE COALESCE(mgs.is_enabled, 1) = 1 AND mc.model_id IS NOT NULL
+            ORDER BY mc.endpoint_name ASC
         `).all(user.group_id);
 
-        console.log('[Models] Returning models for group:', models.map(m => ({ name: m.name, displayName: m.displayName })));
+        console.log('[Models] Returning models for group:', models.map(m => ({ id: m.id, name: m.name })));
         res.json(models);
     } catch (e) {
         console.error('Error fetching enabled models:', e);
@@ -521,9 +533,16 @@ router.put('/models/:modelId/group-settings/:groupId', express.json(), (req, res
     const { is_enabled, is_default_checked, display_name } = req.body;
 
     try {
+        // Resolve modelId string to internal integer ID
+        const modelConfig = db.prepare('SELECT id FROM model_configs WHERE model_id = ?').get(modelId);
+        if (!modelConfig) {
+            return res.status(404).json({ error: 'Model not found' });
+        }
+        const internalModelId = modelConfig.id;
+
         // Check if setting exists
-        const existing = db.prepare('SELECT id FROM model_group_settings WHERE model_id = ? AND group_id = ?').get(modelId, groupId);
-        
+        const existing = db.prepare('SELECT id FROM model_group_settings WHERE model_id = ? AND group_id = ?').get(internalModelId, groupId);
+
         if (existing) {
             // Update existing
             const updates = [];
@@ -534,7 +553,7 @@ router.put('/models/:modelId/group-settings/:groupId', express.json(), (req, res
             if (display_name !== undefined) { updates.push('display_name = ?'); params.push(display_name || null); }
 
             if (updates.length > 0) {
-                params.push(modelId, groupId);
+                params.push(internalModelId, groupId);
                 const sql = `UPDATE model_group_settings SET ${updates.join(', ')} WHERE model_id = ? AND group_id = ?`;
                 db.prepare(sql).run(...params);
             }
@@ -544,14 +563,14 @@ router.put('/models/:modelId/group-settings/:groupId', express.json(), (req, res
                 INSERT INTO model_group_settings (model_id, group_id, is_enabled, is_default_checked, display_name)
                 VALUES (?, ?, ?, ?, ?)
             `).run(
-                modelId,
+                internalModelId,
                 groupId,
                 is_enabled !== undefined ? (is_enabled ? 1 : 0) : 1,
                 is_default_checked !== undefined ? (is_default_checked ? 1 : 0) : 1,
                 display_name || null
             );
         }
-        
+
         res.json({ success: true });
     } catch (e) {
         console.error('Error updating model group settings:', e);
@@ -559,33 +578,49 @@ router.put('/models/:modelId/group-settings/:groupId', express.json(), (req, res
     }
 });
 
+// Helper function to generate 5-character model ID
+function generateModelId() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 5; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
+
 // 创建新模型 (Admin)
 router.post('/models', express.json(), (req, res) => {
-    const { name, description, is_enabled_internal, is_enabled_external, is_enabled_admin, is_default_checked } = req.body;
+    const endpoint_name = req.body.endpoint_name?.trim();
+    const { description, is_default_checked } = req.body;
 
-    if (!name) {
-        return res.status(400).json({ error: 'Missing required field: name' });
+    if (!endpoint_name) {
+        return res.status(400).json({ error: 'Missing required field: endpoint_name' });
     }
 
     try {
+        // Generate unique model_id
+        let modelId;
+        do {
+            modelId = generateModelId();
+        } while (db.prepare("SELECT 1 FROM model_configs WHERE model_id = ?").get(modelId));
+
         const stmt = db.prepare(`
-            INSERT INTO model_configs (name, description, is_enabled_internal, is_enabled_external, is_enabled_admin, is_default_checked)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO model_configs (model_id, endpoint_name, name, description, is_default_checked)
+            VALUES (?, ?, ?, ?, ?)
         `);
         const result = stmt.run(
-            name,
+            modelId,
+            endpoint_name,
+            endpoint_name, // Sync name with endpoint_name for legacy compatibility
             description || '',
-            is_enabled_internal ? 1 : 0,
-            is_enabled_external ? 1 : 0,
-            is_enabled_admin ? 1 : 0,
             is_default_checked ? 1 : 0
         );
 
-        res.json({ success: true, id: result.lastInsertRowid });
+        res.json({ success: true, id: result.lastInsertRowid, model_id: modelId });
     } catch (e) {
         console.error('Error creating model config:', e);
         if (e.message.includes('UNIQUE constraint failed')) {
-            return res.status(400).json({ error: 'Model name already exists' });
+            return res.status(400).json({ error: 'Endpoint name already exists' });
         }
         res.status(500).json({ error: 'Failed to create model config' });
     }
@@ -594,17 +629,19 @@ router.post('/models', express.json(), (req, res) => {
 // 更新模型 (Admin)
 router.put('/models/:id', express.json(), (req, res) => {
     const { id } = req.params;
-    const { name, description, is_enabled_internal, is_enabled_external, is_enabled_admin, is_default_checked } = req.body;
+    const { endpoint_name, description, is_default_checked } = req.body;
 
     try {
         const updates = [];
         const params = [];
 
-        if (name !== undefined) { updates.push('name = ?'); params.push(name); }
+        if (endpoint_name !== undefined) {
+            updates.push('endpoint_name = ?');
+            params.push(endpoint_name);
+            updates.push('name = ?'); // Sync name with endpoint_name
+            params.push(endpoint_name);
+        }
         if (description !== undefined) { updates.push('description = ?'); params.push(description); }
-        if (is_enabled_internal !== undefined) { updates.push('is_enabled_internal = ?'); params.push(is_enabled_internal ? 1 : 0); }
-        if (is_enabled_external !== undefined) { updates.push('is_enabled_external = ?'); params.push(is_enabled_external ? 1 : 0); }
-        if (is_enabled_admin !== undefined) { updates.push('is_enabled_admin = ?'); params.push(is_enabled_admin ? 1 : 0); }
         if (is_default_checked !== undefined) { updates.push('is_default_checked = ?'); params.push(is_default_checked ? 1 : 0); }
 
         if (updates.length === 0) {
@@ -623,7 +660,7 @@ router.put('/models/:id', express.json(), (req, res) => {
     } catch (e) {
         console.error('Error updating model config:', e);
         if (e.message.includes('UNIQUE constraint failed')) {
-            return res.status(400).json({ error: 'Model name already exists' });
+            return res.status(400).json({ error: 'Endpoint name already exists' });
         }
         res.status(500).json({ error: 'Failed to update model config' });
     }

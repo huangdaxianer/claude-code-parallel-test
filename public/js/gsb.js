@@ -224,15 +224,15 @@
     /**
      * Load preview in iframe
      */
-    GSB.loadPreview = function (iframeId, taskId, modelName, previewable) {
+    GSB.loadPreview = function (iframeId, taskId, modelId, previewable) {
         const iframe = document.getElementById(iframeId);
 
         if (previewable === 'static') {
             // Static preview - direct file serving
-            iframe.src = `/api/preview/view/${taskId}/${modelName}/index.html`;
+            iframe.src = `/api/preview/view/${taskId}/${modelId}/index.html`;
         } else if (previewable === 'dynamic') {
             // Dynamic preview - need to start server
-            GSB.startDynamicPreview(iframe, taskId, modelName);
+            GSB.startDynamicPreview(iframe, taskId, modelId);
         } else {
             iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;">无法预览</div>`;
         }
@@ -241,20 +241,20 @@
     /**
      * Start dynamic preview
      */
-    GSB.startDynamicPreview = async function (iframe, taskId, modelName) {
+    GSB.startDynamicPreview = async function (iframe, taskId, modelId) {
         iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;">启动预览中...</div>`;
 
         try {
             const res = await fetch('/api/preview/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ taskId, modelName })
+                body: JSON.stringify({ taskId, modelId })
             });
 
             const data = await res.json();
             if (data.url) {
                 // Poll until ready
-                GSB.pollPreviewStatus(iframe, taskId, modelName, data.url);
+                GSB.pollPreviewStatus(iframe, taskId, modelId, data.url);
             } else {
                 iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#dc2626;">预览启动失败</div>`;
             }
@@ -267,13 +267,13 @@
     /**
      * Poll preview status
      */
-    GSB.pollPreviewStatus = async function (iframe, taskId, modelName, url) {
+    GSB.pollPreviewStatus = async function (iframe, taskId, modelId, url) {
         let attempts = 0;
         const maxAttempts = 30;
 
         const poll = async () => {
             try {
-                const res = await fetch(`/api/preview/status/${taskId}/${modelName}`);
+                const res = await fetch(`/api/preview/status/${taskId}/${modelId}`);
                 const data = await res.json();
 
                 if (data.status === 'ready') {
@@ -450,9 +450,12 @@
             const res = await fetch(`/api/gsb/available-models?userId=${state.currentUser.id}`);
             state.availableModels = await res.json();
 
-            const options = state.availableModels.map(m =>
-                `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`
-            ).join('');
+            // Models now come as objects with model_id and endpoint_name
+            const options = state.availableModels.map(m => {
+                const displayName = m.endpoint_name || m.model_id;
+                const value = m.model_id;
+                return `<option value="${escapeHtml(value)}" data-display="${escapeHtml(displayName)}">${escapeHtml(displayName)}</option>`;
+            }).join('');
 
             const modelASelect = document.getElementById('model-a-select');
             const modelBSelect = document.getElementById('model-b-select');
@@ -472,16 +475,20 @@
      * Update job name based on selected models
      */
     GSB.updateJobNameFromModels = function () {
-        const modelA = document.getElementById('model-a-select').value;
-        const modelB = document.getElementById('model-b-select').value;
+        const modelASelect = document.getElementById('model-a-select');
+        const modelBSelect = document.getElementById('model-b-select');
         const jobNameInput = document.getElementById('job-name-input');
 
-        if (modelA && modelB && modelA !== modelB) {
-            jobNameInput.value = `${modelA} vs ${modelB} 对比评测`;
-        } else if (modelA && !modelB) {
-            jobNameInput.value = `${modelA} vs ? 对比评测`;
-        } else if (!modelA && modelB) {
-            jobNameInput.value = `? vs ${modelB} 对比评测`;
+        // Get display names from data attributes
+        const modelADisplayName = modelASelect.selectedOptions[0]?.dataset.display || modelASelect.value;
+        const modelBDisplayName = modelBSelect.selectedOptions[0]?.dataset.display || modelBSelect.value;
+
+        if (modelASelect.value && modelBSelect.value && modelASelect.value !== modelBSelect.value) {
+            jobNameInput.value = `${modelADisplayName} vs ${modelBDisplayName} 对比评测`;
+        } else if (modelASelect.value && !modelBSelect.value) {
+            jobNameInput.value = `${modelADisplayName} vs ? 对比评测`;
+        } else if (!modelASelect.value && modelBSelect.value) {
+            jobNameInput.value = `? vs ${modelBDisplayName} 对比评测`;
         }
     };
 

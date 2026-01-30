@@ -20,14 +20,21 @@ router.get('/task_details/:taskId', (req, res) => {
             return res.status(404).json({ error: 'Task not found' });
         }
 
-        const runs = db.prepare('SELECT * FROM model_runs WHERE task_id = ?').all(taskId);
+        // Join with model_configs to get endpoint_name
+        const runs = db.prepare(`
+            SELECT mr.*, mc.endpoint_name 
+            FROM model_runs mr 
+            LEFT JOIN model_configs mc ON mc.model_id = mr.model_id
+            WHERE mr.task_id = ?
+        `).all(taskId);
 
         const responseData = {
             taskId: task.task_id,
             title: task.title,
             prompt: task.prompt,
             runs: runs.map(run => {
-                const folderPath = path.join(taskDir, run.model_name);
+                // Use model_id for folder path (this is the 5-char ID)
+                const folderPath = path.join(taskDir, run.model_id);
                 let generatedFiles = [];
 
                 if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
@@ -51,8 +58,10 @@ router.get('/task_details/:taskId', (req, res) => {
 
                 return {
                     runId: run.id,
-                    folderName: path.join(taskId, run.model_name),
-                    modelName: run.model_name,
+                    folderName: path.join(taskId, run.model_id),
+                    modelId: run.model_id,
+                    modelName: run.endpoint_name || run.model_id, // Display name for UI
+                    endpointName: run.endpoint_name,
                     status: run.status,
                     previewable: run.previewable || ((run.status === 'completed' && hasFiles) ? 'static' : 'unpreviewable'), // Fallback for old tasks, ensure running tasks don't show preview
                     generatedFiles,
@@ -81,9 +90,9 @@ router.get('/task_details/:taskId', (req, res) => {
 });
 
 // 获取特定模型的完整日志
-router.get('/task_logs/:taskId/:modelName', (req, res) => {
-    const { taskId, modelName } = req.params;
-    const logFilePath = path.join(config.TASKS_DIR, taskId, 'logs', `${modelName}.txt`);
+router.get('/task_logs/:taskId/:modelId', (req, res) => {
+    const { taskId, modelId } = req.params;
+    const logFilePath = path.join(config.TASKS_DIR, taskId, 'logs', `${modelId}.txt`);
 
     if (fs.existsSync(logFilePath)) {
         try {

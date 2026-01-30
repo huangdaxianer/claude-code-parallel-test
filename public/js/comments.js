@@ -53,10 +53,10 @@
         if (!App.state.currentTaskId || !App.state.activeFolder) return;
 
         const run = App.state.currentRuns.find(r => r.folderName === App.state.activeFolder);
-        const modelName = run ? run.modelName : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
+        const modelId = run ? run.modelId : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
 
         try {
-            const comments = await App.api.getComments(App.state.currentTaskId, modelName);
+            const comments = await App.api.getComments(App.state.currentTaskId, modelId);
             App.comments.state.comments = comments;
             App.comments.renderComments(comments);
             App.comments.highlightAllComments(); // Trigger highlight
@@ -742,7 +742,7 @@
         if (!App.state.currentTaskId || !App.state.activeFolder) return;
 
         const run = App.state.currentRuns.find(r => r.folderName === App.state.activeFolder);
-        const modelName = run ? run.modelName : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
+        const modelId = run ? run.modelId : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
 
         // 构造选区范围信息
         const selectionRange = {
@@ -753,7 +753,7 @@
         try {
             await App.api.addComment({
                 taskId: App.state.currentTaskId,
-                modelName: modelName,
+                modelId: modelId,
                 userId: App.state.currentUser ? App.state.currentUser.id : null,
                 targetType: sel.targetType,
                 targetRef: sel.targetRef,
@@ -1102,7 +1102,7 @@
     App.comments.feedbackState = {
         selectedImages: [],
         userFeedback: [],
-        currentModelName: null
+        currentModelId: null
     };
 
     /**
@@ -1121,12 +1121,13 @@
             return;
         }
 
-        // Get the model name from the active folder
+        // Get the model id from the active folder
         const run = App.state.currentRuns.find(r => r.folderName === App.state.activeFolder);
-        const modelName = run ? run.modelName : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
+        const modelId = run ? run.modelId : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
+        const displayName = run ? run.modelName : modelId;
 
-        // Store the current model name for submission
-        App.comments.feedbackState.currentModelName = modelName;
+        // Store the current model id for submission
+        App.comments.feedbackState.currentModelId = modelId;
 
         // Reset form
         App.comments.feedbackState.selectedImages = [];
@@ -1134,11 +1135,11 @@
         const imagePreview = document.getElementById('feedback-image-preview');
         const imageInput = document.getElementById('feedback-image-input');
         const modelNameInput = document.getElementById('feedback-model-name');
-        
+
         if (contentInput) contentInput.value = '';
         if (imagePreview) imagePreview.innerHTML = '';
         if (imageInput) imageInput.value = '';
-        if (modelNameInput) modelNameInput.value = modelName;
+        if (modelNameInput) modelNameInput.value = displayName;
 
         modal.classList.add('show');
     };
@@ -1152,7 +1153,7 @@
 
         // Clear state
         App.comments.feedbackState.selectedImages = [];
-        App.comments.feedbackState.currentModelName = null;
+        App.comments.feedbackState.currentModelId = null;
     };
 
     /**
@@ -1161,7 +1162,7 @@
     App.comments.handleImageSelect = function (event) {
         const files = Array.from(event.target.files);
         const maxImages = 10;
-        
+
         // Limit to max images
         const currentCount = App.comments.feedbackState.selectedImages.length;
         const remainingSlots = maxImages - currentCount;
@@ -1194,7 +1195,7 @@
 
             const img = document.createElement('img');
             img.style.cssText = 'width: 60px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid #e2e8f0;';
-            
+
             // Create preview URL
             const url = URL.createObjectURL(file);
             img.src = url;
@@ -1224,11 +1225,11 @@
      */
     App.comments.submitUserFeedback = async function () {
         const contentInput = document.getElementById('feedback-content-input');
-        
-        const modelName = App.comments.feedbackState.currentModelName;
+
+        const modelId = App.comments.feedbackState.currentModelId;
         const content = contentInput.value.trim();
 
-        if (!modelName) {
+        if (!modelId) {
             App.toast.show('无法确定子任务', 'warning');
             return;
         }
@@ -1245,7 +1246,7 @@
         try {
             await App.api.addUserFeedback({
                 taskId: App.state.currentTaskId,
-                modelName: modelName,
+                modelId: modelId,
                 userId: App.state.currentUser ? App.state.currentUser.id : null,
                 content: content,
                 images: App.comments.feedbackState.selectedImages
@@ -1253,7 +1254,7 @@
 
             App.toast.show('反馈已提交', 'success');
             App.comments.closeFeedbackModal();
-            
+
             // Reload user feedback
             App.comments.loadUserFeedback();
 
@@ -1275,12 +1276,12 @@
         try {
             const feedback = await App.api.getUserFeedback(App.state.currentTaskId);
             App.comments.feedbackState.userFeedback = feedback;
-            
+
             // Filter feedback for current model only
             const run = App.state.currentRuns.find(r => r.folderName === App.state.activeFolder);
-            const currentModelName = run ? run.modelName : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
-            
-            const filteredFeedback = feedback.filter(f => f.model_name === currentModelName);
+            const currentModelId = run ? run.modelId : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
+
+            const filteredFeedback = feedback.filter(f => f.model_id === currentModelId);
             App.comments.renderUserFeedback(filteredFeedback);
         } catch (e) {
             console.error('Failed to load user feedback:', e);
@@ -1303,7 +1304,7 @@
         const processedFeedback = feedback.map(f => {
             let images = [];
             if (f.images) {
-                try { images = JSON.parse(f.images); } catch (e) {}
+                try { images = JSON.parse(f.images); } catch (e) { }
             }
             return { ...f, parsedImages: images };
         });
@@ -1323,7 +1324,7 @@
      */
     App.comments.renderUserFeedbackCard = function (feedback, hasImages) {
         const images = feedback.parsedImages || [];
-        
+
         let imagesHtml = '';
         if (hasImages && images.length > 0) {
             imagesHtml = `<div class="user-feedback-images">`;

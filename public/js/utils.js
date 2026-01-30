@@ -60,13 +60,17 @@
     /**
      * 获取模型显示名称
      * For admin users, shows description (备注) instead of model name
+     * Can look up by either modelId or modelName (for backwards compat)
      */
-    App.utils.getModelDisplayName = function (modelName) {
+    App.utils.getModelDisplayName = function (identifier) {
         // If we have cached model display names, use them
-        if (App.state.modelDisplayNames && App.state.modelDisplayNames[modelName]) {
-            return App.state.modelDisplayNames[modelName];
+        // First try to find by modelId, then by modelName
+        if (App.state.modelDisplayNames) {
+            if (App.state.modelDisplayNames[identifier]) {
+                return App.state.modelDisplayNames[identifier];
+            }
         }
-        return modelName;
+        return identifier;
     };
 
     // 全局快捷方式

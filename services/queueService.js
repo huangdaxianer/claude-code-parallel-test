@@ -32,10 +32,11 @@ async function processQueue() {
 
         // 获取待执行的子任务
         const pendingSubtasks = db.prepare(`
-            SELECT mr.id, mr.task_id, mr.model_name, t.title
+            SELECT mr.id, mr.task_id, mr.model_id, t.title, mc.endpoint_name
             FROM model_runs mr
             JOIN tasks t ON mr.task_id = t.task_id
             JOIN task_queue tq ON mr.task_id = tq.task_id
+            LEFT JOIN model_configs mc ON mc.model_id = mr.model_id
             WHERE mr.status = 'pending' AND tq.status != 'stopped'
             ORDER BY tq.created_at ASC, mr.id ASC
             LIMIT ?
@@ -51,8 +52,9 @@ async function processQueue() {
         for (const subtask of pendingSubtasks) {
             db.prepare("UPDATE model_runs SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(subtask.id);
             db.prepare("UPDATE task_queue SET status = 'running', started_at = COALESCE(started_at, CURRENT_TIMESTAMP) WHERE task_id = ?").run(subtask.task_id);
-            console.log(`[Queue] Starting subtask: ${subtask.task_id}/${subtask.model_name}`);
-            executeSubtask(subtask.task_id, subtask.model_name);
+            console.log(`[Queue] Starting subtask: ${subtask.task_id}/${subtask.model_id} (endpoint: ${subtask.endpoint_name})`);
+            // Pass model_id for folder naming and endpoint_name for API request
+            executeSubtask(subtask.task_id, subtask.model_id, subtask.endpoint_name);
         }
     } catch (e) {
         console.error('[Queue] Error processing queue:', e);
@@ -63,10 +65,11 @@ async function processQueue() {
 }
 
 // 执行单个模型子任务
-function executeSubtask(taskId, modelName) {
-    const subtaskKey = `${taskId}/${modelName}`;
+function executeSubtask(taskId, modelId, endpointName) {
+    const subtaskKey = `${taskId}/${modelId}`;
 
-    const child = spawn('bash', [config.SCRIPT_FILE, taskId, modelName], {
+    // Pass both modelId (for folder naming) and endpointName (for API request) to the script
+    const child = spawn('bash', [config.SCRIPT_FILE, taskId, modelId, endpointName], {
         env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' },
         detached: true
     });
@@ -78,7 +81,7 @@ function executeSubtask(taskId, modelName) {
 
     child.on('error', (err) => {
         console.error(`[Subtask ${subtaskKey} ERROR] Failed to spawn process:`, err);
-        db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+        db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
         delete activeSubtaskProcesses[subtaskKey];
         checkAndUpdateTaskStatus(taskId);
         setTimeout(processQueue, 100);
@@ -88,16 +91,16 @@ function executeSubtask(taskId, modelName) {
         console.log(`[Subtask ${subtaskKey} EXIT] Process exited with code ${code} and signal ${signal}`);
         delete activeSubtaskProcesses[subtaskKey];
 
-        const currentStatus = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_name = ?").get(taskId, modelName);
+        const currentStatus = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId);
         if (currentStatus && currentStatus.status === 'running') {
             const newStatus = (code === 0) ? 'completed' : 'stopped';
-            db.prepare("UPDATE model_runs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_name = ?").run(newStatus, taskId, modelName);
+            db.prepare("UPDATE model_runs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(newStatus, taskId, modelId);
 
             // 如果子任务成功完成，立即生成预览文件夹（隔离环境）并在后台进行 Preparation
             if (newStatus === 'completed') {
                 // Fire and forget - processing happens in background
-                previewService.preparePreview(taskId, modelName).catch(err => {
-                    console.error(`[Queue] Failed to trigger preview prep for ${taskId}/${modelName}:`, err);
+                previewService.preparePreview(taskId, modelId).catch(err => {
+                    console.error(`[Queue] Failed to trigger preview prep for ${taskId}/${modelId}:`, err);
                 });
             }
         }

@@ -44,9 +44,9 @@ function getFileStructure(dir, depth = 0, maxDepth = 3) {
 }
 
 // 获取项目类型
-router.get('/project/type/:taskId/:modelName', async (req, res) => {
-    const { taskId, modelName } = req.params;
-    const projectPath = path.join(config.TASKS_DIR, taskId, modelName);
+router.get('/project/type/:taskId/:modelId', async (req, res) => {
+    const { taskId, modelId } = req.params;
+    const projectPath = path.join(config.TASKS_DIR, taskId, modelId);
 
     if (!fs.existsSync(projectPath)) {
         return res.json({ type: 'unknown', previewable: false });
@@ -60,13 +60,13 @@ router.get('/project/type/:taskId/:modelName', async (req, res) => {
 });
 
 // 静态文件代理服务
-router.use('/view/:taskId/:modelName', (req, res, next) => {
-    const { taskId, modelName } = req.params;
+router.use('/view/:taskId/:modelId', (req, res, next) => {
+    const { taskId, modelId } = req.params;
     // req.path will contain the rest of the path after mounting point
     const filePath = req.path;
 
     // Determine absolute path
-    const projectPath = path.join(config.TASKS_DIR, taskId, modelName);
+    const projectPath = path.join(config.TASKS_DIR, taskId, modelId);
     const absolutePath = path.join(projectPath, filePath);
 
     // Prevent directory traversal
@@ -90,14 +90,14 @@ const db = require('../db'); // Ensure DB imported
 
 // 启动预览
 router.post('/start', async (req, res) => {
-    const { taskId, modelName } = req.body;
-    if (!taskId || !modelName) return res.status(400).json({ error: 'Missing params' });
+    const { taskId, modelId } = req.body;
+    if (!taskId || !modelId) return res.status(400).json({ error: 'Missing params' });
 
-    const folderName = `${taskId}/${modelName}`;
-    const projectPath = path.join(config.TASKS_DIR, taskId, modelName);
+    const folderName = `${taskId}/${modelId}`;
+    const projectPath = path.join(config.TASKS_DIR, taskId, modelId);
 
     // 0. Check Database Status
-    const runInfo = db.prepare("SELECT previewable FROM model_runs WHERE task_id = ? AND model_name = ?").get(taskId, modelName);
+    const runInfo = db.prepare("SELECT previewable FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId);
     const previewableStatus = runInfo ? runInfo.previewable : null;
 
     if (previewableStatus === 'preparing') {
@@ -116,13 +116,13 @@ router.post('/start', async (req, res) => {
     // Let's assume we want to handle the case where it might be null (old task).
     if (!previewableStatus || previewableStatus == 1) {
         // Fallback: Check if completed
-        const runStatus = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_name = ?").get(taskId, modelName)?.status;
+        const runStatus = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId)?.status;
         if (runStatus !== 'completed') {
             return res.status(400).json({ error: 'Task not completed yet. Please wait.' });
         }
 
         // Trigger prep now
-        previewService.preparePreview(taskId, modelName);
+        previewService.preparePreview(taskId, modelId);
         return res.status(202).json({ status: 'preparing', message: 'Triggered preparation...' });
     }
 
@@ -151,7 +151,7 @@ router.post('/start', async (req, res) => {
         const indexFile = files.find(f => f.toLowerCase() === 'index.html') || files.find(f => f.endsWith('.html'));
 
         if (indexFile) {
-            const staticUrl = `/api/preview/view/${taskId}/${modelName}_preview/${indexFile}`;
+            const staticUrl = `/api/preview/view/${taskId}/${modelId}_preview/${indexFile}`;
             previewService.runningPreviews[folderName] = {
                 status: 'ready',
                 type: 'static',
@@ -185,7 +185,7 @@ router.post('/start', async (req, res) => {
         const runScript = path.join(isolatedPath, 'run_server.sh');
         if (!fs.existsSync(runScript)) {
             // Self-healing: if status says dynamic but script missing, downgrade it.
-            db.prepare("UPDATE model_runs SET previewable = 'unpreviewable' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+            db.prepare("UPDATE model_runs SET previewable = 'unpreviewable' WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
             delete previewService.runningPreviews[folderName]; // Cleanup init state
             return res.status(500).json({ error: 'run_server.sh missing. Project marked as unpreviewable.' });
         }
@@ -262,8 +262,8 @@ router.post('/start', async (req, res) => {
 
 // 停止预览接口
 router.post('/stop', async (req, res) => {
-    const { taskId, modelName } = req.body;
-    const folderName = `${taskId}/${modelName}`;
+    const { taskId, modelId } = req.body;
+    const folderName = `${taskId}/${modelId}`;
     const info = previewService.runningPreviews[folderName];
 
     if (info) {
@@ -289,14 +289,14 @@ router.post('/stop', async (req, res) => {
 
 // 心跳检测接口
 router.post('/heartbeat', (req, res) => {
-    const { taskId, modelName } = req.body;
+    const { taskId, modelId } = req.body;
 
     if (taskId) {
         previewService.updateTaskHeartbeat(taskId);
     }
 
-    if (taskId && modelName) {
-        const folderName = `${taskId}/${modelName}`;
+    if (taskId && modelId) {
+        const folderName = `${taskId}/${modelId}`;
         previewService.updateHeartbeat(folderName);
     }
 
@@ -304,9 +304,9 @@ router.post('/heartbeat', (req, res) => {
 });
 
 // 获取预览状态和日志
-router.get('/status/:taskId/:modelName', (req, res) => {
-    const { taskId, modelName } = req.params;
-    const folderName = `${taskId}/${modelName}`;
+router.get('/status/:taskId/:modelId', (req, res) => {
+    const { taskId, modelId } = req.params;
+    const folderName = `${taskId}/${modelId}`;
 
     const previewInfo = previewService.runningPreviews[folderName];
 

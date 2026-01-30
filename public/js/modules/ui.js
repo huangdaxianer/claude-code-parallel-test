@@ -167,7 +167,8 @@ export const UI = {
         `;
 
         AppState.allModelNames.forEach(modelName => {
-            headerHTML += `<th class="model-col-header">${escapeHtml(modelName)}</th>`;
+            const displayName = App.state.modelDisplayNames ? (App.state.modelDisplayNames[modelName] || modelName) : modelName;
+            headerHTML += `<th class="model-col-header" title="${escapeHtml(modelName)}">${escapeHtml(displayName)}</th>`;
         });
 
         headerHTML += `
@@ -456,15 +457,9 @@ export const UI = {
             document.getElementById('m-id').value = model.id;
             document.getElementById('m-name').value = model.name;
             document.getElementById('m-desc').value = model.description || '';
-            document.getElementById('m-enabled-internal').checked = !!model.is_enabled_internal;
-            document.getElementById('m-enabled-external').checked = !!model.is_enabled_external;
-            document.getElementById('m-enabled-admin').checked = !!model.is_enabled_admin;
             document.getElementById('m-default-checked').checked = !!model.is_default_checked;
         } else {
             title.textContent = '新增模型';
-            document.getElementById('m-enabled-internal').checked = true;
-            document.getElementById('m-enabled-external').checked = true;
-            document.getElementById('m-enabled-admin').checked = true;
             document.getElementById('m-default-checked').checked = true;
         }
 
@@ -554,7 +549,6 @@ export const UI = {
                     <div style="display: flex; align-items: center; gap: 1rem;">
                         <span class="timestamp">${formatDateTime(model.created_at)}</span>
                         <div class="action-buttons">
-                            <button class="action-btn action-btn-view" data-action="edit-model" data-id="${model.id}" onclick="event.stopPropagation()">编辑</button>
                             <button class="action-btn action-btn-delete" data-action="delete-model" data-id="${model.id}" data-name="${escapeHtml(model.name)}" onclick="event.stopPropagation()">删除</button>
                         </div>
                     </div>
@@ -657,7 +651,6 @@ export const UI = {
                 <td><span class="timestamp">${formatDateTime(model.created_at)}</span></td>
                 <td>
                     <div class="action-buttons">
-                        <button class="action-btn action-btn-view" data-action="edit-model" data-id="${model.id}">编辑</button>
                         <button class="action-btn action-btn-delete" data-action="delete-model" data-id="${model.id}" data-name="${escapeHtml(model.name)}">删除</button>
                     </div>
                 </td>

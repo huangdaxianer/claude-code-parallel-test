@@ -9,7 +9,7 @@
     App.preview = {};
 
     let currentTaskId = null;
-    let currentModelName = null;
+    let currentModelId = null;
     let countdownInterval = null;
     let pollInterval = null;
     let heartbeatInterval = null;
@@ -34,32 +34,32 @@
         // 使用 fire-and-forget 模式，不阻塞主流程
         runs.forEach(async (run) => {
             if (!run.previewable) {
-                console.log(`[Preview] Skipping non-previewable run: ${run.modelName}`);
+                console.log(`[Preview] Skipping non-previewable run: ${run.modelId}`);
                 return;
             }
 
             // Only auto-start if completed
             if (run.status !== 'completed') {
-                console.log(`[Preview] Skipping incomplete run: ${run.modelName} (${run.status})`);
+                console.log(`[Preview] Skipping incomplete run: ${run.modelId} (${run.status})`);
                 return;
             }
 
-            const modelName = run.modelName;
-            if (!modelName) return;
+            const modelId = run.modelId;
+            if (!modelId) return;
 
             try {
                 // Check status first
-                const startRes = await App.api.getPreviewStatus(taskId, modelName);
+                const startRes = await App.api.getPreviewStatus(taskId, modelId);
                 if (startRes && (startRes.status === 'starting' || startRes.status === 'ready')) {
-                    console.log(`[Preview] ${modelName} already running/starting.`);
+                    console.log(`[Preview] ${modelId} already running/starting.`);
                     return;
                 }
 
                 // If not running, start it
-                console.log(`[Preview] Auto-starting preview for ${modelName}`);
-                await App.api.startPreview(taskId, modelName);
+                console.log(`[Preview] Auto-starting preview for ${modelId}`);
+                await App.api.startPreview(taskId, modelId);
             } catch (e) {
-                console.warn(`[Preview] Failed to auto-start ${modelName}:`, e);
+                console.warn(`[Preview] Failed to auto-start ${modelId}:`, e);
             }
         });
     };
@@ -67,11 +67,11 @@
     /**
      * 加载预览
      */
-    App.preview.loadPreview = async function (taskId, modelName, iframe, container) {
-        if (!taskId || !modelName) return;
+    App.preview.loadPreview = async function (taskId, modelId, iframe, container) {
+        if (!taskId || !modelId) return;
 
         // 如果正在加载同一个，则不重复加载
-        if (currentTaskId === taskId && currentModelName === modelName && pollInterval) {
+        if (currentTaskId === taskId && currentModelId === modelId && pollInterval) {
             return;
         }
 
@@ -79,7 +79,7 @@
         await App.preview.cleanup(taskId);
 
         currentTaskId = taskId;
-        currentModelName = modelName;
+        currentModelId = modelId;
         lastLogMsg = null;
         lastProgress = 0;
 
@@ -93,7 +93,7 @@
 
         // Fast Path: Check if already running before showing loading UI
         try {
-            const preCheck = await App.api.getPreviewStatus(taskId, modelName);
+            const preCheck = await App.api.getPreviewStatus(taskId, modelId);
             if (preCheck && preCheck.status === 'ready' && preCheck.url) {
                 console.log('[Preview] Fast path: Service ready, skipping loading UI');
 
@@ -101,12 +101,12 @@
                 if (!heartbeatInterval) {
                     const sendHeartbeat = () => {
                         const taskIdToSend = taskId || currentTaskId;
-                        const modelNameToSend = modelName || currentModelName;
-                        if (taskIdToSend && modelNameToSend) {
+                        const modelIdToSend = modelId || currentModelId;
+                        if (taskIdToSend && modelIdToSend) {
                             fetch('/api/preview/heartbeat', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ taskId: taskIdToSend, modelName: modelNameToSend })
+                                body: JSON.stringify({ taskId: taskIdToSend, modelId: modelIdToSend })
                             }).catch(console.error);
                         }
                     };
@@ -168,12 +168,12 @@
         if (!heartbeatInterval) {
             const sendHeartbeat = () => {
                 const taskIdToSend = taskId || currentTaskId;
-                const modelNameToSend = modelName || currentModelName;
-                if (taskIdToSend && modelNameToSend) {
+                const modelIdToSend = modelId || currentModelId;
+                if (taskIdToSend && modelIdToSend) {
                     fetch('/api/preview/heartbeat', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ taskId: taskIdToSend, modelName: modelNameToSend })
+                        body: JSON.stringify({ taskId: taskIdToSend, modelId: modelIdToSend })
                     }).catch(console.error);
                 }
             };
@@ -187,7 +187,7 @@
             // 尝试连接现有会话 (大部分情况下 initAll 应该已经启动了)
             let shouldStart = true;
             try {
-                const existingStatus = await App.api.getPreviewStatus(taskId, modelName);
+                const existingStatus = await App.api.getPreviewStatus(taskId, modelId);
                 if (existingStatus && (existingStatus.status === 'starting' || existingStatus.status === 'ready')) {
                     console.log('[Preview] Connecting to existing active session...');
                     shouldStart = false;
@@ -198,13 +198,13 @@
 
             if (shouldStart) {
                 console.log('[Preview] No active session found during load, starting new...');
-                await App.api.startPreview(taskId, modelName);
+                await App.api.startPreview(taskId, modelId);
             }
 
             // 轮询状态
             pollInterval = setInterval(async () => {
                 try {
-                    const info = await App.api.getPreviewStatus(taskId, modelName);
+                    const info = await App.api.getPreviewStatus(taskId, modelId);
 
                     // 同步倒计时
                     if (info.remainingSeconds !== undefined && countdownEl) {
@@ -353,9 +353,9 @@
         heartbeatInterval = null;
 
         // 如果切换到了不同的 parent task，才真正停止后端进程
-        if (currentTaskId && currentModelName && (!nextTaskId || nextTaskId !== currentTaskId)) {
+        if (currentTaskId && currentModelId && (!nextTaskId || nextTaskId !== currentTaskId)) {
             try {
-                await App.api.stopPreview(currentTaskId, currentModelName);
+                await App.api.stopPreview(currentTaskId, currentModelId);
             } catch (e) {
                 console.warn('Failed to stop preview during cleanup:', e);
             }
@@ -365,7 +365,7 @@
         if (!nextTaskId || nextTaskId !== currentTaskId) {
             currentTaskId = null;
         }
-        currentModelName = null;
+        currentModelId = null;
 
         const countdownEl = document.getElementById('preview-countdown');
         if (countdownEl) {
@@ -433,8 +433,8 @@
         const container = document.getElementById('tab-content-preview');
         const runId = iframe.getAttribute('data-run-id');
         if (runId) {
-            const [taskId, modelName] = runId.split('/');
-            App.preview.loadPreview(taskId, modelName, iframe, container);
+            const [taskId, modelId] = runId.split('/');
+            App.preview.loadPreview(taskId, modelId, iframe, container);
         }
     };
 

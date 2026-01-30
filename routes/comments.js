@@ -42,17 +42,17 @@ const upload = multer({
 
 // 获取评论列表
 router.get('/', (req, res) => {
-    const { taskId, modelName } = req.query;
-    if (!taskId || !modelName) return res.status(400).json({ error: 'Missing params' });
+    const { taskId, modelId } = req.query;
+    if (!taskId || !modelId) return res.status(400).json({ error: 'Missing params' });
 
     try {
         const comments = db.prepare(`
             SELECT c.*, u.username as user_name 
             FROM feedback_comments c
             LEFT JOIN users u ON c.user_id = u.id
-            WHERE c.task_id = ? AND c.model_name = ?
+            WHERE c.task_id = ? AND c.model_id = ?
             ORDER BY c.created_at DESC
-        `).all(taskId, modelName);
+        `).all(taskId, modelId);
         res.json(comments);
     } catch (e) {
         console.error('Error fetching comments:', e);
@@ -82,21 +82,21 @@ router.get('/user-feedback', (req, res) => {
 
 // 添加评论
 router.post('/', (req, res) => {
-    const { taskId, modelName, userId, targetType, targetRef, selectionRange, content, originalContent } = req.body;
+    const { taskId, modelId, userId, targetType, targetRef, selectionRange, content, originalContent } = req.body;
 
-    if (!taskId || !modelName || !content || !targetType) {
+    if (!taskId || !modelId || !content || !targetType) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
     try {
         const result = db.prepare(`
             INSERT INTO feedback_comments (
-                task_id, model_name, user_id, target_type, target_ref, 
+                task_id, model_id, user_id, target_type, target_ref, 
                 selection_range, content, original_content
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-            taskId, modelName, userId || null, targetType, targetRef || '',
+            taskId, modelId, userId || null, targetType, targetRef || '',
             JSON.stringify(selectionRange || {}), content, originalContent || ''
         );
 
@@ -126,7 +126,7 @@ router.delete('/:id', (req, res) => {
 
 // 添加用户反馈（支持图片上传）
 router.post('/user-feedback', upload.array('images', 10), (req, res) => {
-    const { taskId, modelName, userId, content } = req.body;
+    const { taskId, modelId, userId, content } = req.body;
 
     if (!taskId || !content) {
         return res.status(400).json({ error: 'Missing required fields (taskId, content)' });
@@ -153,19 +153,19 @@ router.post('/user-feedback', upload.array('images', 10), (req, res) => {
         // Insert into database
         const result = db.prepare(`
             INSERT INTO user_feedback (
-                task_id, model_name, user_id, content, images
+                task_id, model_id, user_id, content, images
             )
             VALUES (?, ?, ?, ?, ?)
         `).run(
             taskId,
-            modelName || '',
+            modelId || '',
             userId || null,
             content,
             JSON.stringify(imagePaths)
         );
 
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             id: result.lastInsertRowid,
             images: imagePaths
         });

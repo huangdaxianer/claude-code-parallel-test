@@ -43,13 +43,13 @@ function init() {
 function initTabFromURL() {
     const urlParams = new URLSearchParams(window.location.search);
     const tabParam = urlParams.get('tab');
-    
+
     // Valid tab names
     const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'users'];
-    
+
     // Default to 'tasks' if no valid tab parameter
     const tabId = validTabs.includes(tabParam) ? tabParam : 'tasks';
-    
+
     // Activate the tab without updating URL (since we're reading from it)
     activateTab(tabId, false);
 }
@@ -62,7 +62,7 @@ function handlePopState(e) {
     const tabParam = urlParams.get('tab');
     const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'users'];
     const tabId = validTabs.includes(tabParam) ? tabParam : 'tasks';
-    
+
     activateTab(tabId, false);
 }
 
@@ -486,11 +486,8 @@ async function handleModelSubmit(e) {
 
     const id = document.getElementById('m-id').value;
     const payload = {
-        name: document.getElementById('m-name').value,
+        endpoint_name: document.getElementById('m-name').value,
         description: document.getElementById('m-desc').value,
-        is_enabled_internal: document.getElementById('m-enabled-internal').checked,
-        is_enabled_external: document.getElementById('m-enabled-external').checked,
-        is_enabled_admin: document.getElementById('m-enabled-admin').checked,
         is_default_checked: document.getElementById('m-default-checked').checked
     };
 

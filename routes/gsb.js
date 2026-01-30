@@ -19,7 +19,7 @@ router.get('/jobs', (req, res) => {
 
         const jobs = db.prepare(`
             SELECT 
-                id, name, model_a, model_b, user_id, status,
+                id, name, model_a_id as model_a, model_b_id as model_b, user_id, status,
                 total_count, completed_count, created_at, completed_at
             FROM gsb_jobs 
             WHERE user_id = ?
@@ -48,7 +48,7 @@ router.post('/jobs', express.json(), (req, res) => {
 
         // Create job
         const insertJob = db.prepare(`
-            INSERT INTO gsb_jobs (name, model_a, model_b, user_id, total_count)
+            INSERT INTO gsb_jobs (name, model_a_id, model_b_id, user_id, total_count)
             VALUES (?, ?, ?, ?, ?)
         `);
         const jobResult = insertJob.run(name, modelA, modelB, userId, taskIds.length);
@@ -86,7 +86,7 @@ router.get('/jobs/:id', (req, res) => {
 
         const job = db.prepare(`
             SELECT 
-                id, name, model_a, model_b, user_id, status,
+                id, name, model_a_id as model_a, model_b_id as model_b, user_id, status,
                 total_count, completed_count, created_at, completed_at
             FROM gsb_jobs 
             WHERE id = ?
@@ -155,7 +155,7 @@ router.get('/jobs/:id/next', (req, res) => {
         const { id } = req.params;
 
         // Get job info
-        const job = db.prepare('SELECT model_a, model_b FROM gsb_jobs WHERE id = ?').get(id);
+        const job = db.prepare('SELECT model_a_id as model_a, model_b_id as model_b FROM gsb_jobs WHERE id = ?').get(id);
         if (!job) {
             return res.status(404).json({ error: 'Job not found' });
         }
@@ -180,12 +180,12 @@ router.get('/jobs/:id/next', (req, res) => {
         // Get previewable info for both models
         const modelAInfo = db.prepare(`
             SELECT previewable FROM model_runs 
-            WHERE task_id = ? AND model_name = ?
+            WHERE task_id = ? AND model_id = ?
         `).get(nextTask.task_id, job.model_a);
 
         const modelBInfo = db.prepare(`
             SELECT previewable FROM model_runs 
-            WHERE task_id = ? AND model_name = ?
+            WHERE task_id = ? AND model_id = ?
         `).get(nextTask.task_id, job.model_b);
 
         res.json({
@@ -300,8 +300,8 @@ router.get('/available-tasks', (req, res) => {
                 ma.previewable as model_a_previewable,
                 mb.previewable as model_b_previewable
             FROM tasks t
-            INNER JOIN model_runs ma ON t.task_id = ma.task_id AND ma.model_name = ?
-            INNER JOIN model_runs mb ON t.task_id = mb.task_id AND mb.model_name = ?
+            INNER JOIN model_runs ma ON t.task_id = ma.task_id AND ma.model_id = ?
+            INNER JOIN model_runs mb ON t.task_id = mb.task_id AND mb.model_id = ?
             WHERE t.user_id = ?
             ORDER BY t.created_at DESC
         `).all(modelA, modelB, userId);
@@ -332,18 +332,19 @@ router.get('/available-models', (req, res) => {
             return res.status(400).json({ error: 'Missing userId' });
         }
 
-        // Get distinct model names from completed runs for this user's tasks
+        // Get distinct model_ids from completed runs for this user's tasks
         const models = db.prepare(`
-            SELECT DISTINCT mr.model_name
+            SELECT DISTINCT mr.model_id, mc.endpoint_name
             FROM model_runs mr
             INNER JOIN tasks t ON mr.task_id = t.task_id
+            LEFT JOIN model_configs mc ON mc.model_id = mr.model_id
             WHERE t.user_id = ?
               AND mr.status = 'completed'
               AND (mr.previewable = 'static' OR mr.previewable = 'dynamic')
-            ORDER BY mr.model_name ASC
+            ORDER BY mc.endpoint_name ASC
         `).all(userId);
 
-        res.json(models.map(m => m.model_name));
+        res.json(models.map(m => ({ model_id: m.model_id, endpoint_name: m.endpoint_name || m.model_id })));
     } catch (e) {
         console.error('[GSB] Error fetching available models:', e);
         res.status(500).json({ error: 'Failed to fetch available models' });

@@ -60,7 +60,7 @@
 
             container.innerHTML = models.map(model => `
                 <label class="checkbox-item" title="${escapeHtml(model.description || '')}">
-                    <input type="checkbox" name="model" value="${escapeHtml(model.name)}"
+                    <input type="checkbox" name="model" value="${escapeHtml(model.id)}"
                            ${model.is_default_checked ? 'checked' : ''}>
                     <span class="checkmark"></span>
                     ${escapeHtml(model.displayName || model.name)}
@@ -190,7 +190,7 @@
             const uploadPromise = new Promise((resolve, reject) => {
                 // Set timeout to 10 minutes for large uploads
                 xhr.timeout = 600000;
-                
+
                 let lastProgressUpdate = Date.now();
 
                 xhr.upload.onprogress = (event) => {
@@ -198,7 +198,7 @@
                         const percent = event.loaded / event.total;
                         const offset = circumference - (percent * circumference);
                         circle.style.strokeDashoffset = offset;
-                        
+
                         // Log progress every 2 seconds
                         const now = Date.now();
                         if (now - lastProgressUpdate > 2000) {
@@ -240,12 +240,12 @@
                     console.error(`[Upload] Network error occurred`);
                     reject(new Error('Network error during upload'));
                 };
-                
+
                 xhr.ontimeout = () => {
                     console.error(`[Upload] Upload timeout after ${xhr.timeout}ms`);
                     reject(new Error('Upload timeout - the folder may be too large. Try uploading a smaller folder.'));
                 };
-                
+
                 xhr.open('POST', '/api/tasks/upload');
                 console.log(`[Upload] XHR request opened, starting upload...`);
                 xhr.send(formData);
@@ -269,7 +269,7 @@
         } catch (err) {
             console.error(`[Upload] Catch block caught an error:`, err);
             let errorMsg = err.message;
-            
+
             // Provide more specific error messages
             if (err.message.includes('timeout')) {
                 errorMsg = '上传超时，文件夹可能过大。请尝试上传较小的文件夹或减少文件数量。';
@@ -282,7 +282,7 @@
             } else if (err.message.includes('500')) {
                 errorMsg = '服务器处理错误，请稍后重试。';
             }
-            
+
             alert('上传错误: ' + errorMsg);
         } finally {
             browseBtn.disabled = false;

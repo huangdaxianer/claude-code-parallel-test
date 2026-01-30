@@ -67,14 +67,14 @@
         }
 
         const run = App.state.currentRuns.find(r => r.folderName === App.state.activeFolder);
-        const shortModelName = run ? run.modelName : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
+        const modelId = run ? run.modelId : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
 
         try {
             if (App.state.feedbackQuestions.length === 0) {
                 App.state.feedbackQuestions = await App.api.getFeedbackQuestions();
             }
 
-            const checkData = await App.api.checkFeedback(App.state.currentTaskId, shortModelName);
+            const checkData = await App.api.checkFeedback(App.state.currentTaskId, modelId);
             const existingMap = {};
             if (checkData.exists) {
                 checkData.feedback.forEach(f => {
@@ -257,10 +257,10 @@
         if (responses.length === 0) return;
 
         const run = App.state.currentRuns.find(r => r.folderName === App.state.activeFolder);
-        const shortModelName = run ? run.modelName : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
+        const modelId = run ? run.modelId : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
 
         try {
-            const data = await App.api.submitFeedback(App.state.currentTaskId, shortModelName, responses);
+            const data = await App.api.submitFeedback(App.state.currentTaskId, modelId, responses);
             if (data.success) {
                 App.fetchTaskDetails();
             }

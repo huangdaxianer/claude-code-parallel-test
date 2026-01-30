@@ -83,12 +83,13 @@ trap cleanup EXIT
 # Function to run a single model
 run_single_model() {
     local task_id="$1"
-    local model_name="$2"
-    local prompt="$3"
+    local model_id="$2"      # Used for folder naming
+    local endpoint_name="$3" # Used for --model parameter
+    local prompt="$4"
     local task_root="$TASKS_DIR/${task_id}"
-    local folder_path="$task_root/$model_name"
+    local folder_path="$task_root/$model_id"
     
-    echo "[Task $task_id] 启动单个模型: $model_name"
+    echo "[Task $task_id] 启动单个模型: $model_id (endpoint: $endpoint_name)"
     
     # Ensure directories exist
     mkdir -p "$folder_path"
@@ -132,7 +133,7 @@ run_single_model() {
     # Set Pipefail to capture first command failure
     set -o pipefail
 
-    echo "[Task $task_id] [$model_name] Environment check:"
+    echo "[Task $task_id] [$model_id] Environment check:"
     echo "  - CLAUDE_BIN: $CLAUDE_BIN"
     echo "  - CMD_PREFIX: $CMD_PREFIX"
     echo "  - PWD: $(pwd)"
@@ -147,7 +148,7 @@ run_single_model() {
         local TASKS_ROOT="$(dirname $TASK_DIR)"
         local PROJECT_ROOT="$(dirname $TASKS_ROOT)"
         local CURRENT_TASK="$(basename $TASK_DIR)"
-        local CURRENT_MODEL="$model_name"
+        local CURRENT_MODEL="$model_id"
         
         FIREJAIL_ARGS="--blacklist=$PROJECT_ROOT/claude-code-parallel-test"
         
@@ -181,41 +182,41 @@ run_single_model() {
     if [ "$USE_FIREJAIL" = true ]; then
         if ! printf '%s' "$prompt" | firejail --quiet --noprofile \
             $FIREJAIL_ARGS \
-            -- $CMD_PREFIX "$CLAUDE_BIN" --model "$model_name" \
+            -- $CMD_PREFIX "$CLAUDE_BIN" --model "$endpoint_name" \
             --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
             --disallowedTools 'EnterPlanMode,ExitPlanMode' \
             --dangerously-skip-permissions \
             --output-format stream-json --verbose 2>&1 | \
-            tee "$task_root/logs/${model_name}.txt" | \
-            node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
+            tee "$task_root/logs/${model_id}.txt" | \
+            node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_id"
         then
             EXIT_CODE=$?
-            echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
+            echo "[Task $task_id] [$model_id] 运行异常 (Exit Code: $EXIT_CODE)"
             if [ $EXIT_CODE -eq 127 ]; then
                 echo "  -> Error: Command not found. Check CLAUDE_BIN path."
             fi
             exit $EXIT_CODE
         else
-            echo "[Task $task_id] [$model_name] 完成"
+            echo "[Task $task_id] [$model_id] 完成"
         fi
     else
         if ! printf '%s' "$prompt" | $CMD_PREFIX "$CLAUDE_BIN" \
-            --model "$model_name" \
+            --model "$endpoint_name" \
             --allowedTools 'Read(./**),Edit(./**),Bash(./**)' \
             --disallowedTools 'EnterPlanMode,ExitPlanMode' \
             --dangerously-skip-permissions \
             --output-format stream-json --verbose 2>&1 | \
-            tee "$task_root/logs/${model_name}.txt" | \
-            node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_name"
+            tee "$task_root/logs/${model_id}.txt" | \
+            node "$SCRIPT_DIR/ingest.js" "$task_id" "$model_id"
         then
             EXIT_CODE=$?
-            echo "[Task $task_id] [$model_name] 运行异常 (Exit Code: $EXIT_CODE)"
+            echo "[Task $task_id] [$model_id] 运行异常 (Exit Code: $EXIT_CODE)"
             if [ $EXIT_CODE -eq 127 ]; then
                 echo "  -> Error: Command not found. Check CLAUDE_BIN path."
             fi
             exit $EXIT_CODE
         else
-            echo "[Task $task_id] [$model_name] 完成"
+            echo "[Task $task_id] [$model_id] 完成"
         fi
     fi
     
@@ -252,7 +253,8 @@ process_task() {
 }
 
 INPUT_ARG="$1"
-MODEL_ARG="$2"
+MODEL_ARG="$2"       # model_id for folder naming
+ENDPOINT_ARG="$3"    # endpoint_name for --model parameter
 
 # Prepare Isolation user home if needed
 if [ "$USE_ISOLATION" = true ]; then
@@ -281,11 +283,12 @@ if [ -f "$INPUT_ARG" ]; then
          if [[ -z "$task_id" ]]; then task_id=$(echo "$RANDOM" | md5sum | head -c 6 | tr '[:lower:]' '[:upper:]'); fi
          process_task "$base_dir" "$title" "$prompt" "$task_id" "$models_str"
     done < "$INPUT_ARG"
-elif [ -n "$INPUT_ARG" ] && [ -n "$MODEL_ARG" ]; then
+elif [ -n "$INPUT_ARG" ] && [ -n "$MODEL_ARG" ] && [ -n "$ENDPOINT_ARG" ]; then
     # Single Model Mode: Run specific model for a task
     TASK_ID="$INPUT_ARG"
-    MODEL_NAME="$MODEL_ARG"
-    echo "[Batch] Running single model: $MODEL_NAME for task: $TASK_ID"
+    MODEL_ID="$MODEL_ARG"
+    ENDPOINT_NAME="$ENDPOINT_ARG"
+    echo "[Batch] Running single model: $MODEL_ID (endpoint: $ENDPOINT_NAME) for task: $TASK_ID"
     
     # Fetch prompt from database
     TASK_ROOT="$TASKS_DIR/${TASK_ID}"
@@ -315,7 +318,7 @@ elif [ -n "$INPUT_ARG" ] && [ -n "$MODEL_ARG" ]; then
         exit 1
     fi
     
-    run_single_model "$TASK_ID" "$MODEL_NAME" "$PROMPT"
+    run_single_model "$TASK_ID" "$MODEL_ID" "$ENDPOINT_NAME" "$PROMPT"
 elif [ -n "$INPUT_ARG" ]; then
     # DB Mode: Input is Task ID (legacy - runs all pending models in parallel)
     TASK_ID="$INPUT_ARG"
@@ -364,10 +367,11 @@ elif [ -n "$INPUT_ARG" ]; then
     eval "$EVAL_STR"
     process_task "$BASE_DIR" "$TITLE" "$PROMPT" "$TASK_ID" "$MODELS_STR"
 else
-    echo "Error: No arguments provided"
-    echo "Usage: $0 <task_id> [model_name]"
-    echo "  - With only task_id: runs all pending models for the task"
-    echo "  - With task_id and model_name: runs only the specified model"
+    echo "Error: Missing or invalid arguments"
+    echo "Usage: $0 <task_id> <model_id> <endpoint_name>"
+    echo "  - task_id: The task ID"
+    echo "  - model_id: The model ID (used for folder naming)"
+    echo "  - endpoint_name: The model endpoint name (used for --model parameter)"
     exit 1
 fi
 

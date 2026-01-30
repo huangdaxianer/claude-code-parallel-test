@@ -4,10 +4,10 @@ const path = require('path');
 const fs = require('fs');
 
 const taskId = process.argv[2];
-const modelName = process.argv[3];
+const modelId = process.argv[3];
 
-if (!taskId || !modelName) {
-    console.error('Usage: node ingest.js <taskId> <modelName>');
+if (!taskId || !modelId) {
+    console.error('Usage: node ingest.js <taskId> <modelId>');
     process.exit(1);
 }
 
@@ -26,12 +26,12 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error(`[Ingest Fatal Error] Unhandled Rejection at: ${promise}, reason: ${reason}`);
 });
 
-process.stderr.write(`[Ingest] Started for Task: ${taskId}, Model: ${modelName}\n`);
+process.stderr.write(`[Ingest] Started for Task: ${taskId}, Model: ${modelId}\n`);
 
 // Get run_id
-const run = db.prepare('SELECT id FROM model_runs WHERE task_id = ? AND model_name = ?').get(taskId, modelName);
+const run = db.prepare('SELECT id FROM model_runs WHERE task_id = ? AND model_id = ?').get(taskId, modelId);
 if (!run) {
-    console.error(`Run not found for ${taskId} - ${modelName}`);
+    console.error(`Run not found for ${taskId} - ${modelId}`);
     process.exit(1);
 }
 const runId = run.id;
@@ -294,7 +294,7 @@ rl.on('line', (line) => {
                         stats.outputTokens = obj.usage.output_tokens || 0;
                         stats.cacheReadTokens = obj.usage.cache_read_input_tokens || 0;
                     }
-                    process.stderr.write(`[Ingest] Received full result for ${modelName}\n`);
+                    process.stderr.write(`[Ingest] Received full result for ${modelId}\n`);
                 }
                 if (obj.type === 'user') stats.turns++;
                 if (obj.type === 'tool_use') {

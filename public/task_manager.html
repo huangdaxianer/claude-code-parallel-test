@@ -1070,30 +1070,16 @@
                     <input type="hidden" id="m-id">
 
                     <div class="form-group" style="margin-bottom: 1rem;">
-                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">模型名称 (必填)</label>
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">接入点名称 (Endpoint Name)
+                            (必填)</label>
                         <input type="text" id="m-name" class="filter-input" style="width:100%" required
-                            placeholder="例如：potato">
+                            placeholder="例如：claude-3-5-sonnet-20241022">
                     </div>
 
                     <div class="form-group" style="margin-bottom: 1rem;">
                         <label style="display:block; margin-bottom:0.5rem; font-weight:500;">模型备注</label>
                         <input type="text" id="m-desc" class="filter-input" style="width:100%"
                             placeholder="例如：这是基于 GPT-4o 的模型">
-                    </div>
-
-                    <div class="form-group" style="margin-bottom: 1rem;">
-                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">角色启用设置</label>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
-                            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                                <input type="checkbox" id="m-enabled-internal" checked> 内部评测
-                            </label>
-                            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                                <input type="checkbox" id="m-enabled-external" checked> 外部评测
-                            </label>
-                            <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                                <input type="checkbox" id="m-enabled-admin" checked> 管理员
-                            </label>
-                        </div>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 1.5rem;">

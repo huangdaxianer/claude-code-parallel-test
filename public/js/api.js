@@ -62,11 +62,11 @@
     /**
      * 控制任务 (启动/停止)
      */
-    App.api.controlTask = async function (taskId, action, modelName) {
+    App.api.controlTask = async function (taskId, action, modelId) {
         const res = await fetch(`/api/tasks/${taskId}/${action}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ modelName })
+            body: JSON.stringify({ modelId })
         });
         return res.json();
     };
@@ -120,8 +120,8 @@
     /**
      * 检查反馈
      */
-    App.api.checkFeedback = async function (taskId, modelName) {
-        const res = await fetch(`/api/feedback/check?taskId=${taskId}&modelName=${encodeURIComponent(modelName)}`, {
+    App.api.checkFeedback = async function (taskId, modelId) {
+        const res = await fetch(`/api/feedback/check?taskId=${taskId}&modelId=${encodeURIComponent(modelId)}`, {
             headers: App.api.getAuthHeaders()
         });
         return res.json();
@@ -130,14 +130,14 @@
     /**
      * 提交反馈
      */
-    App.api.submitFeedback = async function (taskId, modelName, responses) {
+    App.api.submitFeedback = async function (taskId, modelId, responses) {
         const res = await fetch('/api/feedback/submit', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...App.api.getAuthHeaders()
             },
-            body: JSON.stringify({ taskId, modelName, responses })
+            body: JSON.stringify({ taskId, modelId, responses })
         });
         return res.json();
     };
@@ -145,14 +145,14 @@
     /**
      * 启动预览
      */
-    App.api.startPreview = async function (taskId, modelName) {
+    App.api.startPreview = async function (taskId, modelId) {
         const res = await fetch('/api/preview/start', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...App.api.getAuthHeaders()
             },
-            body: JSON.stringify({ taskId, modelName })
+            body: JSON.stringify({ taskId, modelId })
         });
         return res.json();
     };
@@ -160,8 +160,8 @@
     /**
      * 获取预览状态
      */
-    App.api.getPreviewStatus = async function (taskId, modelName) {
-        const res = await fetch(`/api/preview/status/${taskId}/${modelName}`, {
+    App.api.getPreviewStatus = async function (taskId, modelId) {
+        const res = await fetch(`/api/preview/status/${taskId}/${modelId}`, {
             headers: App.api.getAuthHeaders()
         });
         return res.json();
@@ -170,14 +170,14 @@
     /**
      * 停止预览
      */
-    App.api.stopPreview = async function (taskId, modelName) {
+    App.api.stopPreview = async function (taskId, modelId) {
         const res = await fetch('/api/preview/stop', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...App.api.getAuthHeaders()
             },
-            body: JSON.stringify({ taskId, modelName })
+            body: JSON.stringify({ taskId, modelId })
         });
         return res.json();
     };
@@ -213,8 +213,8 @@
     /**
      * Get comments
      */
-    App.api.getComments = async function (taskId, modelName) {
-        const res = await fetch(`/api/comments?taskId=${taskId}&modelName=${encodeURIComponent(modelName)}`);
+    App.api.getComments = async function (taskId, modelId) {
+        const res = await fetch(`/api/comments?taskId=${taskId}&modelId=${encodeURIComponent(modelId)}`);
         if (!res.ok) throw new Error('Failed to fetch comments');
         return await res.json();
     };
@@ -261,10 +261,10 @@
     App.api.addUserFeedback = async function (data) {
         const formData = new FormData();
         formData.append('taskId', data.taskId);
-        formData.append('modelName', data.modelName || '');
+        formData.append('modelId', data.modelId || '');
         if (data.userId) formData.append('userId', data.userId);
         formData.append('content', data.content);
-        
+
         // Append images if any
         if (data.images && data.images.length > 0) {
             for (const file of data.images) {

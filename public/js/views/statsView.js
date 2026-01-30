@@ -113,14 +113,15 @@
             const stats = App.stats.calculateRunStats(run);
 
             let actionButtons = '';
+            // Use modelId for API calls, but modelName for display
             if (run.status === 'pending') {
-                actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model="${run.modelName}" style="background: #dcfce7; color: #166534; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">启动</button>`;
+                actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model-id="${run.modelId}" style="background: #dcfce7; color: #166534; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">启动</button>`;
             } else if (run.status === 'stopped') {
-                actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model="${run.modelName}" style="background: #dcfce7; color: #166534; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">重启</button>`;
+                actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model-id="${run.modelId}" style="background: #dcfce7; color: #166534; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">重启</button>`;
             } else if (run.status === 'running') {
-                actionButtons = `<button class="btn-xs action-btn" data-action="stop" data-model="${run.modelName}" style="background: #ffedd5; color: #9a3412; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">中止</button>`;
+                actionButtons = `<button class="btn-xs action-btn" data-action="stop" data-model-id="${run.modelId}" style="background: #ffedd5; color: #9a3412; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">中止</button>`;
             } else if (run.status === 'completed' && (run.previewable === 'static' || run.previewable === 'dynamic')) {
-                actionButtons = `<button class="btn-xs action-btn" data-action="preview" data-model="${run.modelName}" style="background: #dbeafe; color: #1e40af; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">预览</button>`;
+                actionButtons = `<button class="btn-xs action-btn" data-action="preview" data-model-id="${run.modelId}" style="background: #dbeafe; color: #1e40af; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">预览</button>`;
             }
 
             const tr = document.createElement('tr');
@@ -153,16 +154,16 @@
     /**
      * 控制任务
      */
-    App.stats.controlTask = async function (action, modelName) {
+    App.stats.controlTask = async function (action, modelId) {
         if (!App.state.currentTaskId) {
             console.log('[controlTask] No currentTaskId');
             return;
         }
 
-        console.log(`[controlTask] Action: ${action}, TaskId: ${App.state.currentTaskId}, Model: ${modelName}`);
+        console.log(`[controlTask] Action: ${action}, TaskId: ${App.state.currentTaskId}, ModelId: ${modelId}`);
 
         try {
-            const data = await App.api.controlTask(App.state.currentTaskId, action, modelName);
+            const data = await App.api.controlTask(App.state.currentTaskId, action, modelId);
             console.log(`[controlTask] Response:`, data);
             if (data.error) {
                 alert(data.error);
@@ -178,9 +179,9 @@
     /**
      * 从统计视图预览
      */
-    App.stats.previewFromStats = function (modelName) {
+    App.stats.previewFromStats = function (modelId) {
         App.state.isStatsMode = false;
-        App.loadTask(App.state.currentTaskId, true, modelName, 'preview');
+        App.loadTask(App.state.currentTaskId, true, modelId, 'preview');
     };
 
     // 全局快捷方式
@@ -199,13 +200,13 @@
                 e.stopPropagation();
 
                 const action = btn.dataset.action;
-                const model = btn.dataset.model;
-                console.log('[StatsTable] Button clicked, action:', action, 'model:', model);
+                const modelId = btn.dataset.modelId;
+                console.log('[StatsTable] Button clicked, action:', action, 'modelId:', modelId);
 
                 if (action === 'preview') {
-                    if (model) App.stats.previewFromStats(model);
+                    if (modelId) App.stats.previewFromStats(modelId);
                 } else if (action === 'start' || action === 'stop') {
-                    App.stats.controlTask(action, model);
+                    App.stats.controlTask(action, modelId);
                 }
             });
             console.log('[StatsTable] Event delegation setup complete');

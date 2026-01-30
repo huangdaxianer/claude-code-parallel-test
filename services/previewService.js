@@ -395,16 +395,16 @@ function ensureIsolatedPath(originalPath) {
 /**
  * 准备预览环境 (Background Preparation)
  * @param {string} taskId
- * @param {string} modelName
+ * @param {string} modelId
  */
-async function preparePreview(taskId, modelName) {
-    const projectPath = path.join(config.TASKS_DIR, taskId, modelName);
-    const folderName = `${taskId}/${modelName}`;
+async function preparePreview(taskId, modelId) {
+    const projectPath = path.join(config.TASKS_DIR, taskId, modelId);
+    const folderName = `${taskId}/${modelId}`;
 
     console.log(`[PreviewPrep] Starting preparation for ${folderName}`);
 
     // Update status to preparing
-    db.prepare("UPDATE model_runs SET previewable = 'preparing' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+    db.prepare("UPDATE model_runs SET previewable = 'preparing' WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
 
     try {
         // 1. Ensure Isolation
@@ -421,7 +421,7 @@ async function preparePreview(taskId, modelName) {
 
         if (files.length === 0 || (files.length === 1 && files[0] === '.DS_Store')) {
             console.log(`[PreviewPrep] Project empty: ${folderName}`);
-            db.prepare("UPDATE model_runs SET previewable = 'unpreviewable' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+            db.prepare("UPDATE model_runs SET previewable = 'unpreviewable' WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
             return;
         }
 
@@ -449,7 +449,7 @@ async function preparePreview(taskId, modelName) {
 
         if (isStatic) {
             console.log(`[PreviewPrep] Identified as Static: ${folderName}`);
-            db.prepare("UPDATE model_runs SET previewable = 'static' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+            db.prepare("UPDATE model_runs SET previewable = 'static' WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
             return;
         }
 
@@ -482,7 +482,7 @@ async function preparePreview(taskId, modelName) {
         // Spawn Claude Code
         const args = [
             '--model', 'tomato',
-            '--allowedTools', 'Read(./**),Edit(./**),Bash(./**)',
+            '--allowedTools', 'Read(./**),Edit(./**),Bash(.**)',
             '--disallowedTools', 'EnterPlanMode,ExitPlanMode',
             '--dangerously-skip-permissions',
             '--verbose'
@@ -539,15 +539,15 @@ async function preparePreview(taskId, modelName) {
         const runScriptPath = path.join(isolatedPath, 'run_server.sh');
         if (fs.existsSync(runScriptPath)) {
             console.log(`[PreviewPrep] Preparation successful, run_server.sh found: ${folderName}`);
-            db.prepare("UPDATE model_runs SET previewable = 'dynamic' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+            db.prepare("UPDATE model_runs SET previewable = 'dynamic' WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
         } else {
             console.log(`[PreviewPrep] Preparation failed, no run_server.sh: ${folderName}`);
-            db.prepare("UPDATE model_runs SET previewable = 'unpreviewable' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+            db.prepare("UPDATE model_runs SET previewable = 'unpreviewable' WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
         }
 
     } catch (e) {
         console.error(`[PreviewPrep] Error during preparation: ${e.message}`, e);
-        db.prepare("UPDATE model_runs SET previewable = 'unpreviewable' WHERE task_id = ? AND model_name = ?").run(taskId, modelName);
+        db.prepare("UPDATE model_runs SET previewable = 'unpreviewable' WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
     }
 }
 

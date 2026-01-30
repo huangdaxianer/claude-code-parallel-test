@@ -57,7 +57,7 @@ db.exec(`
     CREATE TABLE IF NOT EXISTS model_runs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id TEXT,
-        model_name TEXT,
+        model_id TEXT,
         status TEXT,
         duration REAL,
         turns INTEGER,
@@ -70,7 +70,7 @@ db.exec(`
         count_bash INTEGER,
         previewable TEXT, -- 'static', 'dynamic', 'preparing', 'unpreviewable'
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(task_id, model_name),
+        UNIQUE(task_id, model_id),
         FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
     );
 
@@ -110,7 +110,7 @@ db.exec(`
     CREATE TABLE IF NOT EXISTS feedback_responses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id TEXT NOT NULL,
-        model_name TEXT NOT NULL,
+        model_id TEXT NOT NULL,
         question_id INTEGER NOT NULL,
         score INTEGER,
         comment TEXT,
@@ -122,7 +122,7 @@ db.exec(`
     CREATE TABLE IF NOT EXISTS feedback_comments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id TEXT NOT NULL,
-        model_name TEXT NOT NULL,
+        model_id TEXT NOT NULL,
         user_id INTEGER,
         target_type TEXT NOT NULL, -- 'trajectory' or 'artifact'
         target_ref TEXT, -- run_id for trajectory, file_path for artifact
@@ -136,7 +136,7 @@ db.exec(`
     CREATE TABLE IF NOT EXISTS user_feedback (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id TEXT NOT NULL,
-        model_name TEXT NOT NULL,
+        model_id TEXT NOT NULL,
         user_id INTEGER,
         content TEXT NOT NULL,
         images TEXT, -- JSON array of image paths
@@ -146,11 +146,9 @@ db.exec(`
 
     CREATE TABLE IF NOT EXISTS model_configs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
+        model_id TEXT UNIQUE NOT NULL,
+        endpoint_name TEXT UNIQUE NOT NULL,
         description TEXT,
-        is_enabled_internal INTEGER DEFAULT 1,
-        is_enabled_external INTEGER DEFAULT 1,
-        is_enabled_admin INTEGER DEFAULT 1,
         is_default_checked INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -168,17 +166,17 @@ db.exec(`
         FOREIGN KEY(group_id) REFERENCES user_groups(id) ON DELETE CASCADE
     );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_task_model_question ON feedback_responses(task_id, model_name, question_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_task_model_question ON feedback_responses(task_id, model_id, question_id);
     CREATE INDEX IF NOT EXISTS idx_queue_status ON task_queue(status);
-    CREATE INDEX IF NOT EXISTS idx_feedback_task_model ON feedback_responses(task_id, model_name);
+    CREATE INDEX IF NOT EXISTS idx_feedback_task_model ON feedback_responses(task_id, model_id);
     CREATE INDEX IF NOT EXISTS idx_user_feedback_task_id ON user_feedback(task_id);
 
     -- GSB 打分功能表
     CREATE TABLE IF NOT EXISTS gsb_jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        model_a TEXT NOT NULL,
-        model_b TEXT NOT NULL,
+        model_a_id TEXT NOT NULL,
+        model_b_id TEXT NOT NULL,
         user_id INTEGER,
         status TEXT DEFAULT 'scoring',
         total_count INTEGER DEFAULT 0,
@@ -280,24 +278,72 @@ try {
     console.error('[DB] Migration error:', e.message);
 }
 
-// Seed initial models
+// Migration: Add model_id and endpoint_name columns to model_configs if they don't exist
+try { db.exec("ALTER TABLE model_configs ADD COLUMN model_id TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE model_configs ADD COLUMN endpoint_name TEXT"); } catch (e) { }
+
+// Migration: Add model_id column to related tables (replacing model_name)
+try { db.exec("ALTER TABLE model_runs ADD COLUMN model_id TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE feedback_responses ADD COLUMN model_id TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE feedback_comments ADD COLUMN model_id TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE user_feedback ADD COLUMN model_id TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE gsb_jobs ADD COLUMN model_a_id TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE gsb_jobs ADD COLUMN model_b_id TEXT"); } catch (e) { }
+
+// Helper function to generate 5-character model ID
+function generateModelId() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 5; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
+
+// Migration: Generate model_id for existing models that don't have one
 try {
-    const modelCount = db.prepare("SELECT COUNT(*) as count FROM model_configs").get().count;
-    if (modelCount === 0) {
-        const initialModels = ['potato', 'tomato', 'strawberry', 'watermelon', 'banana', 'avocado', 'cherry', 'pineapple'];
-        const stmt = db.prepare("INSERT INTO model_configs (name, description, is_enabled_internal, is_enabled_external, is_enabled_admin, is_default_checked) VALUES (?, ?, 1, 1, 1, 1)");
-        for (const model of initialModels) {
-            stmt.run(model, `${model} model`);
+    const modelsWithoutId = db.prepare("SELECT id, name FROM model_configs WHERE model_id IS NULL OR model_id = ''").all();
+    if (modelsWithoutId.length > 0) {
+        const updateStmt = db.prepare("UPDATE model_configs SET model_id = ?, endpoint_name = COALESCE(endpoint_name, name) WHERE id = ?");
+        for (const model of modelsWithoutId) {
+            let modelId;
+            // Generate unique model_id
+            do {
+                modelId = generateModelId();
+            } while (db.prepare("SELECT 1 FROM model_configs WHERE model_id = ?").get(modelId));
+
+            updateStmt.run(modelId, model.id);
         }
-        console.log(`[DB] Seeded ${initialModels.length} initial models`);
+        console.log(`[DB] Generated model_id for ${modelsWithoutId.length} existing models`);
     }
 } catch (e) {
-    console.error('[DB] Seeding error:', e.message);
+    console.error('[DB] Model ID migration error:', e.message);
+}
+
+// Migration: Update model_id in related tables based on model_name
+try {
+    // For model_runs: update model_id based on model_name
+    const runsToMigrate = db.prepare(`
+        SELECT mr.id, mr.model_name, mc.model_id 
+        FROM model_runs mr 
+        LEFT JOIN model_configs mc ON mc.name = mr.model_name OR mc.endpoint_name = mr.model_name
+        WHERE mr.model_id IS NULL AND mr.model_name IS NOT NULL AND mc.model_id IS NOT NULL
+    `).all();
+
+    if (runsToMigrate.length > 0) {
+        const updateStmt = db.prepare("UPDATE model_runs SET model_id = ? WHERE id = ?");
+        for (const run of runsToMigrate) {
+            updateStmt.run(run.model_id, run.id);
+        }
+        console.log(`[DB] Migrated model_id for ${runsToMigrate.length} model_runs`);
+    }
+} catch (e) {
+    console.error('[DB] Model runs migration error:', e.message);
 }
 
 // Initialize model_group_settings for all model/group combinations that don't exist
 try {
-    const models = db.prepare("SELECT id, is_default_checked FROM model_configs").all();
+    const models = db.prepare("SELECT id, model_id, is_default_checked FROM model_configs WHERE model_id IS NOT NULL").all();
     const groups = db.prepare("SELECT id FROM user_groups").all();
 
     const insertStmt = db.prepare(`

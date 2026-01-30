@@ -293,7 +293,7 @@ router.post('/', (req, res) => {
         const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir, user_id) VALUES (?, ?, ?, ?, ?)');
         insertTask.run(task.taskId, task.title, task.prompt, task.baseDir, task.userId || null);
 
-        const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_name, status) VALUES (?, ?, ?)');
+        const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_id, status) VALUES (?, ?, ?)');
         const models = Array.isArray(task.models) ? task.models : [];
         console.log(`[Task Create] Inserting ${models.length} model runs: ${models.join(', ')}`);
         const insertManyRuns = db.transaction((taskId, modelList) => {
@@ -334,19 +334,21 @@ router.post('/', (req, res) => {
 // 停止任务
 router.post('/:taskId/stop', async (req, res) => {
     const { taskId } = req.params;
-    const { modelName } = req.body || {};
+    const { modelId } = req.body || {};
 
-    if (modelName) {
-        console.log(`[Control] Stopping model ${modelName} for task ${taskId}`);
+    if (modelId) {
+        // Use model_id for folder naming
+        const folderName = modelId;
+        console.log(`[Control] Stopping model ${modelId} for task ${taskId}`);
 
-        const modelDir = path.join(config.TASKS_DIR, taskId, modelName);
+        const modelDir = path.join(config.TASKS_DIR, taskId, folderName);
         try {
             try {
                 execSync(`pkill -9 -f "${modelDir}" 2>/dev/null || true`, { timeout: 5000 });
             } catch (e) { /* ignore */ }
 
             try {
-                const pids = execSync(`ps aux | grep -E "claude.*${taskId}.*${modelName}" | grep -v grep | awk '{print $2}'`, { timeout: 5000 }).toString().trim();
+                const pids = execSync(`ps aux | grep -E "claude.*${taskId}.*${folderName}" | grep -v grep | awk '{print $2}'`, { timeout: 5000 }).toString().trim();
                 if (pids) {
                     pids.split('\n').forEach(pid => {
                         if (pid) {
@@ -357,18 +359,18 @@ router.post('/:taskId/stop', async (req, res) => {
             } catch (e) { /* ignore */ }
 
             try {
-                execSync(`pkill -9 -f "ingest.js ${taskId} ${modelName}" 2>/dev/null || true`, { timeout: 5000 });
+                execSync(`pkill -9 -f "ingest.js ${taskId} ${folderName}" 2>/dev/null || true`, { timeout: 5000 });
             } catch (e) { /* ignore */ }
 
-            console.log(`[Control] Kill commands executed for model ${modelName}`);
+            console.log(`[Control] Kill commands executed for model ${modelId}`);
         } catch (e) {
-            console.log(`[Control] pkill for model ${modelName} completed (may have found no processes)`);
+            console.log(`[Control] pkill for model ${modelId} completed (may have found no processes)`);
         }
 
         try {
-            db.prepare("UPDATE model_runs SET status = 'stopped' WHERE task_id = ? AND model_name = ? AND status = 'running'").run(taskId, modelName);
+            db.prepare("UPDATE model_runs SET status = 'stopped' WHERE task_id = ? AND model_id = ? AND status = 'running'").run(taskId, modelId);
 
-            const subtaskKey = `${taskId}/${modelName}`;
+            const subtaskKey = `${taskId}/${modelId}`;
             delete activeSubtaskProcesses[subtaskKey];
 
             checkAndUpdateTaskStatus(taskId);
@@ -420,28 +422,28 @@ router.post('/:taskId/stop', async (req, res) => {
 // 启动任务 (重试/恢复)
 router.post('/:taskId/start', (req, res) => {
     const { taskId } = req.params;
-    const { modelName } = req.body || {};
-    console.log(`[Control] Starting task ${taskId}${modelName ? ` for model ${modelName}` : ''}`);
+    const { modelId } = req.body || {};
+    console.log(`[Control] Starting task ${taskId}${modelId ? ` for model ${modelId}` : ''}`);
 
     try {
-        if (modelName) {
-            console.log(`[Control] Restarting model ${modelName} for task ${taskId}`);
+        if (modelId) {
+            console.log(`[Control] Restarting model ${modelId} for task ${taskId}`);
 
-            const modelRun = db.prepare("SELECT id, status FROM model_runs WHERE task_id = ? AND model_name = ?").get(taskId, modelName);
+            const modelRun = db.prepare("SELECT id, status FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId);
             if (!modelRun) {
-                console.log(`[Control] Model ${modelName} not found`);
-                return res.status(404).json({ error: `Model ${modelName} not found for task ${taskId}` });
+                console.log(`[Control] Model ${modelId} not found`);
+                return res.status(404).json({ error: `Model ${modelId} not found for task ${taskId}` });
             }
 
             if (modelRun.status === 'running') {
-                console.log(`[Control] Model ${modelName} is still running`);
-                return res.status(400).json({ error: `Model ${modelName} is already running` });
+                console.log(`[Control] Model ${modelId} is still running`);
+                return res.status(400).json({ error: `Model ${modelId} is already running` });
             }
 
-            console.log(`[Control] Model ${modelName} found with id ${modelRun.id}, status: ${modelRun.status}`);
+            console.log(`[Control] Model ${modelId} found with id ${modelRun.id}, status: ${modelRun.status}`);
 
             const deleteResult = db.prepare("DELETE FROM log_entries WHERE run_id = ?").run(modelRun.id);
-            console.log(`[Control] Deleted ${deleteResult.changes} log entries for model ${modelName}`);
+            console.log(`[Control] Deleted ${deleteResult.changes} log entries for model ${modelId}`);
 
             db.prepare(`
                 UPDATE model_runs SET 
@@ -457,11 +459,13 @@ router.post('/:taskId/start', (req, res) => {
                     count_bash = NULL,
                     previewable = 0,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE task_id = ? AND model_name = ?
-            `).run(taskId, modelName);
-            console.log(`[Control] Reset model run stats for ${modelName}`);
+                WHERE task_id = ? AND model_id = ?
+            `).run(taskId, modelId);
+            console.log(`[Control] Reset model run stats for ${modelId}`);
 
-            const modelDir = path.join(config.TASKS_DIR, taskId, modelName);
+            // Use model_id for folder naming
+            const folderName = modelId;
+            const modelDir = path.join(config.TASKS_DIR, taskId, folderName);
             console.log(`[Control] Checking model directory: ${modelDir}`);
             if (fs.existsSync(modelDir)) {
                 fs.rmSync(modelDir, { recursive: true, force: true });
@@ -470,7 +474,7 @@ router.post('/:taskId/start', (req, res) => {
                 console.log(`[Control] Model directory does not exist: ${modelDir}`);
             }
 
-            const logFile = path.join(config.TASKS_DIR, taskId, 'logs', `${modelName}.txt`);
+            const logFile = path.join(config.TASKS_DIR, taskId, 'logs', `${folderName}.txt`);
             console.log(`[Control] Checking log file: ${logFile}`);
             if (fs.existsSync(logFile)) {
                 fs.unlinkSync(logFile);
@@ -598,10 +602,11 @@ router.post('/batch', upload.single('file'), (req, res) => {
         const content = fs.readFileSync(req.file.path, 'utf8');
         const lines = content.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
 
-        const baseModels = db.prepare('SELECT name FROM model_configs WHERE is_enabled_internal = 1').all().map(m => m.name);
+        // Get enabled models using model_id
+        const baseModels = db.prepare('SELECT model_id FROM model_configs WHERE model_id IS NOT NULL').all().map(m => m.model_id);
 
         const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir) VALUES (?, ?, ?, ?)');
-        const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_name, status) VALUES (?, ?, ?)');
+        const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_id, status) VALUES (?, ?, ?)');
         const insertQueue = db.prepare("INSERT INTO task_queue (task_id, status) VALUES (?, 'pending')");
 
         const processBatch = db.transaction((lines) => {
