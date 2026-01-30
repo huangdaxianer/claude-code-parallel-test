@@ -549,7 +549,7 @@ export const UI = {
                     <div style="display: flex; align-items: center; gap: 1rem;">
                         <span class="timestamp">${formatDateTime(model.created_at)}</span>
                         <div class="action-buttons">
-                            <button class="action-btn action-btn-delete" data-action="delete-model" data-id="${model.id}" data-name="${escapeHtml(model.name)}" onclick="event.stopPropagation()">删除</button>
+                            <button class="action-btn action-btn-delete" data-action="delete-model" data-id="${model.id}" data-name="${escapeHtml(model.name)}">删除</button>
                         </div>
                     </div>
                 </div>

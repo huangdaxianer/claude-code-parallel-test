@@ -628,7 +628,7 @@ router.post('/models', express.json(), (req, res) => {
 
 // 更新模型 (Admin)
 router.put('/models/:id', express.json(), (req, res) => {
-    const { id } = req.params;
+    const { id } = req.params; // This is the model_id string
     const { endpoint_name, description, is_default_checked } = req.body;
 
     try {
@@ -649,7 +649,7 @@ router.put('/models/:id', express.json(), (req, res) => {
         }
 
         params.push(id);
-        const sql = `UPDATE model_configs SET ${updates.join(', ')} WHERE id = ?`;
+        const sql = `UPDATE model_configs SET ${updates.join(', ')} WHERE model_id = ?`;
         const result = db.prepare(sql).run(...params);
 
         if (result.changes === 0) {
@@ -668,9 +668,9 @@ router.put('/models/:id', express.json(), (req, res) => {
 
 // 删除模型 (Admin)
 router.delete('/models/:id', (req, res) => {
-    const { id } = req.params;
+    const { id } = req.params; // This is the model_id string
     try {
-        const result = db.prepare('DELETE FROM model_configs WHERE id = ?').run(id);
+        const result = db.prepare('DELETE FROM model_configs WHERE model_id = ?').run(id);
         if (result.changes === 0) {
             return res.status(404).json({ error: 'Model config not found' });
         }

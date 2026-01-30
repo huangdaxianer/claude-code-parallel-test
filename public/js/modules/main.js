@@ -509,7 +509,7 @@ async function handleModelSubmit(e) {
 }
 
 async function deleteModel(id, name) {
-    if (!confirm(`确定要删除模型 "${name}" 吗？`)) return;
+    // if (!confirm(`确定要删除模型 "${name}" 吗？`)) return;
     try {
         await TaskAPI.deleteModel(id);
         fetchModels();
