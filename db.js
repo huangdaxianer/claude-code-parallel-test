@@ -302,19 +302,24 @@ function generateModelId() {
 
 // Migration: Generate model_id for existing models that don't have one
 try {
-    const modelsWithoutId = db.prepare("SELECT id, name FROM model_configs WHERE model_id IS NULL OR model_id = ''").all();
-    if (modelsWithoutId.length > 0) {
-        const updateStmt = db.prepare("UPDATE model_configs SET model_id = ?, endpoint_name = COALESCE(endpoint_name, name) WHERE id = ?");
-        for (const model of modelsWithoutId) {
-            let modelId;
-            // Generate unique model_id
-            do {
-                modelId = generateModelId();
-            } while (db.prepare("SELECT 1 FROM model_configs WHERE model_id = ?").get(modelId));
+    const tableInfo = db.prepare("PRAGMA table_info(model_configs)").all();
+    const hasNameCol = tableInfo.some(col => col.name === 'name');
 
-            updateStmt.run(modelId, model.id);
+    // Only run if we can select something meaningful or if we need to migrate
+    // If name column is missing, we assume endpoint_name is the source of truth or it is empty
+    if (hasNameCol) {
+        const modelsWithoutId = db.prepare("SELECT id, name FROM model_configs WHERE model_id IS NULL OR model_id = ''").all();
+        if (modelsWithoutId.length > 0) {
+            const updateStmt = db.prepare("UPDATE model_configs SET model_id = ?, endpoint_name = COALESCE(endpoint_name, name) WHERE id = ?");
+            for (const model of modelsWithoutId) {
+                let modelId;
+                do {
+                    modelId = generateModelId();
+                } while (db.prepare("SELECT 1 FROM model_configs WHERE model_id = ?").get(modelId));
+                updateStmt.run(modelId, model.id);
+            }
+            console.log(`[DB] Generated model_id for ${modelsWithoutId.length} existing models`);
         }
-        console.log(`[DB] Generated model_id for ${modelsWithoutId.length} existing models`);
     }
 } catch (e) {
     console.error('[DB] Model ID migration error:', e.message);
@@ -322,20 +327,27 @@ try {
 
 // Migration: Update model_id in related tables based on model_name
 try {
-    // For model_runs: update model_id based on model_name
-    const runsToMigrate = db.prepare(`
-        SELECT mr.id, mr.model_name, mc.model_id 
-        FROM model_runs mr 
-        LEFT JOIN model_configs mc ON mc.name = mr.model_name OR mc.endpoint_name = mr.model_name
-        WHERE mr.model_id IS NULL AND mr.model_name IS NOT NULL AND mc.model_id IS NOT NULL
-    `).all();
+    // Check if model_runs has model_name column (it might not if fresh schema used create table without it?)
+    // Wait, CREATE TABLE model_runs (step 777) does NOT have model_name.
+    // So this migration script will fail on db.prepare if model_name is missing.
+    const mrInfo = db.prepare("PRAGMA table_info(model_runs)").all();
+    const mrHasModelName = mrInfo.some(col => col.name === 'model_name');
 
-    if (runsToMigrate.length > 0) {
-        const updateStmt = db.prepare("UPDATE model_runs SET model_id = ? WHERE id = ?");
-        for (const run of runsToMigrate) {
-            updateStmt.run(run.model_id, run.id);
+    if (mrHasModelName) {
+        const runsToMigrate = db.prepare(`
+            SELECT mr.id, mr.model_name, mc.model_id 
+            FROM model_runs mr 
+            LEFT JOIN model_configs mc ON mc.endpoint_name = mr.model_name
+            WHERE mr.model_id IS NULL AND mr.model_name IS NOT NULL AND mc.model_id IS NOT NULL
+        `).all();
+
+        if (runsToMigrate.length > 0) {
+            const updateStmt = db.prepare("UPDATE model_runs SET model_id = ? WHERE id = ?");
+            for (const run of runsToMigrate) {
+                updateStmt.run(run.model_id, run.id);
+            }
+            console.log(`[DB] Migrated model_id for ${runsToMigrate.length} model_runs`);
         }
-        console.log(`[DB] Migrated model_id for ${runsToMigrate.length} model_runs`);
     }
 } catch (e) {
     console.error('[DB] Model runs migration error:', e.message);

@@ -605,13 +605,12 @@ router.post('/models', express.json(), (req, res) => {
         } while (db.prepare("SELECT 1 FROM model_configs WHERE model_id = ?").get(modelId));
 
         const stmt = db.prepare(`
-            INSERT INTO model_configs (model_id, endpoint_name, name, description, is_default_checked)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO model_configs (model_id, endpoint_name, description, is_default_checked)
+            VALUES (?, ?, ?, ?)
         `);
         const result = stmt.run(
             modelId,
             endpoint_name,
-            endpoint_name, // Sync name with endpoint_name for legacy compatibility
             description || '',
             is_default_checked ? 1 : 0
         );
@@ -637,8 +636,6 @@ router.put('/models/:id', express.json(), (req, res) => {
 
         if (endpoint_name !== undefined) {
             updates.push('endpoint_name = ?');
-            params.push(endpoint_name);
-            updates.push('name = ?'); // Sync name with endpoint_name
             params.push(endpoint_name);
         }
         if (description !== undefined) { updates.push('description = ?'); params.push(description); }
