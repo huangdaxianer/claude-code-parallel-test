@@ -480,15 +480,16 @@ async function preparePreview(taskId, modelId) {
         const fullPrompt = `${promptContent}\n\nCurrent File Structure:\n${fileStructure}`;
 
         // Spawn Claude Code
+        const previewModel = process.env.PREVIEW_PREPARATION_MODEL || process.env.ANTHROPIC_MODEL || 'tomato';
         const args = [
-            '--model', 'tomato',
+            '--model', previewModel,
             '--allowedTools', 'Read(./**),Edit(./**),Bash(.**)',
             '--disallowedTools', 'EnterPlanMode,ExitPlanMode',
             '--dangerously-skip-permissions',
             '--verbose'
         ];
 
-        console.log(`[PreviewPrep] Spawning Claude: ${claudeBin} ${args.join(' ')}`);
+        console.log(`[PreviewPrep] Spawning Claude with model '${previewModel}': ${claudeBin} ${args.join(' ')}`);
 
         // Check isolation
         let useIsolation = false;
@@ -509,7 +510,9 @@ async function preparePreview(taskId, modelId) {
             spawnCmd = 'sudo';
             const envVars = [
                 `PATH=${process.env.PATH}`,
-                `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY || ''}`,
+                `ANTHROPIC_AUTH_TOKEN=${process.env.ANTHROPIC_AUTH_TOKEN || ''}`,
+                `ANTHROPIC_BASE_URL=${process.env.ANTHROPIC_BASE_URL || ''}`,
+                `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC || ''}`,
                 `CI=true`
             ];
             spawnArgs = ['-n', '-H', '-u', 'claude-user', 'env', ...envVars, claudeBin, ...args];

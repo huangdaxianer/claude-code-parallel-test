@@ -106,14 +106,6 @@ router.post('/start', async (req, res) => {
     if (previewableStatus === 'unpreviewable') {
         return res.status(400).json({ status: 'unpreviewable', error: 'Project is not previewable' });
     }
-    // If null or unknown, maybe we trigger preparation? But for now assume flow is correct.
-    // Or if legacy task without status, we might need a fallback.
-    // For this refactor, let's stick to the new flow. If null, maybe fallback to old logic or fail.
-    // Let's assume we want to handle the case where it might be null (old task).
-    // If null or unknown, maybe we trigger preparation? But for now assume flow is correct.
-    // Or if legacy task without status, we might need a fallback.
-    // For this refactor, let's stick to the new flow. If null, maybe fallback to old logic or fail.
-    // Let's assume we want to handle the case where it might be null (old task).
     if (!previewableStatus || previewableStatus == 1) {
         // Fallback: Check if completed
         const runStatus = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId)?.status;

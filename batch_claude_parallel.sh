@@ -18,25 +18,16 @@ else
     echo "[Info] Sudo/claude-user 不可用，将在当前用户权限下运行"
 fi
 
-# Load Environment Variables from settings.json
-SETTINGS_FILE="$HOME/.claude/settings.json"
-if [ -f "$SETTINGS_FILE" ]; then
-    echo "[Info] Loading environment variables from $SETTINGS_FILE"
-    # Use node to parse JSON and output export commands
-    VARS=$(node -e "
-        try {
-            const fs = require('fs');
-            const settings = JSON.parse(fs.readFileSync('$SETTINGS_FILE', 'utf8'));
-            if (settings.env) {
-                Object.keys(settings.env).forEach(key => {
-                    console.log(\`export \${key}='\${settings.env[key]}'\`);
-                });
-            }
-        } catch (e) {
-            console.error('Error parsing settings.json:', e.message);
-        }
-    ")
-    eval "$VARS"
+# Load Environment Variables from .env file
+ENV_FILE="$SCRIPT_DIR/.env"
+if [ -f "$ENV_FILE" ]; then
+    echo "[Info] Loading environment variables from $ENV_FILE"
+    # Export all variables from .env file
+    set -a
+    source "$ENV_FILE"
+    set +a
+else
+    echo "[Warning] .env file not found at $ENV_FILE"
 fi
 
 # 修正临时目录权限
@@ -266,12 +257,8 @@ if [ "$USE_ISOLATION" = true ]; then
            CLAUDE_USER_HOME="/home/claude-user"
        fi
     fi
-
-    if [ -d "$HOME/.claude" ]; then
-        sudo -n mkdir -p "$CLAUDE_USER_HOME/.claude"
-        sudo -n cp -R "$HOME/.claude/." "$CLAUDE_USER_HOME/.claude/"
-        sudo -n chown -R claude-user "$CLAUDE_USER_HOME/.claude"
-    fi
+# Note: Environment variables are now loaded from .env file (see above)
+# No need to copy ~/.claude directory to isolation user
 fi
 
 # Main Logic: Check execution mode
