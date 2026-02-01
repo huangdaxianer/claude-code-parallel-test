@@ -24,6 +24,3 @@ temp_uploads/
 # Environment variables
 .env
 server.log
-
-# Sensitive files
-agents.md
