@@ -2,8 +2,6 @@
  * 队列服务
  * 管理任务队列调度和子任务执行
  */
-const { spawn, execSync } = require('child_process');
-const path = require('path');
 const db = require('../db');
 const config = require('../config');
 const previewService = require('./previewService');
@@ -67,17 +65,20 @@ async function processQueue() {
 // 执行单个模型子任务
 function executeSubtask(taskId, modelId, endpointName) {
     const subtaskKey = `${taskId}/${modelId}`;
+    const executorService = require('./executorService');
 
-    // Pass both modelId (for folder naming) and endpointName (for API request) to the script
-    const child = spawn('bash', [config.SCRIPT_FILE, taskId, modelId, endpointName], {
-        env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' },
-        detached: true
-    });
+    let child;
+    try {
+        child = executorService.executeModel(taskId, modelId, endpointName);
+    } catch (err) {
+        console.error(`[Queue] Executor error for ${subtaskKey}:`, err);
+        db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+        checkAndUpdateTaskStatus(taskId);
+        setTimeout(processQueue, 100);
+        return;
+    }
 
     activeSubtaskProcesses[subtaskKey] = child;
-
-    child.stdout.on('data', (data) => console.log(`[Subtask ${subtaskKey} STDOUT] ${data}`));
-    child.stderr.on('data', (data) => console.error(`[Subtask ${subtaskKey} STDERR] ${data}`));
 
     child.on('error', (err) => {
         console.error(`[Subtask ${subtaskKey} ERROR] Failed to spawn process:`, err);
