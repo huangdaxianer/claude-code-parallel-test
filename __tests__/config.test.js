@@ -104,10 +104,5 @@ describe('config module', () => {
             expect(config.TASKS_DIR).toBeDefined();
             expect(typeof config.TASKS_DIR).toBe('string');
         });
-
-        test('SCRIPT_FILE is defined', () => {
-            expect(config.SCRIPT_FILE).toBeDefined();
-            expect(config.SCRIPT_FILE).toContain('batch_claude_parallel.sh');
-        });
     });
 });

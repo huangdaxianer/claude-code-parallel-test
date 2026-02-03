@@ -9,7 +9,6 @@ const path = require('path');
 const TASKS_DIR = path.join(__dirname, '../tasks');
 const UPLOAD_DIR = path.join(TASKS_DIR, 'temp_uploads');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
-const SCRIPT_FILE = path.join(__dirname, 'batch_claude_parallel.sh');
 
 // 默认配置
 const defaultConfig = {
@@ -59,7 +58,6 @@ module.exports = {
     TASKS_DIR,
     UPLOAD_DIR,
     CONFIG_FILE,
-    SCRIPT_FILE,
     TITLE_GEN_API,
     TITLE_GEN_MODEL,
     TITLE_GEN_KEY,

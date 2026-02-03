@@ -358,10 +358,6 @@ router.post('/:taskId/stop', async (req, res) => {
                 }
             } catch (e) { /* ignore */ }
 
-            try {
-                execSync(`pkill -9 -f "ingest.js ${taskId} ${folderName}" 2>/dev/null || true`, { timeout: 5000 });
-            } catch (e) { /* ignore */ }
-
             console.log(`[Control] Kill commands executed for model ${modelId}`);
         } catch (e) {
             console.log(`[Control] pkill for model ${modelId} completed (may have found no processes)`);

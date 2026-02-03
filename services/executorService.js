@@ -327,16 +327,28 @@ function executeModel(taskId, modelId, endpointName) {
     child.stdin.write(prompt);
     child.stdin.end();
 
-    // 管道到 ingest.js
-    const ingestPath = path.join(__dirname, '..', 'ingest.js');
-    const ingestProcess = spawn('node', [ingestPath, taskId, modelId], {
-        stdio: ['pipe', 'inherit', 'inherit']
+    // 使用 IngestHandler 直接处理输出（不再 spawn 独立进程）
+    const { IngestHandler } = require('./ingestHandler');
+    const readline = require('readline');
+
+    let ingestHandler;
+    try {
+        ingestHandler = new IngestHandler(taskId, modelId);
+    } catch (e) {
+        console.error(`[Executor] Failed to create IngestHandler for ${subtaskKey}:`, e.message);
+        child.kill();
+        throw e;
+    }
+
+    // 创建 readline 接口处理 stdout
+    const rl = readline.createInterface({
+        input: child.stdout,
+        terminal: false
     });
 
-    // 连接管道: claude stdout -> tee -> ingest stdin
-    child.stdout.on('data', (data) => {
-        logStream.write(data);
-        ingestProcess.stdin.write(data);
+    rl.on('line', (line) => {
+        logStream.write(line + '\n');
+        ingestHandler.processLine(line);
     });
 
     child.stderr.on('data', (data) => {
@@ -346,11 +358,14 @@ function executeModel(taskId, modelId, endpointName) {
 
     child.on('close', () => {
         logStream.end();
-        ingestProcess.stdin.end();
+        rl.close();
+        if (!ingestHandler.isFinished()) {
+            ingestHandler.finish();
+        }
     });
 
     // 保存进程引用
-    activeProcesses.set(subtaskKey, { child, ingestProcess });
+    activeProcesses.set(subtaskKey, { child, ingestHandler });
 
     // 清理完成时的回调
     child.on('exit', (code, signal) => {
@@ -379,7 +394,9 @@ function cleanup(taskId, modelId) {
         console.log(`[Executor] Cleaning up ${subtaskKey}`);
         try {
             processes.child.kill('SIGTERM');
-            processes.ingestProcess.kill('SIGTERM');
+            if (processes.ingestHandler && !processes.ingestHandler.isFinished()) {
+                processes.ingestHandler.finish();
+            }
         } catch (e) { }
         activeProcesses.delete(subtaskKey);
     }
@@ -393,7 +410,9 @@ function cleanupAll() {
     for (const [key, processes] of activeProcesses) {
         try {
             processes.child.kill('SIGTERM');
-            processes.ingestProcess.kill('SIGTERM');
+            if (processes.ingestHandler && !processes.ingestHandler.isFinished()) {
+                processes.ingestHandler.finish();
+            }
         } catch (e) { }
     }
     activeProcesses.clear();
