@@ -96,6 +96,7 @@
         App.modal.updateStartButtonStyle();
 
         document.getElementById('new-task-modal').classList.add('show');
+        App.modal.loadModels();
     };
 
     /**
