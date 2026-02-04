@@ -14,6 +14,33 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function init() {
+    // Auth Check
+    const savedUserStr = localStorage.getItem('claude_user');
+    if (!savedUserStr) {
+        window.location.href = '/login.html';
+        return;
+    }
+
+    try {
+        const user = JSON.parse(savedUserStr);
+        // Enforce Admin Role
+        if (user.role !== 'admin') {
+            alert('您没有权限访问管理后台');
+            window.location.href = '/task.html';
+            return;
+        }
+
+        // Expose to AppState for filters etc if needed, though main.js uses AppState from state.js
+        // Ideally we should set AppState.currentUser = user; here if state.js doesn't auto-init
+        // But state.js is imported. Let's assume we need to set it simply.
+        if (AppState) AppState.currentUser = user;
+
+    } catch (e) {
+        console.error('Auth error:', e);
+        window.location.href = '/login.html';
+        return;
+    }
+
     // Handle initial tab from URL
     initTabFromURL();
 

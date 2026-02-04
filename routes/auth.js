@@ -29,10 +29,14 @@ router.post('/login', (req, res) => {
 
         if (!user) {
             const result = db.prepare('INSERT INTO users (username) VALUES (?)').run(trimmedUsername);
-            user = { id: Number(result.lastInsertRowid), username: trimmedUsername };
-            console.log(`[Auth] New user created: ${trimmedUsername} (ID: ${user.id})`);
+            // New users get default role (usually 'internal' or 'external' depending on schema default, let's query it back or assume default)
+            // It's safer to query it back to ensure we have the correct role
+            user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(result.lastInsertRowid);
+            console.log(`[Auth] New user created: ${trimmedUsername} (ID: ${user.id}, Role: ${user.role})`);
         } else {
-            console.log(`[Auth] User logged in: ${trimmedUsername} (ID: ${user.id})`);
+            // Ensure we fetch role for existing user too. The previous query only fetched id, username.
+            user = db.prepare('SELECT id, username, role FROM users WHERE username = ?').get(trimmedUsername);
+            console.log(`[Auth] User logged in: ${trimmedUsername} (ID: ${user.id}, Role: ${user.role})`);
         }
 
         return res.json({ success: true, user });
@@ -46,7 +50,7 @@ router.post('/login', (req, res) => {
 router.get('/user/:userId', (req, res) => {
     const { userId } = req.params;
     try {
-        const user = db.prepare('SELECT id, username, created_at FROM users WHERE id = ?').get(userId);
+        const user = db.prepare('SELECT id, username, role, created_at FROM users WHERE id = ?').get(userId);
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }

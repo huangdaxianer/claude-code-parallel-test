@@ -235,6 +235,36 @@
             usernameDisplay.textContent = App.state.currentUser.username;
         }
 
+        // Admin Panel Link
+        if (App.state.currentUser && App.state.currentUser.role === 'admin') {
+            const dropdownMenu = document.getElementById('user-dropdown-menu');
+            if (dropdownMenu && !document.getElementById('admin-panel-link')) {
+                const adminLink = document.createElement('a');
+                adminLink.id = 'admin-panel-link';
+                adminLink.href = '/task_manager.html';
+                adminLink.target = '_blank';
+                adminLink.className = 'user-dropdown-item'; // Use existing class if available or add style
+                adminLink.style.display = 'block';
+                adminLink.style.padding = '0.5rem 1rem';
+                adminLink.style.textDecoration = 'none';
+                adminLink.style.color = '#334155';
+                adminLink.style.fontSize = '0.9rem';
+                adminLink.style.borderBottom = '1px solid #e2e8f0';
+                adminLink.onmouseover = () => { adminLink.style.backgroundColor = '#f1f5f9'; };
+                adminLink.onmouseout = () => { adminLink.style.backgroundColor = 'transparent'; };
+
+                adminLink.innerHTML = '<span>⚙️</span> 管理后台';
+
+                // Insert before logout button
+                const logoutBtn = dropdownMenu.querySelector('.user-dropdown-logout');
+                if (logoutBtn) {
+                    dropdownMenu.insertBefore(adminLink, logoutBtn);
+                } else {
+                    dropdownMenu.appendChild(adminLink);
+                }
+            }
+        }
+
         // 初始化侧边栏
         App.fetchTaskHistory();
 
