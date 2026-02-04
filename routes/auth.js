@@ -32,7 +32,9 @@ router.post('/login', (req, res) => {
             const defaultGroup = db.prepare("SELECT id FROM user_groups WHERE is_default = 1").get();
             const groupId = defaultGroup ? defaultGroup.id : null;
 
-            const result = db.prepare('INSERT INTO users (username, group_id) VALUES (?, ?)').run(trimmedUsername, groupId);
+            // Explicitly set role to 'external' to ensure default is correct regardless of DB schema default
+            const result = db.prepare("INSERT INTO users (username, role, group_id) VALUES (?, 'external', ?)").run(trimmedUsername, groupId);
+
             // New users get default role (usually 'internal' or 'external' depending on schema default, let's query it back or assume default)
             // It's safer to query it back to ensure we have the correct role
             user = db.prepare('SELECT id, username, role, group_id FROM users WHERE id = ?').get(result.lastInsertRowid);
