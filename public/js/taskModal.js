@@ -30,6 +30,8 @@
         document.getElementById('csv-file-input').value = '';
         document.getElementById('browse-csv-btn').classList.remove('has-file');
 
+        document.getElementById('zip-input').value = ''; // Reset ZIP input
+
         document.getElementById('task-prompt').value = '';
         App.modal.updateStartButtonStyle();
 
@@ -104,6 +106,123 @@
     };
 
     /**
+     * 触发 ZIP 文件选择 (Default action)
+     */
+    App.modal.triggerZipBrowse = function () {
+        const browseBtn = document.getElementById('browse-folder-btn');
+        // If already has file, click acts as clear/reset
+        if (browseBtn.classList.contains('has-file')) {
+            App.state.selectedFolderPath = '';
+            App.state.incrementalSrcTaskId = null;
+            App.state.incrementalSrcModelName = null;
+            browseBtn.classList.remove('has-file');
+            browseBtn.querySelector('.folder-name').textContent = '';
+            document.getElementById('folder-input').value = '';
+            document.getElementById('zip-input').value = '';
+
+            const iconSpan = browseBtn.querySelector('.upload-folder-icon');
+            iconSpan.textContent = '📦'; // Reset to ZIP icon
+
+            const csvBtn = document.getElementById('browse-csv-btn');
+            if (csvBtn) csvBtn.style.display = 'flex';
+            return;
+        }
+        document.getElementById('zip-input').click();
+    };
+
+    /**
+     * 处理 ZIP 上传
+     */
+    App.modal.handleZipUpload = async function (e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const browseBtn = document.getElementById('browse-folder-btn');
+        const csvBtn = document.getElementById('browse-csv-btn');
+        const iconSpan = browseBtn.querySelector('.upload-folder-icon');
+
+        const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+        console.log(`[Upload] Starting ZIP upload: ${file.name}, ${sizeInMB} MB`);
+
+        if (file.size > 500 * 1024 * 1024) {
+            const confirmUpload = confirm(`文件大小为 ${sizeInMB} MB，上传可能需要较长时间。是否继续？`);
+            if (!confirmUpload) return;
+        }
+
+        try {
+            browseBtn.disabled = true;
+            browseBtn.classList.add('uploading');
+            iconSpan.textContent = '⏳';
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const xhr = new XMLHttpRequest();
+            const progressRing = document.getElementById('upload-progress-ring');
+            const circle = progressRing.querySelector('.progress-ring__circle');
+            const circumference = 10 * 2 * Math.PI;
+
+            circle.style.strokeDashoffset = circumference;
+
+            const uploadPromise = new Promise((resolve, reject) => {
+                xhr.timeout = 600000; // 10 mins
+
+                xhr.upload.onprogress = (event) => {
+                    if (event.lengthComputable) {
+                        const percent = event.loaded / event.total;
+                        const offset = circumference - (percent * circumference);
+                        circle.style.strokeDashoffset = offset;
+                    }
+                };
+
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            const response = JSON.parse(xhr.responseText);
+                            resolve(response);
+                        } catch (e) {
+                            reject(new Error('Invalid JSON response'));
+                        }
+                    } else {
+                        reject(new Error(`Server returned ${xhr.status}`));
+                    }
+                };
+
+                xhr.onerror = () => reject(new Error('Network error'));
+                xhr.ontimeout = () => reject(new Error('Timeout'));
+
+                xhr.open('POST', '/api/tasks/upload_zip');
+                xhr.send(formData);
+            });
+
+            const data = await uploadPromise;
+
+            if (data.path) {
+                console.log(`[Upload] ZIP upload successful! Target path: ${data.path}`);
+                App.state.selectedFolderPath = data.path;
+                browseBtn.classList.add('has-file');
+                browseBtn.querySelector('.folder-name').textContent = file.name; // Show zip name
+                iconSpan.textContent = '📦';
+
+                if (csvBtn) csvBtn.style.display = 'none';
+            } else {
+                throw new Error(data.error || 'Unknown error');
+            }
+
+        } catch (err) {
+            console.error('[Upload] ZIP upload error:', err);
+            alert('上传失败: ' + err.message);
+        } finally {
+            browseBtn.disabled = false;
+            browseBtn.classList.remove('uploading');
+            if (!App.state.selectedFolderPath) {
+                iconSpan.textContent = '📦';
+                circle.style.strokeDashoffset = circumference;
+            }
+        }
+    };
+
+    /**
      * 触发文件夹选择
      */
     App.modal.triggerFolderBrowse = function () {
@@ -115,6 +234,7 @@
             browseBtn.classList.remove('has-file');
             browseBtn.querySelector('.folder-name').textContent = '';
             document.getElementById('folder-input').value = '';
+            document.getElementById('zip-input').value = '';
 
             const csvBtn = document.getElementById('browse-csv-btn');
             if (csvBtn) csvBtn.style.display = 'flex';

@@ -21,7 +21,9 @@ function init() {
     fetchUsers();
     fetchQueueStatus();
     refreshTasks();
+    refreshTasks();
     fetchQuestions();
+    fetchModels();
 
     // Auto Refresh
     setInterval(() => {
@@ -357,6 +359,7 @@ async function fetchModels() {
         const models = await TaskAPI.fetchModels();
         AppState.allModels = models;
         UI.renderModels(models);
+        UI.updateTableHeader(true);
     } catch (e) { console.error(e); }
 }
 

@@ -367,25 +367,40 @@
                         <input type="file" id="csv-file-input" accept=".csv" style="display:none">
 
                         <!-- 上传按钮区域 -->
+                        <!-- 上传按钮区域 -->
                         <div class="upload-buttons-row">
-                            <button type="button" id="browse-folder-btn" class="upload-folder-btn">
-                                <span class="upload-folder-icon">📁</span>
-                                <span class="upload-folder-text">上传本地项目开发</span>
-                                <span class="folder-name"></span>
-                                <span class="delete-text">删除</span>
-                                <svg class="upload-progress-ring" width="24" height="24" id="upload-progress-ring">
-                                    <circle class="progress-ring__track" stroke="#e2e8f0" stroke-width="2"
-                                        fill="transparent" r="10" cx="12" cy="12" />
-                                    <circle class="progress-ring__circle" stroke="#10b981" stroke-width="2"
-                                        fill="transparent" r="10" cx="12" cy="12"
-                                        style="stroke-dasharray: 63; stroke-dashoffset: 63;" />
-                                </svg>
-                            </button>
+                            <div class="upload-btn-group">
+                                <button type="button" id="browse-folder-btn" class="upload-folder-btn">
+                                    <span class="upload-folder-icon">📦</span>
+                                    <span class="upload-folder-text">上传项目</span>
+                                    <span class="folder-name"></span>
+                                    <span class="delete-text">删除</span>
+                                    <svg class="upload-progress-ring" width="24" height="24" id="upload-progress-ring">
+                                        <circle class="progress-ring__track" stroke="#e2e8f0" stroke-width="2"
+                                            fill="transparent" r="10" cx="12" cy="12" />
+                                        <circle class="progress-ring__circle" stroke="#10b981" stroke-width="2"
+                                            fill="transparent" r="10" cx="12" cy="12"
+                                            style="stroke-dasharray: 63; stroke-dashoffset: 63;" />
+                                    </svg>
+                                </button>
+                                <div class="upload-dropdown-menu">
+                                    <div class="upload-dropdown-item" id="trigger-zip-upload">
+                                        <span>📦</span> 上传 ZIP 压缩包
+                                    </div>
+                                    <div class="upload-dropdown-item" id="trigger-folder-upload">
+                                        <span>📁</span> 上传文件夹
+                                    </div>
+                                </div>
+                            </div>
+
                             <button type="button" id="browse-csv-btn" class="upload-csv-btn">
                                 <span class="upload-csv-icon">📋</span>
                                 <span class="upload-csv-text">上传批量任务（csv）</span>
                             </button>
                         </div>
+
+                        <!-- ZIP Input -->
+                        <input type="file" id="zip-input" accept=".zip" style="display:none">
 
                         <div class="model-selection">
                             <h3 style="font-size:0.9rem; margin-bottom:0.5rem; color:#64748b;">选择模型</h3>

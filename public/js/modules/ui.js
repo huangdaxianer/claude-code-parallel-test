@@ -147,12 +147,12 @@ export const UI = {
     },
 
     // --- Tasks Table ---
-    updateTableHeader() {
+    updateTableHeader(force = false) {
         const thead = Elements.thead();
         if (!thead) return;
 
         const newModelNamesKey = AppState.allModelNames.join('|');
-        if (newModelNamesKey === AppState.prevModelNamesKey) {
+        if (!force && newModelNamesKey === AppState.prevModelNamesKey) {
             return;
         }
         AppState.prevModelNamesKey = newModelNamesKey;
@@ -167,7 +167,8 @@ export const UI = {
         `;
 
         AppState.allModelNames.forEach(modelName => {
-            const displayName = App.state.modelDisplayNames ? (App.state.modelDisplayNames[modelName] || modelName) : modelName;
+            const modelConfig = AppState.allModels.find(m => m.name === modelName);
+            const displayName = (modelConfig && modelConfig.description) ? modelConfig.description : modelName;
             headerHTML += `<th class="model-col-header" title="${escapeHtml(modelName)}">${escapeHtml(displayName)}</th>`;
         });
 

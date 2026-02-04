@@ -247,7 +247,18 @@
         document.getElementById('new-task-btn').addEventListener('click', App.modal.openNewTaskModal);
         document.getElementById('add-task-btn').addEventListener('click', App.modal.startNewTask);
         document.getElementById('folder-input').addEventListener('change', App.modal.handleFolderUpload);
-        document.getElementById('browse-folder-btn').addEventListener('click', App.modal.triggerFolderBrowse);
+        document.getElementById('zip-input').addEventListener('change', App.modal.handleZipUpload);
+
+        // Dropdown options
+        document.getElementById('trigger-zip-upload').addEventListener('click', (e) => {
+            e.stopPropagation(); // prevent bubbling to main button if nested (though it's sibling here)
+            App.modal.triggerZipBrowse();
+        });
+        document.getElementById('trigger-folder-upload').addEventListener('click', (e) => {
+            e.stopPropagation();
+            App.modal.triggerFolderBrowse();
+        });
+
         document.getElementById('csv-file-input').addEventListener('change', App.modal.handleCsvUpload);
         document.getElementById('browse-csv-btn').addEventListener('click', App.modal.triggerCsvBrowse);
         document.getElementById('clear-batch-btn').addEventListener('click', App.modal.clearBatchTasks);

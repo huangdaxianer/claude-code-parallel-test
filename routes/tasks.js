@@ -212,6 +212,68 @@ router.post('/upload', upload.any(), (req, res) => {
     }
 });
 
+// 上传 ZIP 接口
+router.post('/upload_zip', upload.single('file'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: '没有接收到文件' });
+    }
+
+    const file = req.file;
+    // Remove .zip extension for folder name
+    const originalName = file.originalname.replace(/\.zip$/i, '');
+    const uploadId = Date.now();
+
+    // We'll extract to UPLOAD_DIR/<timestamp>_<name>
+    const targetBase = path.join(config.UPLOAD_DIR, `${uploadId}_${originalName}`);
+
+    console.log(`[Upload ZIP] Starting process for: ${file.originalname} (ID: ${uploadId})`);
+
+    try {
+        if (!fs.existsSync(config.UPLOAD_DIR)) {
+            fs.mkdirSync(config.UPLOAD_DIR, { recursive: true });
+        }
+
+        // Create target directory
+        if (!fs.existsSync(targetBase)) {
+            fs.mkdirSync(targetBase, { recursive: true });
+        }
+
+        // Use system unzip
+        // -o: overwrite
+        // -d: destination
+        // -q: quiet
+        const unzipCmd = `unzip -o -q "${file.path}" -d "${targetBase}"`;
+
+        exec(unzipCmd, (error, stdout, stderr) => {
+            // Always delete the temp zip file
+            try {
+                fs.unlinkSync(file.path);
+            } catch (e) {
+                console.warn('[Upload ZIP] Failed to delete temp zip:', e);
+            }
+
+            if (error) {
+                console.error('[Upload ZIP] Unzip error:', error);
+                console.error('[Upload ZIP] Stderr:', stderr);
+                return res.status(500).json({ error: '解压失败: ' + stderr });
+            }
+
+            // Count files
+            exec(`find "${targetBase}" -type f | wc -l`, (err, countBytes) => {
+                const count = parseInt(countBytes ? countBytes.toString().trim() : '0') || 0;
+                console.log(`[Upload ZIP] Success. Extracted to ${targetBase}, ${count} files.`);
+                res.json({ path: targetBase, fileCount: count });
+            });
+        });
+
+    } catch (err) {
+        console.error('[Upload ZIP] Fatal error:', err);
+        // Clean up
+        try { if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); } catch (e) { }
+        return res.status(500).json({ error: '服务器处理错误: ' + err.message });
+    }
+});
+
 // 创建任务
 router.post('/', (req, res) => {
     const task = req.body.task;
