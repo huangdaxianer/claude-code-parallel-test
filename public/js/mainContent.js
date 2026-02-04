@@ -278,12 +278,12 @@
             const iframe = document.getElementById('preview-iframe');
             const container = document.getElementById('tab-content-preview');
 
-            const runId = App.state.currentTaskId + '/' + activeRun.modelName;
+            const runId = App.state.currentTaskId + '/' + activeRun.modelId;
 
             if (iframe.getAttribute('data-run-id') !== runId) {
                 console.log(`[Debug] Loading preview for ${runId}`);
                 iframe.setAttribute('data-run-id', runId);
-                App.preview.loadPreview(App.state.currentTaskId, activeRun.modelName, iframe, container);
+                App.preview.loadPreview(App.state.currentTaskId, activeRun.modelId, iframe, container);
             } else {
                 console.log(`[Debug] Preview already loaded. Force UI check.`);
                 const sb = document.getElementById('preview-status-bar');
