@@ -38,7 +38,7 @@ router.get('/jobs', (req, res) => {
  * POST /api/gsb/jobs
  * Body: { name, modelA, modelB, userId, taskIds: [taskId1, taskId2, ...] }
  */
-router.post('/jobs', express.json(), (req, res) => {
+router.post('/jobs', (req, res) => {
     try {
         const { name, modelA, modelB, userId, taskIds } = req.body;
 
@@ -209,7 +209,7 @@ router.get('/jobs/:id/next', (req, res) => {
  * POST /api/gsb/jobs/:id/rate
  * Body: { taskId, rating: 'left_better' | 'right_better' | 'same' | 'failed' }
  */
-router.post('/jobs/:id/rate', express.json(), (req, res) => {
+router.post('/jobs/:id/rate', (req, res) => {
     try {
         const { id } = req.params;
         const { taskId, rating } = req.body;

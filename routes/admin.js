@@ -77,7 +77,7 @@ router.get('/user-groups', (req, res) => {
 });
 
 // 创建新用户组
-router.post('/user-groups', express.json(), (req, res) => {
+router.post('/user-groups', (req, res) => {
     try {
         const { name } = req.body;
 
@@ -97,7 +97,7 @@ router.post('/user-groups', express.json(), (req, res) => {
 });
 
 // 更新用户组名称
-router.put('/user-groups/:id', express.json(), (req, res) => {
+router.put('/user-groups/:id', (req, res) => {
     try {
         const { id } = req.params;
         const { name } = req.body;
@@ -193,7 +193,7 @@ router.put('/users/:id/role', (req, res) => {
 });
 
 // 更新用户分组
-router.put('/users/:id/group', express.json(), (req, res) => {
+router.put('/users/:id/group', (req, res) => {
     try {
         const { id } = req.params;
         const { group_id } = req.body;
@@ -241,7 +241,8 @@ router.get('/config', (req, res) => {
 });
 
 // 更新系统配置
-router.post('/config', express.json(), (req, res) => {
+// 更新系统配置
+router.post('/config', (req, res) => {
     const { maxParallelSubtasks } = req.body;
 
     if (maxParallelSubtasks !== undefined) {
@@ -311,7 +312,7 @@ router.post('/questions', (req, res) => {
 });
 
 // 重排序问题 (Admin)
-router.put('/questions/reorder', express.json(), (req, res) => {
+router.put('/questions/reorder', (req, res) => {
     const { order } = req.body; // Array of IDs in new order
 
     if (!Array.isArray(order)) {
@@ -528,7 +529,7 @@ router.get('/models/enabled', (req, res) => {
 });
 
 // 更新模型的用户组设置 (Admin)
-router.put('/models/:modelId/group-settings/:groupId', express.json(), (req, res) => {
+router.put('/models/:modelId/group-settings/:groupId', (req, res) => {
     const { modelId, groupId } = req.params;
     const { is_enabled, is_default_checked, display_name } = req.body;
 
@@ -589,7 +590,7 @@ function generateModelId() {
 }
 
 // 创建新模型 (Admin)
-router.post('/models', express.json(), (req, res) => {
+router.post('/models', (req, res) => {
     const endpoint_name = req.body.endpoint_name?.trim();
     const { description, is_default_checked } = req.body;
 
@@ -626,7 +627,7 @@ router.post('/models', express.json(), (req, res) => {
 });
 
 // 更新模型 (Admin)
-router.put('/models/:id', express.json(), (req, res) => {
+router.put('/models/:id', (req, res) => {
     const { id } = req.params; // This is the model_id string
     const { endpoint_name, description, is_default_checked } = req.body;
 
