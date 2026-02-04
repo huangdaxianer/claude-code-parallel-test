@@ -186,7 +186,16 @@
                                                     }
                                                     const pre = document.createElement('pre');
                                                     try {
-                                                        const obj = JSON.parse(content);
+                                                        let obj = JSON.parse(content);
+                                                        // Simplify display: 
+                                                        // Tool Call (idx === 0): show only 'input'
+                                                        // Tool Result (idx > 0): show only 'content'
+                                                        if (idx === 0 && obj && typeof obj === 'object' && 'input' in obj) {
+                                                            obj = obj.input;
+                                                        } else if (idx > 0 && obj && typeof obj === 'object' && 'content' in obj) {
+                                                            obj = obj.content;
+                                                        }
+
                                                         pre.innerHTML = App.utils.syntaxHighlight(obj);
                                                     } catch (e) {
                                                         pre.textContent = content;
