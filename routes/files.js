@@ -37,10 +37,6 @@ router.get('/task_details/:taskId', (req, res) => {
                 const folderPath = path.join(taskDir, run.model_id);
                 let generatedFiles = [];
 
-                if (fs.existsSync(folderPath + '_preview') && fs.statSync(folderPath + '_preview').isDirectory()) {
-                    folderPath = folderPath + '_preview';
-                }
-
                 if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
                     const walkSync = (dir, filelist = []) => {
                         fs.readdirSync(dir).forEach(file => {
@@ -62,7 +58,7 @@ router.get('/task_details/:taskId', (req, res) => {
 
                 return {
                     runId: run.id,
-                    folderName: path.relative(config.TASKS_DIR, folderPath),
+                    folderName: path.join(taskId, run.model_id),
                     modelId: run.model_id,
                     modelName: run.endpoint_name || run.model_id, // Display name for UI
                     endpointName: run.endpoint_name,
