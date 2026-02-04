@@ -160,7 +160,7 @@ async function handleGlobalClick(e) {
         switch (action) {
             case 'stop': stopTask(id); break;
             case 'delete': deleteTask(id); break;
-            case 'view': viewTask(id); break;
+            case 'view': viewTask(id, actionBtn.dataset.username); break;
 
             case 'edit-question': {
                 const q = AppState.allQuestions.find(i => String(i.id) === String(id));
@@ -713,9 +713,12 @@ async function deleteTask(taskId) {
 }
 
 function viewTask(taskId, username) {
-    if (username) {
-        window.open(`/task.html?user=${encodeURIComponent(username)}`, '_blank');
-    } else {
+    if (taskId && username) {
+        // Use view_user for admin viewing mode to avoid auto-login issues
+        window.open(`/task.html?view_user=${encodeURIComponent(username)}&task=${taskId}`, '_blank');
+    } else if (username) {
+        window.open(`/task.html?view_user=${encodeURIComponent(username)}`, '_blank');
+    } else if (taskId) {
         window.open(`/task.html?id=${taskId}`, '_blank');
     }
 }

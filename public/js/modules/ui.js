@@ -260,7 +260,7 @@ export const UI = {
         }).join('');
 
         const hasRunningOrPending = (task.runs || []).some(r => r.status === 'running' || r.status === 'pending');
-        const actionButtons = this.buildActionButtons(task.taskId, hasRunningOrPending);
+        const actionButtons = this.buildActionButtons(task.taskId, hasRunningOrPending, task.username);
 
         return `
             <td class="checkbox-cell">
@@ -317,19 +317,19 @@ export const UI = {
         if (actionsCell) {
             const hasStopButton = actionsCell.querySelector('.action-btn-stop') !== null;
             if (hasRunningOrPending !== hasStopButton) {
-                const actionButtons = this.buildActionButtons(task.taskId, hasRunningOrPending);
+                const actionButtons = this.buildActionButtons(task.taskId, hasRunningOrPending, task.username);
                 actionsCell.innerHTML = `<div class="action-buttons">${actionButtons}</div>`;
             }
         }
     },
 
-    buildActionButtons(taskId, hasRunningOrPending) {
+    buildActionButtons(taskId, hasRunningOrPending, username) {
         let actionButtons = '';
         if (hasRunningOrPending) {
             actionButtons = `<button class="action-btn action-btn-stop" data-action="stop" data-id="${taskId}">中止</button>`;
         }
         actionButtons += `
-            <button class="action-btn action-btn-view" data-action="view" data-id="${taskId}">查看</button>
+            <button class="action-btn action-btn-view" data-action="view" data-id="${taskId}" data-username="${escapeHtml(username || '')}">查看</button>
             <button class="action-btn action-btn-delete" data-action="delete" data-id="${taskId}">删除</button>
         `;
         return actionButtons;

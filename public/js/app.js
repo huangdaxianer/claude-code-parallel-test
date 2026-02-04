@@ -55,9 +55,19 @@
 
         const url = new URL(window.location.href);
 
-        // 始终包含 user 参数 (优先使用目标用户)
-        const targetUsername = App.state.targetUser ? App.state.targetUser.username : App.state.currentUser.username;
-        url.searchParams.set('user', targetUsername);
+        // 始终保留 view_user 参数 (如果当前处于 viewing 模式)
+        if (App.state.targetUser && App.state.targetUser.username !== App.state.currentUser.username) {
+            url.searchParams.set('view_user', App.state.targetUser.username);
+        } else {
+            url.searchParams.delete('view_user');
+        }
+
+        // user 参数用于登录，通常不需要在应用内导航时重复添加，除非为了分享链接
+        // 但如果仅仅是 viewing，不要添加 user 参数以免混淆
+        // 如果需要保持“当前登录用户”的链接，可以添加 user=currentUser (可选)
+        // 这里的逻辑原先是: targetUser ? targetUser.username : currentUser.username
+        // 修改为: 移除 user 参数以避免重载时自动切换登录 (依靠 localStorage)
+        url.searchParams.delete('user');
 
         if (taskId) {
             url.searchParams.set('task', taskId);
@@ -200,24 +210,55 @@
         const taskId = urlParams.get('task');
         const model = urlParams.get('model');
         const page = urlParams.get('page');
+        // user is for login, view_user is for admin viewing
+        const viewUserParam = urlParams.get('view_user');
         const userParam = urlParams.get('user');
 
-        // 处理目标用户 (查看模式)
-        if (userParam && userParam !== App.state.currentUser.username) {
-            try {
-                const targetUser = await App.api.verifyUser(userParam);
-                if (targetUser) {
-                    App.state.targetUser = targetUser;
-                    console.log(`[App] Viewing as user: ${targetUser.username} (${targetUser.id})`);
+        // 处理目标用户 (查看模式) - 优先使用 view_user
+        const targetUserParam = viewUserParam || userParam;
 
-                    // 更新显示的用户名，增加提示
-                    const usernameDisplay = document.getElementById('username-display');
-                    if (usernameDisplay) {
-                        usernameDisplay.textContent = `${App.state.currentUser.username} (View: ${targetUser.username})`;
-                        usernameDisplay.style.color = '#f59e0b'; // Orange to indicate special mode
+        // 只有当有明确的 view_user 或者 (user 且不等于当前用户) 时才进入 viewing 模式
+        // 注意：如果是 view_user，即使是自己也允许进入 view 模式（虽然没必要，但逻辑一致）
+        // 如果是 user 参数，通常 auth.js 已经处理了登录，这里主要是为了处理 "用户A访问?user=B但没权限" 的情况
+        const shouldCheckView = viewUserParam || (userParam && userParam !== App.state.currentUser.username);
+
+        if (shouldCheckView) {
+            try {
+                const targetUser = await App.api.verifyUser(targetUserParam);
+                if (targetUser) {
+                    if (App.state.currentUser.role === 'admin') {
+                        App.state.targetUser = targetUser;
+                        console.log(`[App] Admin viewing as user: ${targetUser.username} (${targetUser.id})`);
+
+                        // Add "Current Showing: [User]" indicator to dropdown
+                        const dropdownMenu = document.getElementById('user-dropdown-menu');
+                        if (dropdownMenu) {
+                            const infoId = 'viewing-user-info';
+                            if (!document.getElementById(infoId)) {
+                                const infoDiv = document.createElement('div');
+                                infoDiv.id = infoId;
+                                infoDiv.className = 'user-dropdown-item';
+                                infoDiv.style.cssText = 'padding: 0.5rem 1rem; color: #64748b; font-size: 0.85rem; border-bottom: 1px solid #e2e8f0; background: #f8fafc; cursor: default;';
+                                infoDiv.innerHTML = `当前展示：<span style="font-weight:600; color:#334155;">${targetUser.username}</span>`;
+
+                                // Insert after the first element (username display)
+                                const firstChild = dropdownMenu.firstElementChild;
+                                if (firstChild) {
+                                    firstChild.after(infoDiv);
+                                } else {
+                                    dropdownMenu.prepend(infoDiv);
+                                }
+                            }
+                        }
+                    } else if (targetUser.username !== App.state.currentUser.username) {
+                        // Non-admin user trying to access another user's view
+                        // Alert and redirect
+                        alert('您无法访问该任务');
+                        window.location.href = '/task.html';
+                        return;
                     }
                 } else {
-                    App.toast.show(`用户 ${userParam} 不存在`);
+                    App.toast.show(`用户 ${targetUserParam} 不存在`);
                 }
             } catch (e) {
                 console.error('[App] Failed to verify target user:', e);
