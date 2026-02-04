@@ -397,14 +397,67 @@
         App.state.batchPrompts.forEach((prompt, index) => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td>${index + 1}</td>
+                <td style="text-align: center;">
+                    <input type="checkbox" class="task-checkbox" data-index="${index}" checked>
+                </td>
                 <td title="${prompt.replace(/"/g, '&quot;')}">${prompt}</td>
             `;
             tbody.appendChild(tr);
         });
 
         document.getElementById('browse-csv-btn').classList.add('has-file');
-        App.modal.updateStartButtonForBatch();
+
+        // Select All Logic
+        const selectAllCb = document.getElementById('batch-select-all');
+        if (selectAllCb) {
+            selectAllCb.checked = true;
+            selectAllCb.indeterminate = false;
+
+            // Remove old listeners if any (cloning node is a quick way, or just re-assign onclick)
+            const newSelectAll = selectAllCb.cloneNode(true);
+            selectAllCb.parentNode.replaceChild(newSelectAll, selectAllCb);
+
+            newSelectAll.addEventListener('change', function () {
+                const checkboxes = document.querySelectorAll('.task-checkbox');
+                checkboxes.forEach(cb => cb.checked = newSelectAll.checked);
+                App.modal.updateBatchSelectionUI();
+            });
+        }
+
+        // Individual Checkbox Logic
+        const checkboxes = document.querySelectorAll('.task-checkbox');
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', function () {
+                const selectAll = document.getElementById('batch-select-all');
+                const all = document.querySelectorAll('.task-checkbox');
+                const checked = document.querySelectorAll('.task-checkbox:checked');
+
+                if (checked.length === 0) {
+                    selectAll.checked = false;
+                    selectAll.indeterminate = false;
+                } else if (checked.length === all.length) {
+                    selectAll.checked = true;
+                    selectAll.indeterminate = false;
+                } else {
+                    selectAll.checked = false;
+                    selectAll.indeterminate = true;
+                }
+                App.modal.updateBatchSelectionUI();
+            });
+        });
+
+        App.modal.updateBatchSelectionUI();
+    };
+
+    /**
+     * 更新批量选择UI状态
+     */
+    App.modal.updateBatchSelectionUI = function () {
+        const checkedCount = document.querySelectorAll('.task-checkbox:checked').length;
+        const btn = document.getElementById('add-task-btn');
+        btn.classList.remove('btn-empty-prompt');
+        btn.textContent = `启动 ${checkedCount} 个任务`;
+        btn.disabled = checkedCount === 0;
     };
 
     /**
@@ -427,9 +480,7 @@
      * 更新批量任务按钮
      */
     App.modal.updateStartButtonForBatch = function () {
-        const btn = document.getElementById('add-task-btn');
-        btn.classList.remove('btn-empty-prompt');
-        btn.textContent = `启动 ${App.state.batchPrompts.length} 个任务`;
+        App.modal.updateBatchSelectionUI();
     };
 
     /**
@@ -494,14 +545,20 @@
 
         // 批量任务模式
         if (App.state.batchPrompts.length > 0) {
-            btn.textContent = `启动中 (0/${App.state.batchPrompts.length})...`;
+            const selectedIndices = Array.from(document.querySelectorAll('.task-checkbox:checked'))
+                .map(cb => parseInt(cb.getAttribute('data-index')));
+
+            if (selectedIndices.length === 0) return alert('请至少选择一个任务');
+
+            btn.textContent = `启动中 (0/${selectedIndices.length})...`;
 
             try {
                 let successCount = 0;
                 let firstTaskId = null;
 
-                for (let i = 0; i < App.state.batchPrompts.length; i++) {
-                    const prompt = App.state.batchPrompts[i];
+                for (let i = 0; i < selectedIndices.length; i++) {
+                    const promptIndex = selectedIndices[i];
+                    const prompt = App.state.batchPrompts[promptIndex];
                     const newTaskId = Math.random().toString(36).substring(2, 8).toUpperCase();
 
                     if (i === 0) firstTaskId = newTaskId;
@@ -521,7 +578,7 @@
 
                     if (data.success) {
                         successCount++;
-                        btn.textContent = `启动中 (${successCount}/${App.state.batchPrompts.length})...`;
+                        btn.textContent = `启动中 (${successCount}/${selectedIndices.length})...`;
                     }
                 }
 
