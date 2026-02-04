@@ -225,7 +225,7 @@ try { db.exec("ALTER TABLE feedback_questions ADD COLUMN display_order INTEGER D
 
 // Migration: Add user_id column to tasks if it doesn't exist
 try { db.exec("ALTER TABLE tasks ADD COLUMN user_id INTEGER"); } catch (e) { }
-try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'internal'"); } catch (e) { }
+try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'external'"); } catch (e) { }
 try { db.exec("ALTER TABLE users ADD COLUMN group_id INTEGER"); } catch (e) { }
 
 // Now safe to create index
