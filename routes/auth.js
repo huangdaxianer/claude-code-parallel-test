@@ -28,15 +28,19 @@ router.post('/login', (req, res) => {
         let user = db.prepare('SELECT id, username FROM users WHERE username = ?').get(trimmedUsername);
 
         if (!user) {
-            const result = db.prepare('INSERT INTO users (username) VALUES (?)').run(trimmedUsername);
+            // Get default group
+            const defaultGroup = db.prepare("SELECT id FROM user_groups WHERE is_default = 1").get();
+            const groupId = defaultGroup ? defaultGroup.id : null;
+
+            const result = db.prepare('INSERT INTO users (username, group_id) VALUES (?, ?)').run(trimmedUsername, groupId);
             // New users get default role (usually 'internal' or 'external' depending on schema default, let's query it back or assume default)
             // It's safer to query it back to ensure we have the correct role
-            user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(result.lastInsertRowid);
-            console.log(`[Auth] New user created: ${trimmedUsername} (ID: ${user.id}, Role: ${user.role})`);
+            user = db.prepare('SELECT id, username, role, group_id FROM users WHERE id = ?').get(result.lastInsertRowid);
+            console.log(`[Auth] New user created: ${trimmedUsername} (ID: ${user.id}, Role: ${user.role}, Group: ${user.group_id})`);
         } else {
             // Ensure we fetch role for existing user too. The previous query only fetched id, username.
-            user = db.prepare('SELECT id, username, role FROM users WHERE username = ?').get(trimmedUsername);
-            console.log(`[Auth] User logged in: ${trimmedUsername} (ID: ${user.id}, Role: ${user.role})`);
+            user = db.prepare('SELECT id, username, role, group_id FROM users WHERE username = ?').get(trimmedUsername);
+            console.log(`[Auth] User logged in: ${trimmedUsername} (ID: ${user.id}, Role: ${user.role}, Group: ${user.group_id})`);
         }
 
         return res.json({ success: true, user });
