@@ -253,9 +253,15 @@ router.post('/upload_zip', upload.single('file'), (req, res) => {
             }
 
             if (error) {
-                console.error('[Upload ZIP] Unzip error:', error);
-                console.error('[Upload ZIP] Stderr:', stderr);
-                return res.status(500).json({ error: '解压失败: ' + stderr });
+                // unzip exit code 1 = warnings (e.g. stripped absolute paths), files were still extracted
+                // Only treat exit code >= 3 as real failures
+                const exitCode = error.code;
+                if (typeof exitCode === 'number' && exitCode >= 3) {
+                    console.error('[Upload ZIP] Unzip error:', error);
+                    console.error('[Upload ZIP] Stderr:', stderr);
+                    return res.status(500).json({ error: '解压失败: ' + stderr });
+                }
+                console.warn(`[Upload ZIP] Unzip finished with warnings (exit code ${exitCode}), continuing...`);
             }
 
             // Count files
