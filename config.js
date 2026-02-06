@@ -12,7 +12,8 @@ const CONFIG_FILE = path.join(__dirname, 'config.json');
 
 // 默认配置
 const defaultConfig = {
-    maxParallelSubtasks: 5  // 最大并行子任务数
+    maxParallelSubtasks: 5,  // 最大并行子任务数
+    allowNewRegistration: true  // 是否允许新用户自动注册
 };
 
 // 确保目录存在

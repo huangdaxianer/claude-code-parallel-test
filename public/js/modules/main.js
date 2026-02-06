@@ -106,7 +106,7 @@ function setupEventListeners() {
     document.getElementById('filter-search')?.addEventListener('input', applyFilters);
 
     // Modal Outside Clicks
-    const modalIds = ['prompt-modal', 'config-modal', 'question-modal', 'model-modal', 'group-modal'];
+    const modalIds = ['prompt-modal', 'config-modal', 'question-modal', 'model-modal', 'group-modal', 'create-user-modal'];
     modalIds.forEach(id => {
         document.getElementById(id)?.addEventListener('click', (e) => {
             if (e.target.id === id) UI.closeModal(id);
@@ -143,6 +143,7 @@ function setupEventListeners() {
     document.getElementById('question-form')?.addEventListener('submit', handleQuestionSubmit);
     document.getElementById('model-form')?.addEventListener('submit', handleModelSubmit);
     document.getElementById('group-form')?.addEventListener('submit', handleGroupSubmit);
+    document.getElementById('create-user-form')?.addEventListener('submit', handleCreateUserSubmit);
 
     // Specific change listeners
     document.getElementById('q-type')?.addEventListener('change', () => UI.toggleOptionsContainer());
@@ -208,6 +209,11 @@ async function handleGlobalClick(e) {
 
             case 'refresh-users-management':
                 fetchUserManagementData();
+                break;
+
+            case 'open-create-user':
+                document.getElementById('create-user-modal')?.classList.add('show');
+                document.getElementById('cu-usernames').value = '';
                 break;
 
             case 'open-create-group':
@@ -303,6 +309,18 @@ async function handleGlobalChange(e) {
         } catch (e) {
             UI.showToast('更新失败: ' + e.message, 'error');
             fetchUserManagementData(); // revert
+        }
+    }
+
+    // Handle registration toggle
+    if (target.dataset.action === 'toggle-allow-registration') {
+        const isAllowed = target.checked;
+        try {
+            await TaskAPI.updateConfig({ allowNewRegistration: isAllowed });
+            UI.showToast(isAllowed ? '已开启新用户注册' : '已关闭新用户注册');
+        } catch (e) {
+            UI.showToast('更新失败: ' + e.message, 'error');
+            target.checked = !isAllowed; // revert
         }
     }
 
@@ -415,7 +433,49 @@ async function fetchUserManagementData() {
         const users = await TaskAPI.fetchUsers();
         AppState.managementUsers = users;
         UI.renderUserManagement(users, AppState.userGroups);
+
+        // Load registration toggle state
+        const configRes = await fetch('/api/admin/config');
+        const configData = await configRes.json();
+        const toggle = document.getElementById('allow-registration-toggle');
+        if (toggle) {
+            toggle.checked = configData.allowNewRegistration !== false;
+        }
     } catch (e) { console.error(e); }
+}
+
+async function handleCreateUserSubmit(e) {
+    if (e) e.preventDefault();
+
+    const usernamesInput = document.getElementById('cu-usernames').value.trim();
+    if (!usernamesInput) {
+        alert('请输入用户名');
+        return;
+    }
+
+    try {
+        const result = await TaskAPI.createUsers(usernamesInput);
+        if (result.success) {
+            UI.closeModal('create-user-modal');
+
+            // Build result message
+            let message = '';
+            if (result.created.length > 0) {
+                message += `成功创建 ${result.created.length} 个用户`;
+            }
+            if (result.skipped.length > 0) {
+                message += (message ? '，' : '') + `${result.skipped.length} 个用户已存在`;
+            }
+            if (result.invalid.length > 0) {
+                message += (message ? '，' : '') + `${result.invalid.length} 个用户名无效`;
+            }
+
+            UI.showToast(message || '操作完成', result.created.length > 0 ? 'success' : 'error');
+            fetchUserManagementData();
+        }
+    } catch (e) {
+        alert('创建失败: ' + e.message);
+    }
 }
 
 async function deleteUserGroup(id, name) {

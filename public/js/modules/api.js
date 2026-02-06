@@ -210,6 +210,19 @@ export const TaskAPI = {
         return await res.json();
     },
 
+    async createUsers(usernames) {
+        const res = await fetch('/api/admin/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ usernames })
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || '未知错误');
+        }
+        return await res.json();
+    },
+
     async deleteUser(userId) {
         const res = await fetch(`/api/admin/users/${userId}`, {
             method: 'DELETE'

@@ -4,6 +4,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const config = require('../config');
 
 // 登录 / 注册用户
 router.post('/login', (req, res) => {
@@ -28,6 +29,12 @@ router.post('/login', (req, res) => {
         let user = db.prepare('SELECT id, username FROM users WHERE username = ?').get(trimmedUsername);
 
         if (!user) {
+            // Check if new registration is allowed
+            const appConfig = config.getAppConfig();
+            if (appConfig.allowNewRegistration === false) {
+                return res.status(403).json({ error: '当前用户不存在，请重试' });
+            }
+
             // Get default group
             const defaultGroup = db.prepare("SELECT id FROM user_groups WHERE is_default = 1").get();
             const groupId = defaultGroup ? defaultGroup.id : null;

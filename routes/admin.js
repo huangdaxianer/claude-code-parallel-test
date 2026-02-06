@@ -168,6 +168,73 @@ router.get('/users', (req, res) => {
     }
 });
 
+// 批量创建用户 (Admin)
+router.post('/users', (req, res) => {
+    try {
+        const { usernames } = req.body;
+
+        if (!usernames || typeof usernames !== 'string' || !usernames.trim()) {
+            return res.status(400).json({ error: '用户名不能为空' });
+        }
+
+        // Split by semicolon, trim whitespace, filter empties
+        const usernameList = usernames
+            .split(';')
+            .map(u => u.trim())
+            .filter(u => u.length > 0);
+
+        if (usernameList.length === 0) {
+            return res.status(400).json({ error: '没有有效的用户名' });
+        }
+
+        // Validate each username
+        const invalidUsernames = [];
+        const validUsernames = [];
+
+        for (const username of usernameList) {
+            if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+                invalidUsernames.push({ username, reason: '只能包含字母、数字和下划线' });
+            } else if (username.length < 2 || username.length > 50) {
+                invalidUsernames.push({ username, reason: '长度必须在2-50之间' });
+            } else {
+                validUsernames.push(username);
+            }
+        }
+
+        // Get default group
+        const defaultGroup = db.prepare("SELECT id FROM user_groups WHERE is_default = 1").get();
+        const groupId = defaultGroup ? defaultGroup.id : null;
+
+        const created = [];
+        const skipped = [];
+
+        const insertStmt = db.prepare(
+            "INSERT INTO users (username, role, group_id) VALUES (?, 'external', ?)"
+        );
+
+        for (const username of validUsernames) {
+            const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+            if (existing) {
+                skipped.push(username);
+            } else {
+                insertStmt.run(username, groupId);
+                created.push(username);
+                console.log(`[Admin] User created: ${username}`);
+            }
+        }
+
+        res.json({
+            success: true,
+            created,
+            skipped,
+            invalid: invalidUsernames
+        });
+    } catch (e) {
+        console.error('[Admin] Create users error:', e);
+        res.status(500).json({ error: '创建用户失败' });
+    }
+});
+
 // 更新用户角色
 router.put('/users/:id/role', (req, res) => {
     try {
@@ -241,9 +308,8 @@ router.get('/config', (req, res) => {
 });
 
 // 更新系统配置
-// 更新系统配置
 router.post('/config', (req, res) => {
-    const { maxParallelSubtasks } = req.body;
+    const { maxParallelSubtasks, allowNewRegistration } = req.body;
 
     if (maxParallelSubtasks !== undefined) {
         const value = parseInt(maxParallelSubtasks, 10);
@@ -251,6 +317,10 @@ router.post('/config', (req, res) => {
             return res.status(400).json({ error: 'maxParallelSubtasks must be between 1 and 50' });
         }
         config.updateAppConfig({ maxParallelSubtasks: value });
+    }
+
+    if (allowNewRegistration !== undefined) {
+        config.updateAppConfig({ allowNewRegistration: !!allowNewRegistration });
     }
 
     config.saveConfig(config.getAppConfig());

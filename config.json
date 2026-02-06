@@ -1,3 +1,4 @@
 {
-  "maxParallelSubtasks": 15
+  "maxParallelSubtasks": 15,
+  "allowNewRegistration": false
 }

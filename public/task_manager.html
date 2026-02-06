@@ -925,9 +925,23 @@
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h2 style="font-size: 1.25rem; font-weight: 600;">用户管理</h2>
                 <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-primary" data-action="open-create-user">+ 新增用户</button>
                     <button class="btn btn-primary" data-action="open-create-group">+ 新增用户组</button>
                     <button class="btn" data-action="refresh-users-management">🔄 刷新</button>
                 </div>
+            </div>
+
+            <!-- Registration Toggle -->
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; padding: 1rem 1.25rem; background: white; border-radius: 0.75rem; border: 1px solid #e2e8f0;">
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; font-size: 0.95rem; color: #1e293b;">允许新用户注册</div>
+                    <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem;">关闭后，未在系统中的用户名将无法登录。需要管理员手动创建用户。</div>
+                </div>
+                <label class="toggle-switch" title="允许新用户注册">
+                    <input type="checkbox" id="allow-registration-toggle" checked
+                           data-action="toggle-allow-registration">
+                    <span class="slider"></span>
+                </label>
             </div>
 
             <div id="users-management-container">
@@ -1119,6 +1133,34 @@
                         <button type="button" class="btn" data-action="close-modal"
                             data-modal-id="group-modal">取消</button>
                         <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create User Modal -->
+    <div class="modal-overlay" id="create-user-modal" style="z-index: 2000;">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>新增用户</h3>
+                <button class="modal-close" data-action="close-modal" data-modal-id="create-user-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="create-user-form">
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">用户名 (必填)</label>
+                        <input type="text" id="cu-usernames" class="filter-input" style="width:100%" required
+                            placeholder="输入用户名，多个用分号分隔，如：user1;user2;user3">
+                    </div>
+                    <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 1.5rem;">
+                        用户名只能包含字母、数字和下划线，长度2-50字符。多个用户用英文分号 (;) 分隔。
+                        新用户默认角色为"外部评测人员"，分配到默认用户组。
+                    </p>
+                    <div style="display:flex; justify-content:flex-end; gap:1rem;">
+                        <button type="button" class="btn" data-action="close-modal"
+                            data-modal-id="create-user-modal">取消</button>
+                        <button type="submit" class="btn btn-primary">创建</button>
                     </div>
                 </form>
             </div>
