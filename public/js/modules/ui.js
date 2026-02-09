@@ -283,8 +283,7 @@ export const UI = {
             return `<td class="model-col-cell" data-model="${escapeHtml(modelName)}"><span class="model-status ${statusClass}"></span></td>`;
         }).join('');
 
-        const hasRunningOrPending = (task.runs || []).some(r => r.status === 'running' || r.status === 'pending');
-        const actionButtons = this.buildActionButtons(task.taskId, hasRunningOrPending, task.username);
+        const actionButtons = this.buildActionButtons(task.taskId);
 
         return `
             <td class="checkbox-cell">
@@ -293,7 +292,7 @@ export const UI = {
                        ${isChecked ? 'checked' : ''}>
             </td>
             <td class="task-cell">
-                <div class="task-title" title="${escapeHtml(task.title || 'Untitled')}">${escapeHtml(task.title || 'Untitled')}</div>
+                <div class="task-title" title="${escapeHtml(task.title || 'Untitled')}" data-action="view" data-id="${task.taskId}" data-username="${escapeHtml(task.username || '')}">${escapeHtml(task.title || 'Untitled')}</div>
                 <div class="task-id">${task.taskId}</div>
             </td>
             <td class="user-cell">
@@ -336,27 +335,11 @@ export const UI = {
             }
         });
 
-        const hasRunningOrPending = (task.runs || []).some(r => r.status === 'running' || r.status === 'pending');
-        const actionsCell = row.querySelector('.actions-cell');
-        if (actionsCell) {
-            const hasStopButton = actionsCell.querySelector('.action-btn-stop') !== null;
-            if (hasRunningOrPending !== hasStopButton) {
-                const actionButtons = this.buildActionButtons(task.taskId, hasRunningOrPending, task.username);
-                actionsCell.innerHTML = `<div class="action-buttons">${actionButtons}</div>`;
-            }
-        }
+        // Actions cell only has delete button now, no dynamic update needed
     },
 
-    buildActionButtons(taskId, hasRunningOrPending, username) {
-        let actionButtons = '';
-        if (hasRunningOrPending) {
-            actionButtons = `<button class="action-btn action-btn-stop" data-action="stop" data-id="${taskId}">中止</button>`;
-        }
-        actionButtons += `
-            <button class="action-btn action-btn-view" data-action="view" data-id="${taskId}" data-username="${escapeHtml(username || '')}">查看</button>
-            <button class="action-btn action-btn-delete" data-action="delete" data-id="${taskId}">删除</button>
-        `;
-        return actionButtons;
+    buildActionButtons(taskId) {
+        return `<button class="action-btn action-btn-delete" data-action="delete" data-id="${taskId}">删除</button>`;
     },
 
     renderPagination() {
