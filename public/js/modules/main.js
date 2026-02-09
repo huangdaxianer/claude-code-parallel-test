@@ -99,9 +99,6 @@ function setupEventListeners() {
     document.body.addEventListener('click', handleGlobalClick);
     document.body.addEventListener('change', handleGlobalChange);
 
-    // Filters
-    document.getElementById('filter-user')?.addEventListener('change', applyFilters);
-
     // Debounce search input to avoid excessive API calls
     let searchTimer = null;
     document.getElementById('filter-search')?.addEventListener('input', () => {
@@ -148,6 +145,13 @@ function setupEventListeners() {
 async function handleGlobalClick(e) {
     const target = e.target;
 
+    // Close all filter popups when clicking outside
+    const filterBtn = target.closest('.col-filter-btn');
+    const filterPopup = target.closest('.col-filter-popup');
+    if (!filterBtn && !filterPopup) {
+        document.querySelectorAll('.col-filter-popup.show').forEach(p => p.classList.remove('show'));
+    }
+
     // Buttons with data-action
     const actionBtn = target.closest('[data-action]');
     if (actionBtn) {
@@ -155,6 +159,50 @@ async function handleGlobalClick(e) {
         const id = actionBtn.dataset.id; // Many uses require ID
 
         switch (action) {
+            // Filter icon toggle
+            case 'toggle-filter-popup': {
+                e.stopPropagation();
+                const popupId = actionBtn.dataset.target;
+                const popup = document.getElementById(popupId);
+                // Close all other popups first
+                document.querySelectorAll('.col-filter-popup.show').forEach(p => {
+                    if (p.id !== popupId) p.classList.remove('show');
+                });
+                if (popup) popup.classList.toggle('show');
+                break;
+            }
+
+            // User filter option clicked
+            case 'user-filter': {
+                const value = actionBtn.dataset.value;
+                AppState.userFilter = value || '';
+                AppState.pagination.page = 1;
+                // Close popup and refresh
+                document.querySelectorAll('.col-filter-popup.show').forEach(p => p.classList.remove('show'));
+                AppState.prevModelNamesKey = '';
+                UI.updateTableHeader(true);
+                refreshTasks();
+                break;
+            }
+
+            // Model filter option clicked
+            case 'model-filter': {
+                const modelId = actionBtn.dataset.modelId;
+                const value = actionBtn.dataset.value;
+                if (value) {
+                    AppState.modelFilters[modelId] = value;
+                } else {
+                    delete AppState.modelFilters[modelId];
+                }
+                AppState.pagination.page = 1;
+                // Close popup and refresh
+                document.querySelectorAll('.col-filter-popup.show').forEach(p => p.classList.remove('show'));
+                AppState.prevModelNamesKey = '';
+                UI.updateTableHeader(true);
+                refreshTasks();
+                break;
+            }
+
             case 'stop': stopTask(id); break;
             case 'delete': deleteTask(id); break;
             case 'view': viewTask(id, actionBtn.dataset.username); break;
@@ -268,19 +316,7 @@ async function handleGlobalChange(e) {
         return;
     }
 
-    // Per-model status filter (inside dynamically rendered thead)
-    if (target.dataset.action === 'model-filter') {
-        const modelId = target.dataset.modelId;
-        const filterValue = target.value;
-        if (filterValue) {
-            AppState.modelFilters[modelId] = filterValue;
-        } else {
-            delete AppState.modelFilters[modelId];
-        }
-        AppState.pagination.page = 1;
-        refreshTasks();
-        return;
-    }
+    // Per-model & user filters are now handled via handleGlobalClick (icon popups)
 
     if (target.dataset.action === 'toggle-question') {
         const id = target.dataset.id;
@@ -403,13 +439,12 @@ async function fetchQueueStatus() {
 
 async function refreshTasks() {
     try {
-        const userFilter = document.getElementById('filter-user')?.value || '';
         const searchFilter = document.getElementById('filter-search')?.value.trim() || '';
 
         const result = await TaskAPI.fetchTasks({
             page: AppState.pagination.page,
             pageSize: AppState.pagination.pageSize,
-            userId: userFilter,
+            userId: AppState.userFilter,
             search: searchFilter,
             modelFilters: AppState.modelFilters
         });

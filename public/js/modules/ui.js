@@ -9,7 +9,6 @@ import { escapeHtml, formatDateTime, getModelStatusClass, truncate } from './uti
 const Elements = {
     tbody: () => document.getElementById('tasks-tbody'),
     thead: () => document.getElementById('tasks-thead'),
-    filterUser: () => document.getElementById('filter-user'),
     maxParallelInput: () => document.getElementById('max-parallel-input'),
     batchActions: () => document.getElementById('batch-actions'),
     selectedCount: () => document.getElementById('selected-count'),
@@ -83,20 +82,11 @@ export const UI = {
 
     // --- Users ---
     renderUsers(users) {
-        const select = Elements.filterUser();
-        if (!select) return;
-
-        // keep the first option (All users)
-        const firstOption = select.options[0];
-        select.innerHTML = '';
-        select.appendChild(firstOption);
-
-        users.forEach(user => {
-            const option = document.createElement('option');
-            option.value = user.id;
-            option.textContent = user.username;
-            select.appendChild(option);
-        });
+        // Store users in AppState for header filter rendering
+        AppState.users = users;
+        // Re-render header to update user filter options
+        AppState.prevModelNamesKey = '';
+        this.updateTableHeader(true);
     },
 
     // --- Config & Stats ---
@@ -135,16 +125,50 @@ export const UI = {
         }
         AppState.prevModelNamesKey = newModelNamesKey;
 
+        // Build filter icon HTML helper
+        const filterIconHTML = (isActive) => `
+            <span class="bar bar1"></span>
+            <span class="bar bar2"></span>
+            <span class="bar bar3"></span>`;
+
+        // User filter options
+        const userFilter = AppState.userFilter || '';
+        const hasUserFilter = !!userFilter;
+        let userOptionsHTML = `<button class="filter-option${!userFilter ? ' selected' : ''}" data-action="user-filter" data-value="">全部</button>`;
+        AppState.users.forEach(u => {
+            const sel = (String(u.id) === String(userFilter)) ? ' selected' : '';
+            userOptionsHTML += `<button class="filter-option${sel}" data-action="user-filter" data-value="${u.id}">${escapeHtml(u.username)}</button>`;
+        });
+
         let headerHTML = `
             <tr>
                 <th class="checkbox-cell">
                     <input type="checkbox" class="task-checkbox" id="select-all">
                 </th>
                 <th class="task-cell">任务</th>
-                <th class="user-cell">用户</th>
+                <th class="user-cell">
+                    <div class="col-filter-wrap">
+                        <span>用户</span>
+                        <button class="col-filter-btn${hasUserFilter ? ' active' : ''}" data-action="toggle-filter-popup" data-target="user-filter-popup">
+                            ${filterIconHTML(hasUserFilter)}
+                        </button>
+                        <div class="col-filter-popup" id="user-filter-popup">
+                            ${userOptionsHTML}
+                        </div>
+                    </div>
+                </th>
                 <th class="time-cell">创建时间</th>
                 <th class="actions-header-cell">操作</th>
         `;
+
+        // Status filter options for model columns
+        const statusOptions = [
+            { value: '', label: '全部' },
+            { value: 'running', label: '运行中' },
+            { value: 'pending', label: '排队中' },
+            { value: 'completed', label: '已完成' },
+            { value: 'stopped', label: '已中止' }
+        ];
 
         AppState.allModelNames.forEach(modelName => {
             const modelConfig = AppState.allModels.find(m => m.name === modelName);
@@ -152,18 +176,24 @@ export const UI = {
             const modelId = modelConfig ? modelConfig.id : '';
             const currentFilter = AppState.modelFilters[modelId] || '';
             const hasFilter = !!currentFilter;
+            const popupId = `model-filter-popup-${modelId}`;
+
+            let optionsHTML = '';
+            statusOptions.forEach(opt => {
+                const sel = (currentFilter === opt.value) ? ' selected' : '';
+                optionsHTML += `<button class="filter-option${sel}" data-action="model-filter" data-model-id="${escapeHtml(modelId)}" data-value="${opt.value}">${opt.label}</button>`;
+            });
+
             headerHTML += `
                 <th class="model-col-header" title="${escapeHtml(modelName)}">
-                    <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+                    <div class="col-filter-wrap" style="justify-content:center;">
                         <span>${escapeHtml(displayName)}</span>
-                        <select class="model-filter-select" data-action="model-filter" data-model-id="${escapeHtml(modelId)}"
-                            style="width:100%; font-size:0.7rem; padding:1px 2px; border:1px solid ${hasFilter ? '#3b82f6' : '#e2e8f0'}; border-radius:3px; background:${hasFilter ? '#eff6ff' : '#fff'}; color:#475569; cursor:pointer; outline:none;">
-                            <option value="">全部</option>
-                            <option value="running" ${currentFilter === 'running' ? 'selected' : ''}>运行中</option>
-                            <option value="pending" ${currentFilter === 'pending' ? 'selected' : ''}>排队中</option>
-                            <option value="completed" ${currentFilter === 'completed' ? 'selected' : ''}>已完成</option>
-                            <option value="stopped" ${currentFilter === 'stopped' ? 'selected' : ''}>已中止</option>
-                        </select>
+                        <button class="col-filter-btn${hasFilter ? ' active' : ''}" data-action="toggle-filter-popup" data-target="${popupId}">
+                            ${filterIconHTML(hasFilter)}
+                        </button>
+                        <div class="col-filter-popup" id="${popupId}">
+                            ${optionsHTML}
+                        </div>
                     </div>
                 </th>`;
         });

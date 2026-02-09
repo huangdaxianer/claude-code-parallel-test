@@ -50,8 +50,11 @@ export const AppState = {
     feedbackStatsData: [],
     activeQuestions: [], // For feedback table headers
 
-    // Per-model status filters: { modelName: 'completed' | 'stopped' | ... | '' }
+    // Per-model status filters: { modelId: 'completed' | 'stopped' | ... | '' }
     modelFilters: {},
+
+    // User filter: userId string or ''
+    userFilter: '',
 
     // Track previous model names to avoid unnecessary header rebuilds
     prevModelNamesKey: '',
