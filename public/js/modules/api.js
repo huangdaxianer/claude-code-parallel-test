@@ -42,6 +42,16 @@ export const TaskAPI = {
         return data;
     },
 
+    async restartTask(taskId) {
+        const res = await fetch(`/api/tasks/${taskId}/start`, { method: 'POST' });
+        const data = await res.json();
+
+        if (!data.success) {
+            throw new Error(data.error || '未知错误');
+        }
+        return data;
+    },
+
     async deleteTask(taskId) {
         const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
         const data = await res.json();

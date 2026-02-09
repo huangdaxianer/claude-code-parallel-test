@@ -251,6 +251,7 @@ async function handleGlobalClick(e) {
 
     // Batch Actions (IDs)
     if (target.id === 'batch-stop-btn') batchStop();
+    if (target.id === 'batch-restart-btn') batchRestart();
     if (target.id === 'batch-delete-btn') batchDelete();
     if (target.id === 'config-save-btn') updateMaxParallel();
     if (target.id === 'download-csv-btn') downloadFeedbackStatsCSV();
@@ -816,6 +817,20 @@ async function batchStop() {
     if (!confirm(`确定要中止 ${runningTasks.length} 个运行中的任务吗？`)) return;
 
     for (const taskId of runningTasks) await TaskAPI.stopTask(taskId).catch(console.error);
+    AppState.clearSelection();
+    refreshTasks();
+}
+
+async function batchRestart() {
+    if (AppState.selectedTasks.size === 0) return;
+    const stoppedTasks = AppState.filteredTasks
+        .filter(t => AppState.selectedTasks.has(t.taskId) && t.queueStatus === 'stopped')
+        .map(t => t.taskId);
+
+    if (stoppedTasks.length === 0) { alert('所选任务中没有已中止的任务'); return; }
+    if (!confirm(`确定要重启 ${stoppedTasks.length} 个已中止的任务吗？`)) return;
+
+    for (const taskId of stoppedTasks) await TaskAPI.restartTask(taskId).catch(console.error);
     AppState.clearSelection();
     refreshTasks();
 }
