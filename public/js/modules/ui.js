@@ -457,11 +457,16 @@ export const UI = {
             title.textContent = '编辑模型';
             document.getElementById('m-id').value = model.id;
             document.getElementById('m-name').value = model.name;
+            document.getElementById('m-model-name').value = model.model_name || model.name || '';
+            document.getElementById('m-api-base-url').value = model.api_base_url || '';
+            document.getElementById('m-api-key').value = '';
+            document.getElementById('m-api-key').placeholder = model.api_key_masked || '留空使用默认 (.env)';
             document.getElementById('m-desc').value = model.description || '';
             document.getElementById('m-default-checked').checked = !!model.is_default_checked;
         } else {
             title.textContent = '新增模型';
             document.getElementById('m-default-checked').checked = true;
+            document.getElementById('m-api-key').placeholder = '留空使用默认 (.env)';
         }
 
         modal.classList.add('show');
@@ -544,12 +549,18 @@ export const UI = {
                         <span class="expand-icon" data-model-id="${model.id}" style="transition: transform 0.2s; font-size: 0.75rem; color: #64748b;">▶</span>
                         <div>
                             <div style="font-weight: 600; font-size: 1rem; color: #1e293b;">${escapeHtml(model.name)}</div>
-                            <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;">${escapeHtml(model.description || '无备注')}</div>
+                            <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;">
+                                <span style="font-family: monospace; background: #f1f5f9; padding: 0.1rem 0.4rem; border-radius: 0.25rem;">${escapeHtml(model.model_name || model.name)}</span>
+                                ${model.api_base_url ? `<span style="margin-left: 0.5rem; font-size: 0.75rem; background: #dbeafe; color: #1e40af; padding: 0.1rem 0.4rem; border-radius: 0.25rem;">自定义 URL</span>` : ''}
+                                ${model.api_key_masked ? `<span style="margin-left: 0.25rem; font-size: 0.75rem; background: #fef3c7; color: #d97706; padding: 0.1rem 0.4rem; border-radius: 0.25rem;">自定义 Key</span>` : ''}
+                            </div>
+                            ${model.description ? `<div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.15rem;">${escapeHtml(model.description)}</div>` : ''}
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; gap: 1rem;">
                         <span class="timestamp">${formatDateTime(model.created_at)}</span>
-                        <div class="action-buttons">
+                        <div class="action-buttons" style="display: flex; gap: 0.5rem;">
+                            <button class="action-btn" data-action="edit-model" data-id="${model.id}" style="background: #dbeafe; color: #1e40af; border: none; padding: 0.25rem 0.75rem; border-radius: 0.25rem; cursor: pointer; font-size: 0.85rem;" onclick="event.stopPropagation()">编辑</button>
                             <button class="action-btn action-btn-delete" data-action="delete-model" data-id="${model.id}" data-name="${escapeHtml(model.name)}">删除</button>
                         </div>
                     </div>

@@ -575,11 +575,18 @@ async function handleModelSubmit(e) {
     if (e) e.preventDefault();
 
     const id = document.getElementById('m-id').value;
+    const apiKeyVal = document.getElementById('m-api-key').value;
     const payload = {
         endpoint_name: document.getElementById('m-name').value,
+        model_name: document.getElementById('m-model-name').value,
+        api_base_url: document.getElementById('m-api-base-url').value,
         description: document.getElementById('m-desc').value,
         is_default_checked: document.getElementById('m-default-checked').checked
     };
+    // Only send api_key if the user typed a new value
+    if (apiKeyVal) {
+        payload.api_key = apiKeyVal;
+    }
 
     try {
         const res = await TaskAPI.updateModel(id, payload); // Handles both create and update logic internally in API wrapper if we want, or here

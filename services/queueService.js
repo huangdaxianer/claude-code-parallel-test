@@ -28,9 +28,10 @@ async function processQueue() {
         // 计算可用槽位
         const availableSlots = maxParallel - runningCount;
 
-        // 获取待执行的子任务
+        // 获取待执行的子任务（包含模型的自定义 API 配置）
         const pendingSubtasks = db.prepare(`
-            SELECT mr.id, mr.task_id, mr.model_id, t.title, mc.endpoint_name
+            SELECT mr.id, mr.task_id, mr.model_id, t.title,
+                   mc.endpoint_name, mc.api_base_url, mc.api_key, mc.model_name
             FROM model_runs mr
             JOIN tasks t ON mr.task_id = t.task_id
             JOIN task_queue tq ON mr.task_id = tq.task_id
@@ -50,9 +51,14 @@ async function processQueue() {
         for (const subtask of pendingSubtasks) {
             db.prepare("UPDATE model_runs SET status = 'running', started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(subtask.id);
             db.prepare("UPDATE task_queue SET status = 'running', started_at = COALESCE(started_at, CURRENT_TIMESTAMP) WHERE task_id = ?").run(subtask.task_id);
-            console.log(`[Queue] Starting subtask: ${subtask.task_id}/${subtask.model_id} (endpoint: ${subtask.endpoint_name})`);
-            // Pass model_id for folder naming and endpoint_name for API request
-            executeSubtask(subtask.task_id, subtask.model_id, subtask.endpoint_name);
+            console.log(`[Queue] Starting subtask: ${subtask.task_id}/${subtask.model_id} (endpoint: ${subtask.endpoint_name}, model: ${subtask.model_name || subtask.endpoint_name})`);
+            // Pass model_id for folder naming and modelConfig for API request
+            executeSubtask(subtask.task_id, subtask.model_id, {
+                endpointName: subtask.endpoint_name,
+                apiBaseUrl: subtask.api_base_url || null,
+                apiKey: subtask.api_key || null,
+                modelName: subtask.model_name || null
+            });
         }
     } catch (e) {
         console.error('[Queue] Error processing queue:', e);
@@ -63,13 +69,13 @@ async function processQueue() {
 }
 
 // 执行单个模型子任务
-function executeSubtask(taskId, modelId, endpointName) {
+function executeSubtask(taskId, modelId, modelConfig) {
     const subtaskKey = `${taskId}/${modelId}`;
     const executorService = require('./executorService');
 
     let child;
     try {
-        child = executorService.executeModel(taskId, modelId, endpointName);
+        child = executorService.executeModel(taskId, modelId, modelConfig);
     } catch (err) {
         console.error(`[Queue] Executor error for ${subtaskKey}:`, err);
         db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);

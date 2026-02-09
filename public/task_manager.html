@@ -1084,10 +1084,32 @@
                     <input type="hidden" id="m-id">
 
                     <div class="form-group" style="margin-bottom: 1rem;">
-                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">接入点名称 (Endpoint Name)
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">显示名称 (Endpoint Name)
                             (必填)</label>
                         <input type="text" id="m-name" class="filter-input" style="width:100%" required
-                            placeholder="例如：claude-3-5-sonnet-20241022">
+                            placeholder="例如：Claude Sonnet 4">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">模型名称 (Model Name)
+                            (必填)</label>
+                        <input type="text" id="m-model-name" class="filter-input" style="width:100%" required
+                            placeholder="例如：claude-sonnet-4-20250514">
+                        <div style="font-size:0.8rem; color:#94a3b8; margin-top:0.25rem;">实际传给 CLI 的 --model 参数值</div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">API Base URL (选填)</label>
+                        <input type="text" id="m-api-base-url" class="filter-input" style="width:100%"
+                            placeholder="留空使用默认 (.env)">
+                        <div style="font-size:0.8rem; color:#94a3b8; margin-top:0.25rem;">自定义 API 地址，留空使用环境变量默认值</div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">API Key (选填)</label>
+                        <input type="password" id="m-api-key" class="filter-input" style="width:100%"
+                            placeholder="留空使用默认 (.env)">
+                        <div style="font-size:0.8rem; color:#94a3b8; margin-top:0.25rem;">自定义 API Key，留空使用环境变量默认值</div>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 1rem;">

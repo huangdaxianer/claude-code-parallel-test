@@ -515,7 +515,7 @@ router.get('/feedback-stats', (req, res) => {
 // 获取所有模型配置 (Admin) - 包含每个用户组的设置
 router.get('/models', (req, res) => {
     try {
-        const models = db.prepare('SELECT id as internal_id, model_id as id, endpoint_name as name, description, is_default_checked, created_at FROM model_configs ORDER BY created_at DESC').all();
+        const models = db.prepare('SELECT id as internal_id, model_id as id, endpoint_name as name, description, is_default_checked, api_base_url, api_key, model_name, created_at FROM model_configs ORDER BY created_at DESC').all();
         const groups = db.prepare('SELECT * FROM user_groups ORDER BY is_default DESC, name ASC').all();
 
         // Get all model group settings
@@ -542,6 +542,13 @@ router.get('/models', (req, res) => {
 
             // Remove internal_id from the object to keep the API clean
             const { internal_id, ...modelData } = model;
+
+            // Mask api_key for security
+            if (modelData.api_key) {
+                const key = modelData.api_key;
+                modelData.api_key_masked = key.length > 4 ? '****' + key.slice(-4) : '****';
+                delete modelData.api_key;
+            }
 
             return {
                 ...modelData,
@@ -662,10 +669,14 @@ function generateModelId() {
 // 创建新模型 (Admin)
 router.post('/models', (req, res) => {
     const endpoint_name = req.body.endpoint_name?.trim();
-    const { description, is_default_checked } = req.body;
+    const { description, is_default_checked, api_base_url, api_key, model_name } = req.body;
 
     if (!endpoint_name) {
         return res.status(400).json({ error: 'Missing required field: endpoint_name' });
+    }
+
+    if (!model_name || !model_name.trim()) {
+        return res.status(400).json({ error: 'Missing required field: model_name' });
     }
 
     try {
@@ -676,14 +687,17 @@ router.post('/models', (req, res) => {
         } while (db.prepare("SELECT 1 FROM model_configs WHERE model_id = ?").get(modelId));
 
         const stmt = db.prepare(`
-            INSERT INTO model_configs (model_id, endpoint_name, description, is_default_checked)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO model_configs (model_id, endpoint_name, description, is_default_checked, api_base_url, api_key, model_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         `);
         const result = stmt.run(
             modelId,
             endpoint_name,
             description || '',
-            is_default_checked ? 1 : 0
+            is_default_checked ? 1 : 0,
+            api_base_url?.trim() || null,
+            api_key?.trim() || null,
+            model_name.trim()
         );
 
         res.json({ success: true, id: result.lastInsertRowid, model_id: modelId });
@@ -699,7 +713,7 @@ router.post('/models', (req, res) => {
 // 更新模型 (Admin)
 router.put('/models/:id', (req, res) => {
     const { id } = req.params; // This is the model_id string
-    const { endpoint_name, description, is_default_checked } = req.body;
+    const { endpoint_name, description, is_default_checked, api_base_url, api_key, model_name } = req.body;
 
     try {
         const updates = [];
@@ -711,6 +725,13 @@ router.put('/models/:id', (req, res) => {
         }
         if (description !== undefined) { updates.push('description = ?'); params.push(description); }
         if (is_default_checked !== undefined) { updates.push('is_default_checked = ?'); params.push(is_default_checked ? 1 : 0); }
+        if (api_base_url !== undefined) { updates.push('api_base_url = ?'); params.push(api_base_url?.trim() || null); }
+        // Only update api_key if a new value is provided (not the masked placeholder)
+        if (api_key !== undefined && api_key !== '' && !api_key.startsWith('****')) {
+            updates.push('api_key = ?');
+            params.push(api_key.trim() || null);
+        }
+        if (model_name !== undefined) { updates.push('model_name = ?'); params.push(model_name?.trim() || null); }
 
         if (updates.length === 0) {
             return res.json({ success: true, message: 'No changes' });

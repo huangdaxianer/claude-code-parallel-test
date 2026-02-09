@@ -201,15 +201,16 @@ function buildFirejailArgs(taskDir, modelId) {
 }
 
 /**
- * 构建环境变量
+ * 构建环境变量（支持每个模型独立的 API 配置）
+ * @param {Object} modelConfig - 模型配置，可包含 apiBaseUrl 和 apiKey
  */
-function buildEnv() {
+function buildEnv(modelConfig = {}) {
     return {
         ...process.env,
         LANG: 'en_US.UTF-8',
         LC_ALL: 'en_US.UTF-8',
-        ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN,
-        ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+        ANTHROPIC_AUTH_TOKEN: modelConfig.apiKey || process.env.ANTHROPIC_AUTH_TOKEN,
+        ANTHROPIC_BASE_URL: modelConfig.apiBaseUrl || process.env.ANTHROPIC_BASE_URL,
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC || '1'
     };
 }
@@ -218,9 +219,12 @@ function buildEnv() {
  * 执行单个模型任务
  * @returns {ChildProcess} 子进程对象
  */
-function executeModel(taskId, modelId, endpointName) {
+function executeModel(taskId, modelId, modelConfig) {
     const subtaskKey = `${taskId}/${modelId}`;
-    console.log(`[Executor] Starting: ${subtaskKey} (endpoint: ${endpointName})`);
+    // modelConfig: { endpointName, apiBaseUrl, apiKey, modelName }
+    const endpointName = modelConfig.endpointName || modelConfig;
+    const actualModelName = modelConfig.modelName || endpointName;
+    console.log(`[Executor] Starting: ${subtaskKey} (endpoint: ${endpointName}, model: ${actualModelName})`);
 
     if (!executorConfig.claudeBin) {
         throw new Error('Claude CLI not found');
@@ -248,9 +252,9 @@ function executeModel(taskId, modelId, endpointName) {
     // 获取 prompt
     const prompt = getPrompt(taskId);
 
-    // 构建 Claude CLI 参数
+    // 构建 Claude CLI 参数（使用 modelName 作为 --model 值）
     const claudeArgs = [
-        '--model', endpointName,
+        '--model', actualModelName,
         '--allowedTools', 'Read(./**),Edit(./**),Bash(.**/*)',
         '--disallowedTools', 'EnterPlanMode,ExitPlanMode',
         '--dangerously-skip-permissions',
@@ -272,25 +276,26 @@ function executeModel(taskId, modelId, endpointName) {
 
         console.log(`[Executor] Using firejail sandbox for ${subtaskKey}`);
 
+        const envVars = buildEnv(modelConfig);
         if (executorConfig.useIsolation) {
             // 隔离用户模式
             child = spawn('sudo', [
                 '-n', '-H', '-u', 'claude-user',
                 'env',
-                `ANTHROPIC_AUTH_TOKEN=${process.env.ANTHROPIC_AUTH_TOKEN}`,
-                `ANTHROPIC_BASE_URL=${process.env.ANTHROPIC_BASE_URL}`,
-                `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC || '1'}`,
+                `ANTHROPIC_AUTH_TOKEN=${envVars.ANTHROPIC_AUTH_TOKEN}`,
+                `ANTHROPIC_BASE_URL=${envVars.ANTHROPIC_BASE_URL}`,
+                `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${envVars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC}`,
                 'firejail', ...fullArgs
             ], {
                 cwd: folderPath,
-                env: buildEnv(),
+                env: envVars,
                 stdio: ['pipe', 'pipe', 'pipe'],
                 detached: true
             });
         } else {
             child = spawn('firejail', fullArgs, {
                 cwd: folderPath,
-                env: buildEnv(),
+                env: envVars,
                 stdio: ['pipe', 'pipe', 'pipe'],
                 detached: true
             });
@@ -298,25 +303,26 @@ function executeModel(taskId, modelId, endpointName) {
     } else {
         // 无沙箱模式
         console.log(`[Executor] Running without sandbox for ${subtaskKey}`);
+        const envVars = buildEnv(modelConfig);
 
         if (executorConfig.useIsolation) {
             child = spawn('sudo', [
                 '-n', '-H', '-u', 'claude-user',
                 'env',
-                `ANTHROPIC_AUTH_TOKEN=${process.env.ANTHROPIC_AUTH_TOKEN}`,
-                `ANTHROPIC_BASE_URL=${process.env.ANTHROPIC_BASE_URL}`,
-                `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC || '1'}`,
+                `ANTHROPIC_AUTH_TOKEN=${envVars.ANTHROPIC_AUTH_TOKEN}`,
+                `ANTHROPIC_BASE_URL=${envVars.ANTHROPIC_BASE_URL}`,
+                `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${envVars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC}`,
                 executorConfig.claudeBin, ...claudeArgs
             ], {
                 cwd: folderPath,
-                env: buildEnv(),
+                env: envVars,
                 stdio: ['pipe', 'pipe', 'pipe'],
                 detached: true
             });
         } else {
             child = spawn(executorConfig.claudeBin, claudeArgs, {
                 cwd: folderPath,
-                env: buildEnv(),
+                env: envVars,
                 stdio: ['pipe', 'pipe', 'pipe'],
                 detached: true
             });
