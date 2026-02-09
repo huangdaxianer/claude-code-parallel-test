@@ -189,6 +189,7 @@
             width: 100%;
             border-collapse: collapse;
             font-size: 0.9rem;
+            table-layout: fixed;
         }
 
         .tasks-table th {
@@ -386,12 +387,12 @@
         /* Model column header */
         .model-col-header {
             font-size: 0.8rem;
-            min-width: 70px;
-            text-align: left;
+            text-align: center;
+            overflow: hidden;
         }
 
         .model-col-cell {
-            text-align: left;
+            text-align: center;
         }
 
         /* Action Buttons */
@@ -558,6 +559,22 @@
         /* Checkbox */
         .checkbox-cell {
             width: 40px;
+        }
+
+        /* User column */
+        .user-cell {
+            width: 90px;
+        }
+
+        /* Created time column */
+        .time-cell {
+            width: 90px;
+        }
+
+        /* Actions column */
+        .actions-cell,
+        .actions-header-cell {
+            width: 120px;
         }
 
         .task-checkbox {
@@ -889,11 +906,11 @@
                             <th class="checkbox-cell">
                                 <input type="checkbox" class="task-checkbox" id="select-all">
                             </th>
-                            <th>任务</th>
-                            <th>用户</th>
+                            <th class="task-cell">任务</th>
+                            <th class="user-cell">用户</th>
+                            <th class="time-cell">创建时间</th>
+                            <th class="actions-header-cell">操作</th>
                             <!-- Model columns will be inserted here dynamically -->
-                            <th>创建时间</th>
-                            <th>操作</th>
                         </tr>
                     </thead>
                     <tbody id="tasks-tbody">

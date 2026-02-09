@@ -141,7 +141,9 @@ export const UI = {
                     <input type="checkbox" class="task-checkbox" id="select-all">
                 </th>
                 <th class="task-cell">任务</th>
-                <th>用户</th>
+                <th class="user-cell">用户</th>
+                <th class="time-cell">创建时间</th>
+                <th class="actions-header-cell">操作</th>
         `;
 
         AppState.allModelNames.forEach(modelName => {
@@ -167,8 +169,6 @@ export const UI = {
         });
 
         headerHTML += `
-                <th>创建时间</th>
-                <th>操作</th>
             </tr>
         `;
 
@@ -258,19 +258,18 @@ export const UI = {
 
         return `
             <td class="checkbox-cell">
-                <input type="checkbox" class="task-checkbox" 
-                       data-task-id="${task.taskId}" 
+                <input type="checkbox" class="task-checkbox"
+                       data-task-id="${task.taskId}"
                        ${isChecked ? 'checked' : ''}>
             </td>
             <td class="task-cell">
                 <div class="task-title" title="${escapeHtml(task.title || 'Untitled')}">${escapeHtml(task.title || 'Untitled')}</div>
                 <div class="task-id">${task.taskId}</div>
             </td>
-            <td>
+            <td class="user-cell">
                 <span class="user-badge">${escapeHtml(task.username)}</span>
             </td>
-            ${modelCells}
-            <td>
+            <td class="time-cell">
                 <span class="timestamp">${createdAt}</span>
             </td>
             <td class="actions-cell">
@@ -278,6 +277,7 @@ export const UI = {
                     ${actionButtons}
                 </div>
             </td>
+            ${modelCells}
         `;
     },
 
