@@ -188,8 +188,8 @@
                 actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model-id="${run.modelId}" style="background: #dcfce7; color: #166534; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">重启</button>`;
             } else if (run.status === 'running') {
                 actionButtons = `<button class="btn-xs action-btn" data-action="stop" data-model-id="${run.modelId}" style="background: #ffedd5; color: #9a3412; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">中止</button>`;
-            } else if (run.status === 'completed' && (run.previewable === 'static' || run.previewable === 'dynamic')) {
-                actionButtons = `<button class="btn-xs action-btn" data-action="preview" data-model-id="${run.modelId}" style="background: #dbeafe; color: #1e40af; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">预览</button>`;
+            } else if (run.status === 'completed' || run.status === 'evaluated') {
+                actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model-id="${run.modelId}" style="background: #dcfce7; color: #166534; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">重启</button>`;
             }
 
             const tr = document.createElement('tr');
