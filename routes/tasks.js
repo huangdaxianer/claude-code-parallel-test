@@ -54,7 +54,7 @@ router.get('/', (req, res) => {
 });
 
 /**
- * 验证任务是否存在且属于指定用户
+ * 验证任务是否存在且属于指定用户（管理员可访问所有任务）
  * GET /api/tasks/verify?taskId=xxx&userId=yyy
  */
 router.get('/verify', (req, res) => {
@@ -65,9 +65,18 @@ router.get('/verify', (req, res) => {
             return res.json({ exists: false, task: null });
         }
 
-        const task = db.prepare(
-            'SELECT * FROM tasks WHERE task_id = ? AND user_id = ?'
-        ).get(taskId, userId);
+        // 检查当前用户是否是管理员
+        const username = req.cookies?.username || req.headers['x-username'];
+        const currentUser = username ? db.prepare('SELECT role FROM users WHERE username = ?').get(username) : null;
+        const isAdmin = currentUser && currentUser.role === 'admin';
+
+        let task;
+        if (isAdmin) {
+            // 管理员可以访问所有任务
+            task = db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId);
+        } else {
+            task = db.prepare('SELECT * FROM tasks WHERE task_id = ? AND user_id = ?').get(taskId, userId);
+        }
 
         res.json({
             exists: !!task,
