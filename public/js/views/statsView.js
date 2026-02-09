@@ -13,13 +13,13 @@
 
     /**
      * 格式化秒数为可读字符串
-     * < 60s: 显示秒 (如 "45.0")
+     * < 60s: 显示秒 (如 "45")
      * >= 60s: 显示 分:秒 (如 "2:05")
      * >= 3600s: 显示 时:分:秒 (如 "1:02:05")
      */
     function formatDuration(totalSeconds) {
         if (totalSeconds < 60) {
-            return totalSeconds.toFixed(1);
+            return `${Math.floor(totalSeconds)}`;
         }
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
