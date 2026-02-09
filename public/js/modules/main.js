@@ -133,16 +133,8 @@ function setupEventListeners() {
         }
     });
 
-    // Select All
-    document.getElementById('select-all')?.addEventListener('change', (e) => {
-        if (e.target.checked) {
-            const allIds = AppState.filteredTasks.map(t => t.taskId);
-            AppState.selectAll(allIds);
-        } else {
-            AppState.clearSelection();
-        }
-        UI.renderTasks();
-    });
+    // Select All — handled via event delegation in handleGlobalChange
+    // (the #select-all checkbox is inside dynamically re-rendered thead)
 
     // Forms
     document.getElementById('question-form')?.addEventListener('submit', handleQuestionSubmit);
@@ -264,6 +256,18 @@ async function handleGlobalClick(e) {
 
 async function handleGlobalChange(e) {
     const target = e.target;
+
+    // Select All checkbox (inside dynamically rendered thead)
+    if (target.id === 'select-all') {
+        if (target.checked) {
+            const allIds = AppState.filteredTasks.map(t => t.taskId);
+            AppState.selectAll(allIds);
+        } else {
+            AppState.clearSelection();
+        }
+        UI.renderTasks();
+        return;
+    }
 
     if (target.dataset.action === 'toggle-question') {
         const id = target.dataset.id;
