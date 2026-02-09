@@ -3,8 +3,14 @@
  */
 
 export const TaskAPI = {
-    async fetchTasks() {
-        const res = await fetch('/api/admin/tasks');
+    async fetchTasks({ page = 1, pageSize = 20, userId = '', status = '', search = '' } = {}) {
+        const params = new URLSearchParams();
+        params.set('page', page);
+        params.set('pageSize', pageSize);
+        if (userId) params.set('userId', userId);
+        if (status) params.set('status', status);
+        if (search) params.set('search', search);
+        const res = await fetch(`/api/admin/tasks?${params.toString()}`);
         return await res.json();
     },
 

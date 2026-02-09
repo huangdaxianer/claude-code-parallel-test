@@ -116,34 +116,12 @@ export const UI = {
     },
 
     updateStats() {
-        let totalSubtasks = 0;
-        let completedSubtasks = 0;
-        let runningSubtasks = 0;
-        let queuedSubtasks = 0;
-        let stoppedSubtasks = 0;
-
-        AppState.allTasks.forEach(task => {
-            (task.runs || []).forEach(run => {
-                if (run.status && run.status !== 'not-started') {
-                    totalSubtasks++;
-                    if (run.status === 'completed' || run.status === 'evaluated') {
-                        completedSubtasks++;
-                    } else if (run.status === 'running') {
-                        runningSubtasks++;
-                    } else if (run.status === 'pending') {
-                        queuedSubtasks++;
-                    } else if (run.status === 'stopped') {
-                        stoppedSubtasks++;
-                    }
-                }
-            });
-        });
-
-        if (Elements.stats.total()) Elements.stats.total().textContent = totalSubtasks;
-        if (Elements.stats.running()) Elements.stats.running().textContent = runningSubtasks;
-        if (Elements.stats.pending()) Elements.stats.pending().textContent = queuedSubtasks;
-        if (Elements.stats.completed()) Elements.stats.completed().textContent = completedSubtasks;
-        if (Elements.stats.stopped()) Elements.stats.stopped().textContent = stoppedSubtasks;
+        const s = AppState.serverStats;
+        if (Elements.stats.total()) Elements.stats.total().textContent = s.total;
+        if (Elements.stats.running()) Elements.stats.running().textContent = s.running;
+        if (Elements.stats.pending()) Elements.stats.pending().textContent = s.pending;
+        if (Elements.stats.completed()) Elements.stats.completed().textContent = s.completed;
+        if (Elements.stats.stopped()) Elements.stats.stopped().textContent = s.stopped;
     },
 
     // --- Tasks Table ---
@@ -333,6 +311,70 @@ export const UI = {
             <button class="action-btn action-btn-delete" data-action="delete" data-id="${taskId}">删除</button>
         `;
         return actionButtons;
+    },
+
+    renderPagination() {
+        const container = document.getElementById('pagination-container');
+        if (!container) return;
+
+        const { page, totalPages, total, pageSize } = AppState.pagination;
+
+        if (total === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        const start = (page - 1) * pageSize + 1;
+        const end = Math.min(page * pageSize, total);
+
+        // Build page buttons
+        let pagesHTML = '';
+        const maxButtons = 7;
+
+        if (totalPages <= maxButtons) {
+            for (let i = 1; i <= totalPages; i++) {
+                pagesHTML += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+            }
+        } else {
+            // Always show first page
+            pagesHTML += `<button class="page-btn ${1 === page ? 'active' : ''}" onclick="goToPage(1)">1</button>`;
+
+            let startPage = Math.max(2, page - 2);
+            let endPage = Math.min(totalPages - 1, page + 2);
+
+            // Adjust range to always show 5 middle buttons when possible
+            if (page <= 3) {
+                endPage = Math.min(totalPages - 1, 5);
+            } else if (page >= totalPages - 2) {
+                startPage = Math.max(2, totalPages - 4);
+            }
+
+            if (startPage > 2) {
+                pagesHTML += `<span class="page-ellipsis">...</span>`;
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                pagesHTML += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+            }
+
+            if (endPage < totalPages - 1) {
+                pagesHTML += `<span class="page-ellipsis">...</span>`;
+            }
+
+            // Always show last page
+            pagesHTML += `<button class="page-btn ${totalPages === page ? 'active' : ''}" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+        }
+
+        container.innerHTML = `
+            <div class="pagination">
+                <span class="pagination-info">共 ${total} 条，第 ${start}-${end} 条</span>
+                <div class="pagination-buttons">
+                    <button class="page-btn" onclick="goToPage(${page - 1})" ${page <= 1 ? 'disabled' : ''}>‹</button>
+                    ${pagesHTML}
+                    <button class="page-btn" onclick="goToPage(${page + 1})" ${page >= totalPages ? 'disabled' : ''}>›</button>
+                </div>
+            </div>
+        `;
     },
 
     updateBatchActions() {

@@ -9,6 +9,23 @@ export const AppState = {
     selectedTasks: new Set(),
     allModelNames: [],
 
+    // Pagination
+    pagination: {
+        page: 1,
+        pageSize: 20,
+        total: 0,
+        totalPages: 0
+    },
+
+    // Server-side stats
+    serverStats: {
+        total: 0,
+        completed: 0,
+        running: 0,
+        pending: 0,
+        stopped: 0
+    },
+
     // Status
     queueStatus: {
         maxParallelSubtasks: 5,
@@ -40,10 +57,26 @@ export const AppState = {
 
     setTasks(tasks) {
         this.allTasks = tasks;
+        this.filteredTasks = tasks;
         this.extractAllModelNames();
     },
 
+    setPagination({ total, page, pageSize, totalPages }) {
+        this.pagination = { total, page, pageSize, totalPages };
+    },
+
+    setServerStats(stats) {
+        if (stats) {
+            this.serverStats = stats;
+        }
+    },
+
     extractAllModelNames() {
+        // Prefer model names from allModels config (complete list) over task runs (current page only)
+        if (this.allModels && this.allModels.length > 0) {
+            this.allModelNames = this.allModels.map(m => m.name).sort();
+            return;
+        }
         const modelSet = new Set();
         this.allTasks.forEach(task => {
             (task.runs || []).forEach(run => {

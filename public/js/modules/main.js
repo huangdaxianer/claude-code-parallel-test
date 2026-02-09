@@ -47,10 +47,9 @@ function init() {
     // Initial Load
     fetchUsers();
     fetchQueueStatus();
-    refreshTasks();
+    fetchModels();
     refreshTasks();
     fetchQuestions();
-    fetchModels();
 
     // Auto Refresh
     setInterval(() => {
@@ -103,7 +102,13 @@ function setupEventListeners() {
     // Filters
     document.getElementById('filter-user')?.addEventListener('change', applyFilters);
     document.getElementById('filter-status')?.addEventListener('change', applyFilters);
-    document.getElementById('filter-search')?.addEventListener('input', applyFilters);
+
+    // Debounce search input to avoid excessive API calls
+    let searchTimer = null;
+    document.getElementById('filter-search')?.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(applyFilters, 300);
+    });
 
     // Modal Outside Clicks
     const modalIds = ['prompt-modal', 'config-modal', 'question-modal', 'model-modal', 'group-modal', 'create-user-modal'];
@@ -381,11 +386,31 @@ async function fetchQueueStatus() {
 
 async function refreshTasks() {
     try {
-        const tasks = await TaskAPI.fetchTasks();
-        AppState.setTasks(tasks);
+        const userFilter = document.getElementById('filter-user')?.value || '';
+        const statusFilter = document.getElementById('filter-status')?.value || '';
+        const searchFilter = document.getElementById('filter-search')?.value.trim() || '';
+
+        const result = await TaskAPI.fetchTasks({
+            page: AppState.pagination.page,
+            pageSize: AppState.pagination.pageSize,
+            userId: userFilter,
+            status: statusFilter,
+            search: searchFilter
+        });
+
+        AppState.setTasks(result.tasks);
+        AppState.setPagination({
+            total: result.total,
+            page: result.page,
+            pageSize: result.pageSize,
+            totalPages: result.totalPages
+        });
+        AppState.setServerStats(result.stats);
+
         UI.updateTableHeader();
         UI.updateStats();
-        applyFilters();
+        UI.renderTasks();
+        UI.renderPagination();
         UI.updateLastRefresh();
     } catch (e) {
         console.error(e);
@@ -518,23 +543,18 @@ async function fetchFeedbackStats() {
 // --- Logic ---
 
 function applyFilters() {
-    const userFilter = document.getElementById('filter-user')?.value;
-    const statusFilter = document.getElementById('filter-status')?.value;
-    const searchFilter = document.getElementById('filter-search')?.value.toLowerCase().trim();
-
-    AppState.filteredTasks = AppState.allTasks.filter(task => {
-        if (userFilter && task.userId != userFilter) return false;
-        if (statusFilter && task.queueStatus !== statusFilter) return false;
-        if (searchFilter) {
-            const matchTitle = task.title && task.title.toLowerCase().includes(searchFilter);
-            const matchPrompt = task.prompt && task.prompt.toLowerCase().includes(searchFilter);
-            const matchId = task.taskId.toLowerCase().includes(searchFilter);
-            if (!matchTitle && !matchPrompt && !matchId) return false;
-        }
-        return true;
-    });
-    UI.renderTasks();
+    // Reset to page 1 when filters change
+    AppState.pagination.page = 1;
+    refreshTasks();
 }
+
+// --- Pagination ---
+window.goToPage = function (page) {
+    const p = parseInt(page);
+    if (isNaN(p) || p < 1 || p > AppState.pagination.totalPages) return;
+    AppState.pagination.page = p;
+    refreshTasks();
+};
 
 // --- Form Handling ---
 

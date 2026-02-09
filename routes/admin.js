@@ -7,11 +7,49 @@ const db = require('../db');
 const config = require('../config');
 const { processQueue } = require('../services/queueService');
 
-// 获取所有任务的管理视图
+// 获取任务的管理视图（支持分页和筛选）
 router.get('/tasks', (req, res) => {
     try {
-        const tasks = db.prepare(`
-            SELECT 
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize) || 20));
+        const userId = req.query.userId || '';
+        const status = req.query.status || '';
+        const search = req.query.search || '';
+
+        // Build WHERE clauses
+        const conditions = [];
+        const params = [];
+
+        if (userId) {
+            conditions.push('t.user_id = ?');
+            params.push(userId);
+        }
+        if (status) {
+            conditions.push('q.status = ?');
+            params.push(status);
+        }
+        if (search) {
+            conditions.push('(t.title LIKE ? OR t.prompt LIKE ? OR t.task_id LIKE ?)');
+            const searchPattern = `%${search}%`;
+            params.push(searchPattern, searchPattern, searchPattern);
+        }
+
+        const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+        // Get total count for pagination
+        const countSql = `
+            SELECT COUNT(*) as total
+            FROM tasks t
+            LEFT JOIN users u ON t.user_id = u.id
+            LEFT JOIN task_queue q ON t.task_id = q.task_id
+            ${whereClause}
+        `;
+        const { total } = db.prepare(countSql).get(...params);
+
+        // Get paginated tasks
+        const offset = (page - 1) * pageSize;
+        const tasksSql = `
+            SELECT
                 t.task_id,
                 t.title,
                 t.prompt,
@@ -25,8 +63,11 @@ router.get('/tasks', (req, res) => {
             FROM tasks t
             LEFT JOIN users u ON t.user_id = u.id
             LEFT JOIN task_queue q ON t.task_id = q.task_id
+            ${whereClause}
             ORDER BY t.created_at DESC
-        `).all();
+            LIMIT ? OFFSET ?
+        `;
+        const tasks = db.prepare(tasksSql).all(...params, pageSize, offset);
 
         const tasksWithRuns = tasks.map(task => {
             const runs = db.prepare(`
@@ -49,7 +90,7 @@ router.get('/tasks', (req, res) => {
                 completedAt: task.completed_at,
                 runs: runs.map(r => ({
                     modelId: r.model_id,
-                    modelName: r.endpoint_name || r.model_id, // Use endpoint_name for display, fallback to ID
+                    modelName: r.endpoint_name || r.model_id,
                     status: r.status,
                     duration: r.duration,
                     inputTokens: r.input_tokens,
@@ -58,7 +99,25 @@ router.get('/tasks', (req, res) => {
             };
         });
 
-        return res.json(tasksWithRuns);
+        // Get stats (across all tasks, unfiltered) for the stats cards
+        const stats = db.prepare(`
+            SELECT
+                COALESCE(SUM(CASE WHEN mr.status != 'not-started' THEN 1 ELSE 0 END), 0) as total,
+                COALESCE(SUM(CASE WHEN mr.status IN ('completed', 'evaluated') THEN 1 ELSE 0 END), 0) as completed,
+                COALESCE(SUM(CASE WHEN mr.status = 'running' THEN 1 ELSE 0 END), 0) as running,
+                COALESCE(SUM(CASE WHEN mr.status = 'pending' THEN 1 ELSE 0 END), 0) as pending,
+                COALESCE(SUM(CASE WHEN mr.status = 'stopped' THEN 1 ELSE 0 END), 0) as stopped
+            FROM model_runs mr
+        `).get();
+
+        return res.json({
+            tasks: tasksWithRuns,
+            total,
+            page,
+            pageSize,
+            totalPages: Math.ceil(total / pageSize),
+            stats
+        });
     } catch (e) {
         console.error('Error fetching admin tasks:', e);
         return res.status(500).json({ error: 'Failed to fetch tasks' });
