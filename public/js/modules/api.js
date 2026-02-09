@@ -3,13 +3,16 @@
  */
 
 export const TaskAPI = {
-    async fetchTasks({ page = 1, pageSize = 20, userId = '', status = '', search = '' } = {}) {
+    async fetchTasks({ page = 1, pageSize = 20, userId = '', search = '', modelFilters = {} } = {}) {
         const params = new URLSearchParams();
         params.set('page', page);
         params.set('pageSize', pageSize);
         if (userId) params.set('userId', userId);
-        if (status) params.set('status', status);
         if (search) params.set('search', search);
+        // Per-model status filters
+        for (const [modelId, filterStatus] of Object.entries(modelFilters)) {
+            if (filterStatus) params.set(`modelFilter_${modelId}`, filterStatus);
+        }
         const res = await fetch(`/api/admin/tasks?${params.toString()}`);
         return await res.json();
     },

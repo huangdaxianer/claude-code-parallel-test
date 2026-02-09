@@ -147,7 +147,23 @@ export const UI = {
         AppState.allModelNames.forEach(modelName => {
             const modelConfig = AppState.allModels.find(m => m.name === modelName);
             const displayName = (modelConfig && modelConfig.description) ? modelConfig.description : modelName;
-            headerHTML += `<th class="model-col-header" title="${escapeHtml(modelName)}">${escapeHtml(displayName)}</th>`;
+            const modelId = modelConfig ? modelConfig.id : '';
+            const currentFilter = AppState.modelFilters[modelId] || '';
+            const hasFilter = !!currentFilter;
+            headerHTML += `
+                <th class="model-col-header" title="${escapeHtml(modelName)}">
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+                        <span>${escapeHtml(displayName)}</span>
+                        <select class="model-filter-select" data-action="model-filter" data-model-id="${escapeHtml(modelId)}"
+                            style="width:100%; font-size:0.7rem; padding:1px 2px; border:1px solid ${hasFilter ? '#3b82f6' : '#e2e8f0'}; border-radius:3px; background:${hasFilter ? '#eff6ff' : '#fff'}; color:#475569; cursor:pointer; outline:none;">
+                            <option value="">全部</option>
+                            <option value="running" ${currentFilter === 'running' ? 'selected' : ''}>运行中</option>
+                            <option value="pending" ${currentFilter === 'pending' ? 'selected' : ''}>排队中</option>
+                            <option value="completed" ${currentFilter === 'completed' ? 'selected' : ''}>已完成</option>
+                            <option value="stopped" ${currentFilter === 'stopped' ? 'selected' : ''}>已中止</option>
+                        </select>
+                    </div>
+                </th>`;
         });
 
         headerHTML += `

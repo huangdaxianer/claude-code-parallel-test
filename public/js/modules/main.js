@@ -101,7 +101,6 @@ function setupEventListeners() {
 
     // Filters
     document.getElementById('filter-user')?.addEventListener('change', applyFilters);
-    document.getElementById('filter-status')?.addEventListener('change', applyFilters);
 
     // Debounce search input to avoid excessive API calls
     let searchTimer = null;
@@ -269,6 +268,20 @@ async function handleGlobalChange(e) {
         return;
     }
 
+    // Per-model status filter (inside dynamically rendered thead)
+    if (target.dataset.action === 'model-filter') {
+        const modelId = target.dataset.modelId;
+        const filterValue = target.value;
+        if (filterValue) {
+            AppState.modelFilters[modelId] = filterValue;
+        } else {
+            delete AppState.modelFilters[modelId];
+        }
+        AppState.pagination.page = 1;
+        refreshTasks();
+        return;
+    }
+
     if (target.dataset.action === 'toggle-question') {
         const id = target.dataset.id;
         const isActive = target.checked;
@@ -391,15 +404,14 @@ async function fetchQueueStatus() {
 async function refreshTasks() {
     try {
         const userFilter = document.getElementById('filter-user')?.value || '';
-        const statusFilter = document.getElementById('filter-status')?.value || '';
         const searchFilter = document.getElementById('filter-search')?.value.trim() || '';
 
         const result = await TaskAPI.fetchTasks({
             page: AppState.pagination.page,
             pageSize: AppState.pagination.pageSize,
             userId: userFilter,
-            status: statusFilter,
-            search: searchFilter
+            search: searchFilter,
+            modelFilters: AppState.modelFilters
         });
 
         AppState.setTasks(result.tasks);

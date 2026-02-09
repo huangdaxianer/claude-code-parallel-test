@@ -13,8 +13,16 @@ router.get('/tasks', (req, res) => {
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize) || 20));
         const userId = req.query.userId || '';
-        const status = req.query.status || '';
         const search = req.query.search || '';
+
+        // Parse per-model status filters: modelFilter_MODELID=status
+        const modelFilters = {};
+        for (const key of Object.keys(req.query)) {
+            if (key.startsWith('modelFilter_') && req.query[key]) {
+                const modelId = key.substring('modelFilter_'.length);
+                modelFilters[modelId] = req.query[key];
+            }
+        }
 
         // Build WHERE clauses
         const conditions = [];
@@ -24,14 +32,16 @@ router.get('/tasks', (req, res) => {
             conditions.push('t.user_id = ?');
             params.push(userId);
         }
-        if (status) {
-            conditions.push('q.status = ?');
-            params.push(status);
-        }
         if (search) {
             conditions.push('(t.title LIKE ? OR t.prompt LIKE ? OR t.task_id LIKE ?)');
             const searchPattern = `%${search}%`;
             params.push(searchPattern, searchPattern, searchPattern);
+        }
+
+        // Per-model status filters: task must have a model_run matching each filter
+        for (const [modelId, filterStatus] of Object.entries(modelFilters)) {
+            conditions.push(`EXISTS (SELECT 1 FROM model_runs mr_f WHERE mr_f.task_id = t.task_id AND mr_f.model_id = ? AND mr_f.status = ?)`);
+            params.push(modelId, filterStatus);
         }
 
         const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
