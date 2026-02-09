@@ -195,7 +195,9 @@
      * 验证任务是否存在且属于用户
      */
     App.api.verifyTask = async function (taskId, userId) {
-        const res = await fetch(`/api/tasks/verify?taskId=${encodeURIComponent(taskId)}&userId=${userId}`);
+        const res = await fetch(`/api/tasks/verify?taskId=${encodeURIComponent(taskId)}&userId=${userId}`, {
+            headers: App.api.getAuthHeaders()
+        });
         const data = await res.json();
         return data;
     };
