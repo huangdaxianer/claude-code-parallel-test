@@ -287,6 +287,12 @@ try { db.exec("ALTER TABLE model_configs ADD COLUMN api_base_url TEXT"); } catch
 try { db.exec("ALTER TABLE model_configs ADD COLUMN api_key TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE model_configs ADD COLUMN model_name TEXT"); } catch (e) { }
 
+// Migration: Add auto_retry_limit to model_configs (0 = no auto-retry, default)
+try { db.exec("ALTER TABLE model_configs ADD COLUMN auto_retry_limit INTEGER DEFAULT 0"); } catch (e) { }
+
+// Migration: Add retry_count to model_runs (tracks how many times this run has been retried)
+try { db.exec("ALTER TABLE model_runs ADD COLUMN retry_count INTEGER DEFAULT 0"); } catch (e) { }
+
 // Migration: Add model_id column to related tables (replacing model_name)
 try { db.exec("ALTER TABLE model_runs ADD COLUMN started_at DATETIME"); } catch (e) { }
 try { db.exec("ALTER TABLE model_runs ADD COLUMN model_id TEXT"); } catch (e) { }

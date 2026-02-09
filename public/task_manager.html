@@ -1181,6 +1181,13 @@
                             placeholder="例如：这是基于 GPT-4o 的模型">
                     </div>
 
+                    <div class="form-group" style="margin-bottom: 1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500;">中止后自动重试次数</label>
+                        <input type="number" id="m-auto-retry-limit" class="filter-input" style="width:100%"
+                            min="0" value="0" placeholder="0">
+                        <div style="font-size:0.8rem; color:#94a3b8; margin-top:0.25rem;">任务中止后自动重试的次数，0 表示不自动重试</div>
+                    </div>
+
                     <div class="form-group" style="margin-bottom: 1.5rem;">
                         <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
                             <input type="checkbox" id="m-default-checked" checked> 默认勾选 (启动任务时)

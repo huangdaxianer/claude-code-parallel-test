@@ -574,7 +574,7 @@ router.get('/feedback-stats', (req, res) => {
 // 获取所有模型配置 (Admin) - 包含每个用户组的设置
 router.get('/models', (req, res) => {
     try {
-        const models = db.prepare('SELECT id as internal_id, model_id as id, endpoint_name as name, description, is_default_checked, api_base_url, api_key, model_name, created_at FROM model_configs ORDER BY created_at DESC').all();
+        const models = db.prepare('SELECT id as internal_id, model_id as id, endpoint_name as name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, created_at FROM model_configs ORDER BY created_at DESC').all();
         const groups = db.prepare('SELECT * FROM user_groups ORDER BY is_default DESC, name ASC').all();
 
         // Get all model group settings
@@ -734,7 +734,7 @@ function generateModelId() {
 // 创建新模型 (Admin)
 router.post('/models', (req, res) => {
     const endpoint_name = req.body.endpoint_name?.trim();
-    const { description, is_default_checked, api_base_url, api_key, model_name } = req.body;
+    const { description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit } = req.body;
 
     if (!endpoint_name) {
         return res.status(400).json({ error: 'Missing required field: endpoint_name' });
@@ -751,9 +751,11 @@ router.post('/models', (req, res) => {
             modelId = generateModelId();
         } while (db.prepare("SELECT 1 FROM model_configs WHERE model_id = ?").get(modelId));
 
+        const retryLimit = Math.max(0, parseInt(auto_retry_limit) || 0);
+
         const stmt = db.prepare(`
-            INSERT INTO model_configs (model_id, endpoint_name, description, is_default_checked, api_base_url, api_key, model_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO model_configs (model_id, endpoint_name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `);
         const result = stmt.run(
             modelId,
@@ -762,7 +764,8 @@ router.post('/models', (req, res) => {
             is_default_checked ? 1 : 0,
             cleanInvisibleChars(api_base_url) || null,
             cleanInvisibleChars(api_key) || null,
-            cleanInvisibleChars(model_name)
+            cleanInvisibleChars(model_name),
+            retryLimit
         );
 
         res.json({ success: true, id: result.lastInsertRowid, model_id: modelId });
@@ -778,7 +781,7 @@ router.post('/models', (req, res) => {
 // 更新模型 (Admin)
 router.put('/models/:id', (req, res) => {
     const { id } = req.params; // This is the model_id string
-    const { endpoint_name, description, is_default_checked, api_base_url, api_key, model_name } = req.body;
+    const { endpoint_name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit } = req.body;
 
     try {
         const updates = [];
@@ -797,6 +800,7 @@ router.put('/models/:id', (req, res) => {
             params.push(cleanInvisibleChars(api_key) || null);
         }
         if (model_name !== undefined) { updates.push('model_name = ?'); params.push(cleanInvisibleChars(model_name) || null); }
+        if (auto_retry_limit !== undefined) { updates.push('auto_retry_limit = ?'); params.push(Math.max(0, parseInt(auto_retry_limit) || 0)); }
 
         if (updates.length === 0) {
             return res.json({ success: true, message: 'No changes' });

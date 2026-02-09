@@ -602,7 +602,8 @@ async function handleModelSubmit(e) {
         model_name: document.getElementById('m-model-name').value,
         api_base_url: document.getElementById('m-api-base-url').value,
         description: document.getElementById('m-desc').value,
-        is_default_checked: document.getElementById('m-default-checked').checked
+        is_default_checked: document.getElementById('m-default-checked').checked,
+        auto_retry_limit: parseInt(document.getElementById('m-auto-retry-limit').value) || 0
     };
     // Only send api_key if the user typed a new value
     if (apiKeyVal) {

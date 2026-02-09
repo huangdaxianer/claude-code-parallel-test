@@ -504,10 +504,12 @@ export const UI = {
             document.getElementById('m-api-key').value = '';
             document.getElementById('m-api-key').placeholder = model.api_key_masked || '留空使用默认 (.env)';
             document.getElementById('m-desc').value = model.description || '';
+            document.getElementById('m-auto-retry-limit').value = model.auto_retry_limit || 0;
             document.getElementById('m-default-checked').checked = !!model.is_default_checked;
         } else {
             title.textContent = '新增模型';
             document.getElementById('m-default-checked').checked = true;
+            document.getElementById('m-auto-retry-limit').value = 0;
             document.getElementById('m-api-key').placeholder = '留空使用默认 (.env)';
         }
 

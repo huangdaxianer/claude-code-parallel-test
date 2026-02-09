@@ -68,6 +68,51 @@ async function processQueue() {
     }
 }
 
+// 检查中止的子任务是否可以自动重试，返回 true 表示已安排重试
+function tryAutoRetry(taskId, modelId) {
+    try {
+        const run = db.prepare("SELECT retry_count FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId);
+        const modelConfig = db.prepare("SELECT auto_retry_limit FROM model_configs WHERE model_id = ?").get(modelId);
+
+        if (!run || !modelConfig) return false;
+
+        const retryLimit = modelConfig.auto_retry_limit || 0;
+        const currentRetryCount = run.retry_count || 0;
+
+        if (currentRetryCount < retryLimit) {
+            const newRetryCount = currentRetryCount + 1;
+
+            // 获取 run_id 用于清理日志
+            const runRecord = db.prepare("SELECT id FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId);
+            if (runRecord) {
+                db.prepare("DELETE FROM log_entries WHERE run_id = ?").run(runRecord.id);
+            }
+
+            // 重置为 pending 状态，增加重试计数，清空之前的运行数据
+            db.prepare(`
+                UPDATE model_runs
+                SET status = 'pending', retry_count = ?, updated_at = CURRENT_TIMESTAMP,
+                    started_at = NULL, duration = NULL, turns = NULL,
+                    input_tokens = NULL, output_tokens = NULL, cache_read_tokens = NULL,
+                    count_todo_write = NULL, count_read = NULL, count_write = NULL, count_bash = NULL,
+                    previewable = NULL
+                WHERE task_id = ? AND model_id = ?
+            `).run(newRetryCount, taskId, modelId);
+
+            // 确保 task_queue 不是 stopped 状态，以便子任务可以被调度
+            db.prepare("UPDATE task_queue SET status = 'pending', completed_at = NULL WHERE task_id = ? AND status = 'stopped'").run(taskId);
+
+            console.log(`[Queue] Auto-retry ${newRetryCount}/${retryLimit} for ${taskId}/${modelId}`);
+            return true;
+        }
+
+        return false;
+    } catch (e) {
+        console.error(`[Queue] Auto-retry check error for ${taskId}/${modelId}:`, e);
+        return false;
+    }
+}
+
 // 执行单个模型子任务
 function executeSubtask(taskId, modelId, modelConfig) {
     const subtaskKey = `${taskId}/${modelId}`;
@@ -78,7 +123,9 @@ function executeSubtask(taskId, modelId, modelConfig) {
         child = executorService.executeModel(taskId, modelId, modelConfig);
     } catch (err) {
         console.error(`[Queue] Executor error for ${subtaskKey}:`, err);
-        db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+        if (!tryAutoRetry(taskId, modelId)) {
+            db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+        }
         checkAndUpdateTaskStatus(taskId);
         setTimeout(processQueue, 100);
         return;
@@ -88,7 +135,9 @@ function executeSubtask(taskId, modelId, modelConfig) {
 
     child.on('error', (err) => {
         console.error(`[Subtask ${subtaskKey} ERROR] Failed to spawn process:`, err);
-        db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+        if (!tryAutoRetry(taskId, modelId)) {
+            db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+        }
         delete activeSubtaskProcesses[subtaskKey];
         checkAndUpdateTaskStatus(taskId);
         setTimeout(processQueue, 100);
@@ -100,15 +149,18 @@ function executeSubtask(taskId, modelId, modelConfig) {
 
         const currentStatus = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId);
         if (currentStatus && currentStatus.status === 'running') {
-            const newStatus = (code === 0) ? 'completed' : 'stopped';
-            db.prepare("UPDATE model_runs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(newStatus, taskId, modelId);
+            if (code === 0) {
+                db.prepare("UPDATE model_runs SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
 
-            // 如果子任务成功完成，立即生成预览文件夹（隔离环境）并在后台进行 Preparation
-            if (newStatus === 'completed') {
-                // Fire and forget - processing happens in background
+                // 如果子任务成功完成，立即生成预览文件夹（隔离环境）并在后台进行 Preparation
                 previewService.preparePreview(taskId, modelId).catch(err => {
                     console.error(`[Queue] Failed to trigger preview prep for ${taskId}/${modelId}:`, err);
                 });
+            } else {
+                // 非零退出码 = 中止，尝试自动重试
+                if (!tryAutoRetry(taskId, modelId)) {
+                    db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+                }
             }
         }
 
