@@ -656,6 +656,12 @@ router.put('/models/:modelId/group-settings/:groupId', (req, res) => {
     }
 });
 
+// 清理字符串中的零宽字符（复制粘贴时可能带入）
+function cleanInvisibleChars(str) {
+    if (!str) return str;
+    return str.replace(/[\u200B\u200C\u200D\uFEFF\u00A0]/g, '').trim();
+}
+
 // Helper function to generate 5-character model ID
 function generateModelId() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -695,9 +701,9 @@ router.post('/models', (req, res) => {
             endpoint_name,
             description || '',
             is_default_checked ? 1 : 0,
-            api_base_url?.trim() || null,
-            api_key?.trim() || null,
-            model_name.trim()
+            cleanInvisibleChars(api_base_url) || null,
+            cleanInvisibleChars(api_key) || null,
+            cleanInvisibleChars(model_name)
         );
 
         res.json({ success: true, id: result.lastInsertRowid, model_id: modelId });
@@ -725,13 +731,13 @@ router.put('/models/:id', (req, res) => {
         }
         if (description !== undefined) { updates.push('description = ?'); params.push(description); }
         if (is_default_checked !== undefined) { updates.push('is_default_checked = ?'); params.push(is_default_checked ? 1 : 0); }
-        if (api_base_url !== undefined) { updates.push('api_base_url = ?'); params.push(api_base_url?.trim() || null); }
+        if (api_base_url !== undefined) { updates.push('api_base_url = ?'); params.push(cleanInvisibleChars(api_base_url) || null); }
         // Only update api_key if a new value is provided (not the masked placeholder)
         if (api_key !== undefined && api_key !== '' && !api_key.startsWith('****')) {
             updates.push('api_key = ?');
-            params.push(api_key.trim() || null);
+            params.push(cleanInvisibleChars(api_key) || null);
         }
-        if (model_name !== undefined) { updates.push('model_name = ?'); params.push(model_name?.trim() || null); }
+        if (model_name !== undefined) { updates.push('model_name = ?'); params.push(cleanInvisibleChars(model_name) || null); }
 
         if (updates.length === 0) {
             return res.json({ success: true, message: 'No changes' });
