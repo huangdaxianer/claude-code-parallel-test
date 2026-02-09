@@ -200,6 +200,8 @@
             color: #475569;
             border-bottom: 1px solid #e2e8f0;
             white-space: nowrap;
+            position: relative;
+            overflow: visible;
         }
 
         .tasks-table td {
@@ -407,6 +409,7 @@
             align-items: center;
             gap: 4px;
             position: relative;
+            z-index: 10;
         }
 
         .col-filter-btn {
@@ -448,11 +451,11 @@
             top: 100%;
             left: 50%;
             transform: translateX(-50%);
-            z-index: 100;
+            z-index: 9999;
             background: #fff;
             border: 1px solid #e2e8f0;
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             padding: 4px 0;
             min-width: 90px;
             margin-top: 4px;
@@ -648,7 +651,7 @@
 
         /* User column */
         .user-cell {
-            width: 90px;
+            width: 110px;
             overflow: hidden;
         }
 
@@ -660,7 +663,7 @@
         /* Actions column */
         .actions-cell,
         .actions-header-cell {
-            width: 55px;
+            width: 65px;
         }
 
         .task-checkbox {
