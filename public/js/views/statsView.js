@@ -8,6 +8,28 @@
     window.App = window.App || {};
     App.stats = {};
 
+    // 运行中任务的计时器
+    let durationTimerId = null;
+
+    /**
+     * 格式化秒数为可读字符串
+     * < 60s: 显示秒 (如 "45.0")
+     * >= 60s: 显示 分:秒 (如 "2:05")
+     * >= 3600s: 显示 时:分:秒 (如 "1:02:05")
+     */
+    function formatDuration(totalSeconds) {
+        if (totalSeconds < 60) {
+            return totalSeconds.toFixed(1);
+        }
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = Math.floor(totalSeconds % 60);
+        if (hours > 0) {
+            return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+        return `${minutes}:${String(seconds).padStart(2, '0')}`;
+    }
+
     /**
      * 计算运行统计
      */
@@ -92,11 +114,55 @@
     };
 
     /**
+     * 更新运行中任务的耗时显示
+     */
+    function updateRunningDurations() {
+        const cells = document.querySelectorAll('td[data-started-at]');
+        if (cells.length === 0) {
+            stopDurationTimer();
+            return;
+        }
+        const now = Date.now();
+        cells.forEach(cell => {
+            const startedAt = cell.dataset.startedAt;
+            if (!startedAt) return;
+            const elapsed = (now - new Date(startedAt + 'Z').getTime()) / 1000;
+            if (elapsed >= 0) {
+                cell.textContent = formatDuration(elapsed);
+            }
+        });
+    }
+
+    /**
+     * 启动耗时计时器
+     */
+    function startDurationTimer() {
+        if (durationTimerId) return;
+        durationTimerId = setInterval(updateRunningDurations, 1000);
+    }
+
+    /**
+     * 停止耗时计时器
+     */
+    function stopDurationTimer() {
+        if (durationTimerId) {
+            clearInterval(durationTimerId);
+            durationTimerId = null;
+        }
+    }
+
+    // 对外暴露停止方法，供切换视图时调用
+    App.stats.stopDurationTimer = stopDurationTimer;
+
+    /**
      * 渲染统计视图
      */
     App.stats.renderStatisticsView = function () {
         const tbody = document.getElementById('stats-table-body');
         tbody.innerHTML = '';
+
+        // 先停止旧的计时器
+        stopDurationTimer();
 
         const translateStatus = (status) => {
             const map = {
@@ -108,6 +174,8 @@
             };
             return map[status] || status;
         };
+
+        let hasRunning = false;
 
         App.state.currentRuns.forEach(run => {
             const stats = App.stats.calculateRunStats(run);
@@ -133,11 +201,27 @@
                 return val;
             };
 
+            // 耗时显示逻辑：
+            // - 运行中且有 startedAt：实时计算并显示
+            // - 已完成/已中止且有 duration：显示最终耗时
+            // - 其他：显示 '-'
+            let durationHtml;
+            if (run.status === 'running' && stats.startedAt) {
+                hasRunning = true;
+                const elapsed = (Date.now() - new Date(stats.startedAt + 'Z').getTime()) / 1000;
+                const display = elapsed >= 0 ? formatDuration(elapsed) : '-';
+                durationHtml = `<td data-started-at="${stats.startedAt}">${display}</td>`;
+            } else if (stats.duration && stats.duration > 0) {
+                durationHtml = `<td>${formatDuration(Number(stats.duration))}</td>`;
+            } else {
+                durationHtml = `<td>${formatVal(null)}</td>`;
+            }
+
             tr.innerHTML = `
                 <td style="font-weight:600">${stats.modelName}</td>
                 <td><span class="status-badge status-${stats.status}">${translateStatus(stats.status)}</span></td>
                 <td>${actionButtons}</td>
-                <td>${formatVal(stats.duration)}</td>
+                ${durationHtml}
                 <td>${formatVal(stats.turns, '0')}</td>
                 <td>${formatVal(stats.toolCounts.TodoWrite, '0')}</td>
                 <td>${formatVal(stats.toolCounts.Read, '0')}</td>
@@ -149,6 +233,11 @@
             `;
             tbody.appendChild(tr);
         });
+
+        // 如果有运行中的任务，启动计时器
+        if (hasRunning) {
+            startDurationTimer();
+        }
     };
 
     /**

@@ -510,9 +510,10 @@ router.post('/:taskId/start', (req, res) => {
             console.log(`[Control] Deleted ${deleteResult.changes} log entries for model ${modelId}`);
 
             db.prepare(`
-                UPDATE model_runs SET 
+                UPDATE model_runs SET
                     status = 'pending',
                     duration = NULL,
+                    started_at = NULL,
                     turns = NULL,
                     input_tokens = NULL,
                     output_tokens = NULL,

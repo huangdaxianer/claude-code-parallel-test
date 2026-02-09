@@ -67,6 +67,7 @@ router.get('/task_details/:taskId', (req, res) => {
                     generatedFiles,
                     stats: {
                         duration: run.duration,
+                        startedAt: run.started_at || (run.status === 'running' ? run.updated_at : null),
                         turns: run.turns,
                         inputTokens: run.input_tokens,
                         outputTokens: run.output_tokens,

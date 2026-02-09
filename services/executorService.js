@@ -349,6 +349,9 @@ function executeModel(taskId, modelId, endpointName) {
     rl.on('line', (line) => {
         logStream.write(line + '\n');
         ingestHandler.processLine(line);
+        // 更新最后活动时间，供 watchdog 检测卡死
+        const entry = activeProcesses.get(subtaskKey);
+        if (entry) entry.lastActivityTime = Date.now();
     });
 
     child.stderr.on('data', (data) => {
@@ -365,7 +368,7 @@ function executeModel(taskId, modelId, endpointName) {
     });
 
     // 保存进程引用
-    activeProcesses.set(subtaskKey, { child, ingestHandler });
+    activeProcesses.set(subtaskKey, { child, ingestHandler, lastActivityTime: Date.now() });
 
     // 清理完成时的回调
     child.on('exit', (code, signal) => {

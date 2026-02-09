@@ -77,11 +77,13 @@
                     comparisonView.classList.add('active');
                     statsView.classList.remove('active');
                     mainContent.classList.add('hidden');
+                    App.stats.stopDurationTimer();
                     App.compare.renderComparisonView();
                 } else {
                     statsView.classList.remove('active');
                     comparisonView.classList.remove('active');
                     mainContent.classList.remove('hidden');
+                    App.stats.stopDurationTimer();
 
                     // Ensure UI reflects the active tab state
                     App.main.updateTabUI(App.state.activeTab || 'trajectory');

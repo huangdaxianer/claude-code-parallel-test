@@ -283,6 +283,7 @@ try { db.exec("ALTER TABLE model_configs ADD COLUMN model_id TEXT"); } catch (e)
 try { db.exec("ALTER TABLE model_configs ADD COLUMN endpoint_name TEXT"); } catch (e) { }
 
 // Migration: Add model_id column to related tables (replacing model_name)
+try { db.exec("ALTER TABLE model_runs ADD COLUMN started_at DATETIME"); } catch (e) { }
 try { db.exec("ALTER TABLE model_runs ADD COLUMN model_id TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE feedback_responses ADD COLUMN model_id TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE feedback_comments ADD COLUMN model_id TEXT"); } catch (e) { }

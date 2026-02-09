@@ -13,6 +13,7 @@ const multer = require('multer');
 const config = require('./config');
 const routes = require('./routes');
 const { processQueue } = require('./services/queueService');
+const watchdog = require('./services/watchdogService');
 
 const app = express();
 const PORT = 3001;
@@ -104,8 +105,14 @@ app.use((err, req, res, next) => {
     }
 });
 
+// 恢复上次运行遗留的卡死任务（必须在 processQueue 之前）
+watchdog.recoverOrphanedTasks();
+
 // 启动队列处理
 processQueue();
+
+// 启动健康监控（每 30 秒检查卡死任务）
+watchdog.start();
 
 // 错误处理 - 确保队列恢复
 process.on('uncaughtException', (error) => {

@@ -48,7 +48,7 @@ async function processQueue() {
 
         // 启动每个子任务
         for (const subtask of pendingSubtasks) {
-            db.prepare("UPDATE model_runs SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(subtask.id);
+            db.prepare("UPDATE model_runs SET status = 'running', started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(subtask.id);
             db.prepare("UPDATE task_queue SET status = 'running', started_at = COALESCE(started_at, CURRENT_TIMESTAMP) WHERE task_id = ?").run(subtask.task_id);
             console.log(`[Queue] Starting subtask: ${subtask.task_id}/${subtask.model_id} (endpoint: ${subtask.endpoint_name})`);
             // Pass model_id for folder naming and endpoint_name for API request
