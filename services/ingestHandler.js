@@ -28,6 +28,9 @@ class IngestHandler {
             db.prepare('UPDATE model_runs SET status = ? WHERE id = ?').run('running', this.runId);
         }
 
+        // 追踪最后一条 assistant 消息的末尾内容类型（text / tool_use / thought 等）
+        this.lastAssistantEndType = null;
+
         // 统计数据
         this.stats = {
             status: 'running',
@@ -123,6 +126,13 @@ class IngestHandler {
             } else {
                 this.stats.status = 'completed';
             }
+
+            // 异常完成检测：最后一轮是工具调用或无内容，说明请求实际失败了
+            if (this.stats.status === 'completed' && this.lastAssistantEndType !== 'text') {
+                console.warn(`[IngestHandler] Task ${this.modelId} ended with '${this.lastAssistantEndType}' instead of 'text', marking as stopped`);
+                this.stats.status = 'stopped';
+            }
+
             if (obj.duration_ms) this.stats.duration = (obj.duration_ms / 1000).toFixed(1);
             else if (obj.duration) this.stats.duration = (obj.duration / 1000).toFixed(1);
             if (obj.usage) {
@@ -130,7 +140,7 @@ class IngestHandler {
                 this.stats.outputTokens = obj.usage.output_tokens || 0;
                 this.stats.cacheReadTokens = obj.usage.cache_read_input_tokens || 0;
             }
-            console.log(`[IngestHandler] Received full result for ${this.modelId}`);
+            console.log(`[IngestHandler] Received full result for ${this.modelId} (status: ${this.stats.status})`);
         }
 
         if (obj.type === 'user') this.stats.turns++;
@@ -147,6 +157,14 @@ class IngestHandler {
                     if (this.stats.toolCounts.hasOwnProperty(name)) this.stats.toolCounts[name]++;
                 }
             });
+            // 记录最后一条 assistant 消息的末尾 content block 类型
+            // 过滤掉 thought 类型，只关注实际输出（text / tool_use）
+            const nonThoughtBlocks = obj.message.content.filter(b => b.type !== 'thought');
+            if (nonThoughtBlocks.length > 0) {
+                this.lastAssistantEndType = nonThoughtBlocks[nonThoughtBlocks.length - 1].type;
+            } else if (obj.message.content.length === 0) {
+                this.lastAssistantEndType = 'empty';
+            }
         }
 
         // 2. 写入日志条目
