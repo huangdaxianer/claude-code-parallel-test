@@ -560,7 +560,7 @@ export const UI = {
                     <div style="display: flex; align-items: center; gap: 1rem;">
                         <span class="timestamp">${formatDateTime(model.created_at)}</span>
                         <div class="action-buttons" style="display: flex; gap: 0.5rem;">
-                            <button class="action-btn" data-action="edit-model" data-id="${model.id}" style="background: #dbeafe; color: #1e40af; border: none; padding: 0.25rem 0.75rem; border-radius: 0.25rem; cursor: pointer; font-size: 0.85rem;" onclick="event.stopPropagation()">编辑</button>
+                            <button class="action-btn" data-action="edit-model" data-id="${model.id}" style="background: #dbeafe; color: #1e40af; border: none; padding: 0.25rem 0.75rem; border-radius: 0.25rem; cursor: pointer; font-size: 0.85rem;">编辑</button>
                             <button class="action-btn action-btn-delete" data-action="delete-model" data-id="${model.id}" data-name="${escapeHtml(model.name)}">删除</button>
                         </div>
                     </div>
