@@ -561,7 +561,45 @@ router.post('/:taskId/start', (req, res) => {
             if (runningSubtasks.count > 0) {
                 return res.status(400).json({ error: 'Some subtasks are still running. Stop them first or restart individual models.' });
             }
-            db.prepare("UPDATE model_runs SET status = 'pending' WHERE task_id = ? AND status != 'completed'").run(taskId);
+
+            // 获取所有需要重启的 model_runs，清理旧日志和文件
+            const runsToRestart = db.prepare("SELECT id, model_id FROM model_runs WHERE task_id = ? AND status != 'completed'").all(taskId);
+            for (const run of runsToRestart) {
+                // 删除旧日志
+                db.prepare("DELETE FROM log_entries WHERE run_id = ?").run(run.id);
+
+                // 删除模型目录
+                const modelDir = path.join(config.TASKS_DIR, taskId, run.model_id);
+                if (fs.existsSync(modelDir)) {
+                    fs.rmSync(modelDir, { recursive: true, force: true });
+                }
+
+                // 删除日志文件
+                const logFile = path.join(config.TASKS_DIR, taskId, 'logs', `${run.model_id}.txt`);
+                if (fs.existsSync(logFile)) {
+                    fs.unlinkSync(logFile);
+                }
+            }
+
+            // 重置所有非完成状态的 model_runs
+            db.prepare(`
+                UPDATE model_runs SET
+                    status = 'pending',
+                    duration = NULL,
+                    started_at = NULL,
+                    turns = NULL,
+                    input_tokens = NULL,
+                    output_tokens = NULL,
+                    cache_read_tokens = NULL,
+                    count_todo_write = NULL,
+                    count_read = NULL,
+                    count_write = NULL,
+                    count_bash = NULL,
+                    previewable = NULL,
+                    retry_count = 0,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE task_id = ? AND status != 'completed'
+            `).run(taskId);
         }
 
         db.prepare("UPDATE task_queue SET status = 'pending', started_at = NULL, completed_at = NULL WHERE task_id = ?").run(taskId);

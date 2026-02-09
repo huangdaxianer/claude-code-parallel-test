@@ -183,7 +183,8 @@
             let actionButtons = '';
             // Use modelId for API calls, but modelName for display
             if (run.status === 'pending') {
-                actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model-id="${run.modelId}" style="background: #dcfce7; color: #166534; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">启动</button>`;
+                // 排队中的任务不显示操作按钮
+                actionButtons = '';
             } else if (run.status === 'stopped') {
                 actionButtons = `<button class="btn-xs action-btn" data-action="start" data-model-id="${run.modelId}" style="background: #dcfce7; color: #166534; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">重启</button>`;
             } else if (run.status === 'running') {
