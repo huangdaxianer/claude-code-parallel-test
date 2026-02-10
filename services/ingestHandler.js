@@ -162,8 +162,8 @@ class IngestHandler {
                 }
             });
             // 记录最后一条 assistant 消息的末尾 content block 类型
-            // 过滤掉 thought 类型，只关注实际输出（text / tool_use）
-            const nonThoughtBlocks = obj.message.content.filter(b => b.type !== 'thought');
+            // 过滤掉 thought / redacted_thinking 类型，只关注实际输出（text / tool_use）
+            const nonThoughtBlocks = obj.message.content.filter(b => b.type !== 'thought' && b.type !== 'redacted_thinking');
             if (nonThoughtBlocks.length > 0) {
                 this.lastAssistantEndType = nonThoughtBlocks[nonThoughtBlocks.length - 1].type;
             } else if (obj.message.content.length === 0) {
