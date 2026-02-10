@@ -71,19 +71,30 @@ function checkHealth() {
     }
 
     // Phase 2: 检测孤儿记录（DB 中 running 但进程已不存在）
+    // 双重校验：同时检查 executorService 和 queueService 的进程引用
+    // 时间窗口保护：updated_at 距现在不足 60 秒的记录跳过（可能正在重试调度中）
     try {
         const runningRuns = db.prepare(
-            "SELECT task_id, model_id FROM model_runs WHERE status = 'running'"
+            "SELECT task_id, model_id, updated_at FROM model_runs WHERE status = 'running'"
         ).all();
         for (const run of runningRuns) {
             const key = `${run.task_id}/${run.model_id}`;
-            if (!executorService.activeProcesses.has(key)) {
-                console.warn(`[Watchdog] Orphaned DB record: ${key}, marking as stopped`);
-                db.prepare(
-                    "UPDATE model_runs SET status = 'stopped', stop_reason = 'orphaned', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?"
-                ).run(run.task_id, run.model_id);
-                queueService.checkAndUpdateTaskStatus(run.task_id);
+            // 双重校验：任一 Map 中存在即视为活跃
+            if (executorService.activeProcesses.has(key) || queueService.activeSubtaskProcesses[key]) {
+                continue;
             }
+            // 时间窗口保护：刚变为 running 的记录可能还在调度中，不立即判定为 orphaned
+            if (run.updated_at) {
+                const updatedAt = new Date(run.updated_at + (run.updated_at.endsWith('Z') ? '' : 'Z')).getTime();
+                if ((now - updatedAt) < 60000) {
+                    continue;
+                }
+            }
+            console.warn(`[Watchdog] Orphaned DB record: ${key}, marking as stopped`);
+            db.prepare(
+                "UPDATE model_runs SET status = 'stopped', stop_reason = 'orphaned', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?"
+            ).run(run.task_id, run.model_id);
+            queueService.checkAndUpdateTaskStatus(run.task_id);
         }
     } catch (e) {
         console.error('[Watchdog] Error checking orphaned records:', e.message);
