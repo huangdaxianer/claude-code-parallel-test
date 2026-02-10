@@ -297,6 +297,11 @@ try { db.exec("ALTER TABLE model_configs ADD COLUMN task_timeout_seconds INTEGER
 // Migration: Add retry_count to model_runs (tracks how many times this run has been retried)
 try { db.exec("ALTER TABLE model_runs ADD COLUMN retry_count INTEGER DEFAULT 0"); } catch (e) { }
 
+// Migration: Add stop_reason to model_runs (records why the run was stopped)
+// Values: activity_timeout, wall_clock_timeout, manual_stop, is_error, abnormal_completion,
+//         process_error, non_zero_exit, orphaned, server_restart
+try { db.exec("ALTER TABLE model_runs ADD COLUMN stop_reason TEXT"); } catch (e) { }
+
 // Migration: Add model_id column to related tables (replacing model_name)
 try { db.exec("ALTER TABLE model_runs ADD COLUMN started_at DATETIME"); } catch (e) { }
 try { db.exec("ALTER TABLE model_runs ADD COLUMN model_id TEXT"); } catch (e) { }

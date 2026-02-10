@@ -34,6 +34,7 @@ class IngestHandler {
         // 统计数据
         this.stats = {
             status: 'running',
+            stopReason: null,
             duration: 0,
             turns: 0,
             inputTokens: 0,
@@ -49,8 +50,9 @@ class IngestHandler {
 
         // 预编译 SQL
         this.updateStats = db.prepare(`
-            UPDATE model_runs SET 
+            UPDATE model_runs SET
                 status = ?,
+                stop_reason = COALESCE(?, stop_reason),
                 duration = ?,
                 turns = ?,
                 input_tokens = ?,
@@ -123,6 +125,7 @@ class IngestHandler {
         if (obj.type === 'result') {
             if (obj.is_error) {
                 this.stats.status = 'stopped';
+                this.stats.stopReason = 'is_error';
             } else {
                 this.stats.status = 'completed';
             }
@@ -131,6 +134,7 @@ class IngestHandler {
             if (this.stats.status === 'completed' && this.lastAssistantEndType !== 'text') {
                 console.warn(`[IngestHandler] Task ${this.modelId} ended with '${this.lastAssistantEndType}' instead of 'text', marking as stopped`);
                 this.stats.status = 'stopped';
+                this.stats.stopReason = 'abnormal_completion';
             }
 
             if (obj.duration_ms) this.stats.duration = (obj.duration_ms / 1000).toFixed(1);
@@ -357,6 +361,7 @@ class IngestHandler {
 
             this.updateStats.run(
                 statusToWrite,
+                this.stats.stopReason,
                 this.stats.duration,
                 this.stats.turns,
                 this.stats.inputTokens,

@@ -80,7 +80,7 @@ function checkHealth() {
             if (!executorService.activeProcesses.has(key)) {
                 console.warn(`[Watchdog] Orphaned DB record: ${key}, marking as stopped`);
                 db.prepare(
-                    "UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?"
+                    "UPDATE model_runs SET status = 'stopped', stop_reason = 'orphaned', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?"
                 ).run(run.task_id, run.model_id);
                 queueService.checkAndUpdateTaskStatus(run.task_id);
             }
@@ -120,11 +120,11 @@ function killStuckSubtask(key, info, reason, executorService, queueService) {
         }
     }
 
-    // 3. 更新 DB 状态为 stopped
+    // 3. 更新 DB 状态为 stopped，记录中止原因
     try {
         db.prepare(
-            "UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ? AND status = 'running'"
-        ).run(taskId, modelId);
+            "UPDATE model_runs SET status = 'stopped', stop_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ? AND status = 'running'"
+        ).run(reason, taskId, modelId);
     } catch (e) {
         console.error(`[Watchdog] Error updating DB for ${key}:`, e.message);
     }
@@ -161,7 +161,7 @@ function recoverOrphanedTasks() {
 
         // 标记所有孤儿为 stopped
         const updateStmt = db.prepare(
-            "UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?"
+            "UPDATE model_runs SET status = 'stopped', stop_reason = 'server_restart', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?"
         );
         for (const run of orphanedRuns) {
             updateStmt.run(run.task_id, run.model_id);

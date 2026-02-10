@@ -63,6 +63,8 @@ router.get('/task_details/:taskId', (req, res) => {
                     modelName: run.endpoint_name || run.model_id, // Display name for UI
                     endpointName: run.endpoint_name,
                     status: run.status,
+                    stopReason: run.stop_reason || null,
+                    retryCount: run.retry_count || 0,
                     previewable: run.previewable || ((run.status === 'completed' && hasFiles) ? 'static' : 'unpreviewable'), // Fallback for old tasks, ensure running tasks don't show preview
                     generatedFiles,
                     stats: {

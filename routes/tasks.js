@@ -441,7 +441,7 @@ router.post('/:taskId/stop', async (req, res) => {
         }
 
         try {
-            db.prepare("UPDATE model_runs SET status = 'stopped' WHERE task_id = ? AND model_id = ? AND status = 'running'").run(taskId, modelId);
+            db.prepare("UPDATE model_runs SET status = 'stopped', stop_reason = 'manual_stop' WHERE task_id = ? AND model_id = ? AND status = 'running'").run(taskId, modelId);
 
             const subtaskKey = `${taskId}/${modelId}`;
             delete activeSubtaskProcesses[subtaskKey];
@@ -482,7 +482,7 @@ router.post('/:taskId/stop', async (req, res) => {
 
         try {
             db.prepare("UPDATE task_queue SET status = 'stopped', completed_at = CURRENT_TIMESTAMP WHERE task_id = ?").run(taskId);
-            db.prepare("UPDATE model_runs SET status = 'stopped' WHERE task_id = ? AND status IN ('running', 'pending')").run(taskId);
+            db.prepare("UPDATE model_runs SET status = 'stopped', stop_reason = 'manual_stop' WHERE task_id = ? AND status IN ('running', 'pending')").run(taskId);
         } catch (e) {
             console.error('Error updating DB for stop:', e);
             return res.status(500).json({ error: 'Failed to update task status' });
@@ -521,6 +521,8 @@ router.post('/:taskId/start', (req, res) => {
             db.prepare(`
                 UPDATE model_runs SET
                     status = 'pending',
+                    stop_reason = NULL,
+                    retry_count = 0,
                     duration = NULL,
                     started_at = NULL,
                     turns = NULL,
@@ -585,6 +587,7 @@ router.post('/:taskId/start', (req, res) => {
             db.prepare(`
                 UPDATE model_runs SET
                     status = 'pending',
+                    stop_reason = NULL,
                     duration = NULL,
                     started_at = NULL,
                     turns = NULL,

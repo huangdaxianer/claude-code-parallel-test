@@ -91,7 +91,7 @@ function tryAutoRetry(taskId, modelId) {
                 db.prepare("DELETE FROM log_entries WHERE run_id = ?").run(runRecord.id);
             }
 
-            // 重置为 pending 状态，增加重试计数，清空之前的运行数据
+            // 重置为 pending 状态，增加重试计数，清空之前的运行数据（保留 stop_reason 不清空，最终失败时显示最后一次原因）
             db.prepare(`
                 UPDATE model_runs
                 SET status = 'pending', retry_count = ?, updated_at = CURRENT_TIMESTAMP,
@@ -127,7 +127,7 @@ function executeSubtask(taskId, modelId, modelConfig) {
     } catch (err) {
         console.error(`[Queue] Executor error for ${subtaskKey}:`, err);
         if (!tryAutoRetry(taskId, modelId)) {
-            db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+            db.prepare("UPDATE model_runs SET status = 'stopped', stop_reason = 'process_error', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
         }
         checkAndUpdateTaskStatus(taskId);
         setTimeout(processQueue, 100);
@@ -139,7 +139,7 @@ function executeSubtask(taskId, modelId, modelConfig) {
     child.on('error', (err) => {
         console.error(`[Subtask ${subtaskKey} ERROR] Failed to spawn process:`, err);
         if (!tryAutoRetry(taskId, modelId)) {
-            db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+            db.prepare("UPDATE model_runs SET status = 'stopped', stop_reason = 'process_error', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
         }
         delete activeSubtaskProcesses[subtaskKey];
         checkAndUpdateTaskStatus(taskId);
@@ -162,7 +162,7 @@ function executeSubtask(taskId, modelId, modelConfig) {
             } else {
                 // 非零退出码 = 中止，尝试自动重试
                 if (!tryAutoRetry(taskId, modelId)) {
-                    db.prepare("UPDATE model_runs SET status = 'stopped', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+                    db.prepare("UPDATE model_runs SET status = 'stopped', stop_reason = 'non_zero_exit', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
                 }
             }
         }

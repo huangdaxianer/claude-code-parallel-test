@@ -157,6 +157,38 @@
     /**
      * 渲染统计视图
      */
+    /**
+     * 将 stop_reason 翻译为用户友好的中文描述
+     */
+    function translateStopReason(reason) {
+        const map = {
+            'activity_timeout': '模型长时间未响应（命中无响应超时）',
+            'wall_clock_timeout': '总执行时间过长（命中任务总超时）',
+            'manual_stop': '手动中止',
+            'is_error': '模型响应异常（返回错误）',
+            'abnormal_completion': '任务执行中断（最后一轮输出非文本）',
+            'process_error': '进程启动失败',
+            'non_zero_exit': '进程异常退出',
+            'orphaned': '进程意外丢失',
+            'server_restart': '服务器重启'
+        };
+        return map[reason] || '未知原因';
+    }
+
+    /**
+     * 构建停止原因的 tooltip HTML
+     */
+    function buildStopReasonTooltip(run) {
+        if (run.status !== 'stopped' || !run.stopReason) return '';
+        const reasonText = translateStopReason(run.stopReason);
+        const retryCount = run.retryCount || 0;
+        let tooltipText = `任务由于「${reasonText}」中止`;
+        if (retryCount > 0) {
+            tooltipText += `，已重试 ${retryCount} 次`;
+        }
+        return `<span class="stop-reason-icon" data-tooltip="${tooltipText.replace(/"/g, '&quot;')}">&#8505;</span>`;
+    }
+
     App.stats.renderStatisticsView = function () {
         const tbody = document.getElementById('stats-table-body');
         tbody.innerHTML = '';
@@ -218,9 +250,12 @@
                 durationHtml = `<td>${formatVal(null)}</td>`;
             }
 
+            // 停止原因 tooltip
+            const stopReasonHtml = buildStopReasonTooltip(run);
+
             tr.innerHTML = `
                 <td style="font-weight:600">${stats.modelName}</td>
-                <td><span class="status-badge status-${stats.status}">${translateStatus(stats.status)}</span></td>
+                <td><span class="status-badge status-${stats.status}">${translateStatus(stats.status)}</span>${stopReasonHtml}</td>
                 <td>${actionButtons}</td>
                 ${durationHtml}
                 <td>${formatVal(stats.turns, '0')}</td>
