@@ -700,6 +700,37 @@
             gap: 1rem;
             border-bottom: 1px solid #e2e8f0;
             margin-bottom: 2rem;
+            align-items: center;
+        }
+
+        .tabs-nav-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-back-tasks {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.45rem 0.9rem;
+            font-size: 0.85rem;
+            color: #475569;
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .btn-back-tasks:hover {
+            background: #e2e8f0;
+            color: #1e293b;
+            border-color: #cbd5e1;
         }
 
         .tab-btn {
@@ -909,6 +940,12 @@
             <button class="tab-btn" data-tab="eval">评测配置</button>
             <button class="tab-btn" data-tab="feedback-stats">反馈统计</button>
             <button class="tab-btn" data-tab="users">用户管理</button>
+            <div class="tabs-nav-right">
+                <a class="btn-back-tasks" href="/task.html" title="返回我的任务列表">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    返回任务列表
+                </a>
+            </div>
         </div>
 
         <!-- Task Management Tab -->
