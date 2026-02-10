@@ -25,18 +25,27 @@ function checkHealth() {
     const queueService = require('./queueService');
 
     const appConfig = config.getAppConfig();
-    const activityTimeoutMs = (appConfig.activityTimeoutMinutes || 10) * 60 * 1000;
-    const wallClockTimeoutMs = (appConfig.subtaskTimeoutMinutes || 60) * 60 * 1000;
+    const defaultActivityTimeoutMs = (appConfig.activityTimeoutMinutes || 10) * 60 * 1000;
+    const defaultWallClockTimeoutMs = (appConfig.subtaskTimeoutMinutes || 60) * 60 * 1000;
     const now = Date.now();
 
     // Phase 1: 检查活跃进程是否卡死或超时
     for (const [key, info] of executorService.activeProcesses) {
         const { lastActivityTime } = info;
 
+        // 使用模型级别的超时配置，如果未设置则回退到全局默认值
+        const activityTimeoutMs = info.activityTimeoutSeconds != null
+            ? info.activityTimeoutSeconds * 1000
+            : defaultActivityTimeoutMs;
+        const wallClockTimeoutMs = info.taskTimeoutSeconds != null
+            ? info.taskTimeoutSeconds * 1000
+            : defaultWallClockTimeoutMs;
+
         // 活动超时：stdout 长时间无输出
         if (lastActivityTime && (now - lastActivityTime) > activityTimeoutMs) {
-            const idleMinutes = Math.floor((now - lastActivityTime) / 60000);
-            console.warn(`[Watchdog] Activity timeout: ${key} (${idleMinutes}min idle, limit: ${appConfig.activityTimeoutMinutes || 10}min)`);
+            const idleSec = Math.floor((now - lastActivityTime) / 1000);
+            const limitSec = Math.floor(activityTimeoutMs / 1000);
+            console.warn(`[Watchdog] Activity timeout: ${key} (${idleSec}s idle, limit: ${limitSec}s)`);
             killStuckSubtask(key, info, 'activity_timeout', executorService, queueService);
             continue;
         }
@@ -50,8 +59,9 @@ function checkHealth() {
             if (run && run.started_at) {
                 const startedAt = new Date(run.started_at + 'Z').getTime();
                 if ((now - startedAt) > wallClockTimeoutMs) {
-                    const totalMinutes = Math.floor((now - startedAt) / 60000);
-                    console.warn(`[Watchdog] Wall-clock timeout: ${key} (${totalMinutes}min elapsed, limit: ${appConfig.subtaskTimeoutMinutes || 60}min)`);
+                    const totalSec = Math.floor((now - startedAt) / 1000);
+                    const limitSec = Math.floor(wallClockTimeoutMs / 1000);
+                    console.warn(`[Watchdog] Wall-clock timeout: ${key} (${totalSec}s elapsed, limit: ${limitSec}s)`);
                     killStuckSubtask(key, info, 'wall_clock_timeout', executorService, queueService);
                 }
             }

@@ -373,8 +373,14 @@ function executeModel(taskId, modelId, modelConfig) {
         }
     });
 
-    // 保存进程引用
-    activeProcesses.set(subtaskKey, { child, ingestHandler, lastActivityTime: Date.now() });
+    // 保存进程引用（包含每模型超时配置，供 watchdog 使用）
+    activeProcesses.set(subtaskKey, {
+        child,
+        ingestHandler,
+        lastActivityTime: Date.now(),
+        activityTimeoutSeconds: modelConfig.activityTimeoutSeconds ?? null,
+        taskTimeoutSeconds: modelConfig.taskTimeoutSeconds ?? null
+    });
 
     // 清理完成时的回调
     child.on('exit', (code, signal) => {

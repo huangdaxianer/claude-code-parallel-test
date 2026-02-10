@@ -28,10 +28,11 @@ async function processQueue() {
         // 计算可用槽位
         const availableSlots = maxParallel - runningCount;
 
-        // 获取待执行的子任务（包含模型的自定义 API 配置）
+        // 获取待执行的子任务（包含模型的自定义 API 配置和超时设置）
         const pendingSubtasks = db.prepare(`
             SELECT mr.id, mr.task_id, mr.model_id, t.title,
-                   mc.endpoint_name, mc.api_base_url, mc.api_key, mc.model_name
+                   mc.endpoint_name, mc.api_base_url, mc.api_key, mc.model_name,
+                   mc.activity_timeout_seconds, mc.task_timeout_seconds
             FROM model_runs mr
             JOIN tasks t ON mr.task_id = t.task_id
             JOIN task_queue tq ON mr.task_id = tq.task_id
@@ -52,12 +53,14 @@ async function processQueue() {
             db.prepare("UPDATE model_runs SET status = 'running', started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(subtask.id);
             db.prepare("UPDATE task_queue SET status = 'running', started_at = COALESCE(started_at, CURRENT_TIMESTAMP) WHERE task_id = ?").run(subtask.task_id);
             console.log(`[Queue] Starting subtask: ${subtask.task_id}/${subtask.model_id} (endpoint: ${subtask.endpoint_name}, model: ${subtask.model_name || subtask.endpoint_name})`);
-            // Pass model_id for folder naming and modelConfig for API request
+            // Pass model_id for folder naming and modelConfig for API request + timeout settings
             executeSubtask(subtask.task_id, subtask.model_id, {
                 endpointName: subtask.endpoint_name,
                 apiBaseUrl: subtask.api_base_url || null,
                 apiKey: subtask.api_key || null,
-                modelName: subtask.model_name || null
+                modelName: subtask.model_name || null,
+                activityTimeoutSeconds: subtask.activity_timeout_seconds ?? null,
+                taskTimeoutSeconds: subtask.task_timeout_seconds ?? null
             });
         }
     } catch (e) {

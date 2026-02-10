@@ -290,6 +290,10 @@ try { db.exec("ALTER TABLE model_configs ADD COLUMN model_name TEXT"); } catch (
 // Migration: Add auto_retry_limit to model_configs (0 = no auto-retry, default)
 try { db.exec("ALTER TABLE model_configs ADD COLUMN auto_retry_limit INTEGER DEFAULT 0"); } catch (e) { }
 
+// Migration: Add per-model timeout configuration (seconds, NULL = use global default)
+try { db.exec("ALTER TABLE model_configs ADD COLUMN activity_timeout_seconds INTEGER"); } catch (e) { }
+try { db.exec("ALTER TABLE model_configs ADD COLUMN task_timeout_seconds INTEGER"); } catch (e) { }
+
 // Migration: Add retry_count to model_runs (tracks how many times this run has been retried)
 try { db.exec("ALTER TABLE model_runs ADD COLUMN retry_count INTEGER DEFAULT 0"); } catch (e) { }
 
