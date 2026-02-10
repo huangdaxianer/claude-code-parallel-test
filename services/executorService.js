@@ -164,36 +164,11 @@ function copyBaseFiles(taskId, folderPath) {
 function buildFirejailArgs(taskDir, modelId) {
     const args = ['--quiet', '--noprofile'];
 
-    const tasksRoot = path.dirname(taskDir);
-    const projectRoot = path.dirname(tasksRoot);
-    const currentTask = path.basename(taskDir);
+    // 白名单：只允许访问当前模型的工作目录（home 下其他路径自动隔离）
+    const modelDir = path.join(taskDir, modelId);
+    args.push(`--whitelist=${modelDir}`);
 
-    // 黑名单：项目代码目录
-    args.push(`--blacklist=${projectRoot}/claude-code-parallel-test`);
-
-    // 黑名单：其他任务目录
-    try {
-        const taskDirs = fs.readdirSync(tasksRoot);
-        for (const dir of taskDirs) {
-            if (dir !== currentTask && dir !== 'temp_uploads') {
-                args.push(`--blacklist=${path.join(tasksRoot, dir)}`);
-            }
-        }
-    } catch (e) { }
-
-    // 黑名单：其他模型目录和 logs
-    try {
-        const modelDirs = fs.readdirSync(taskDir);
-        for (const dir of modelDirs) {
-            if (dir !== modelId) {
-                args.push(`--blacklist=${path.join(taskDir, dir)}`);
-            }
-        }
-    } catch (e) { }
-
-    // 系统敏感目录
-    args.push('--blacklist=/root/.ssh');
-    args.push('--blacklist=/root/.gnupg');
+    // 系统敏感文件（whitelist 只限制 home 目录，/etc 等系统路径需额外 blacklist）
     args.push('--blacklist=/etc/shadow');
     args.push('--blacklist=/etc/passwd');
 
