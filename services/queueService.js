@@ -150,7 +150,7 @@ function executeSubtask(taskId, modelId, modelConfig) {
         console.log(`[Subtask ${subtaskKey} EXIT] Process exited with code ${code} and signal ${signal}`);
         delete activeSubtaskProcesses[subtaskKey];
 
-        const currentStatus = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId);
+        const currentStatus = db.prepare("SELECT status, stop_reason FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId);
         if (currentStatus && currentStatus.status === 'running') {
             if (code === 0) {
                 db.prepare("UPDATE model_runs SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
@@ -165,6 +165,12 @@ function executeSubtask(taskId, modelId, modelConfig) {
                     db.prepare("UPDATE model_runs SET status = 'stopped', stop_reason = 'non_zero_exit', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
                 }
             }
+        } else if (currentStatus && currentStatus.status === 'stopped' && currentStatus.stop_reason
+                   && currentStatus.stop_reason !== 'manual_stop') {
+            // IngestHandler 已将状态设为 stopped（is_error / abnormal_completion 等情况）
+            // 进程正常退出（code=0）但 ingestHandler 检测到内容异常，需要尝试自动重试
+            console.log(`[Queue] IngestHandler marked ${subtaskKey} as stopped (reason: ${currentStatus.stop_reason}), attempting auto-retry`);
+            tryAutoRetry(taskId, modelId);
         }
 
         checkAndUpdateTaskStatus(taskId);
