@@ -162,8 +162,8 @@
      */
     function translateStopReason(reason) {
         const map = {
-            'activity_timeout': '模型长时间未响应（命中无响应超时）',
-            'wall_clock_timeout': '总执行时间过长（命中任务总超时）',
+            'activity_timeout': '模型长时间未响应',
+            'wall_clock_timeout': '总执行时间过长',
             'manual_stop': '手动中止',
             'is_error': '模型响应异常（返回错误）',
             'abnormal_completion': '任务执行中断（最后一轮输出非文本）',
