@@ -4,13 +4,62 @@
 const express = require('express');
 const router = express.Router();
 const fs = require('fs');
+const fsPromises = fs.promises;
 const path = require('path');
 const archiver = require('archiver');
 const db = require('../db');
 const config = require('../config');
 
+// File list cache: key=folderPath, value={ files: [], timestamp: number }
+const fileListCache = new Map();
+const CACHE_TTL_COMPLETED = 60000; // 60s for completed/stopped runs
+const CACHE_MAX_SIZE = 500;
+
+async function walkAsync(dir, basePath, filelist = []) {
+    const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+        if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.DS_Store') continue;
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            await walkAsync(fullPath, basePath, filelist);
+        } else {
+            filelist.push(path.relative(basePath, fullPath));
+        }
+    }
+    return filelist;
+}
+
+async function getFileList(folderPath, status) {
+    // Only cache for terminal states
+    const isTerminal = status === 'completed' || status === 'stopped' || status === 'error' || status === 'evaluated';
+    if (isTerminal) {
+        const cached = fileListCache.get(folderPath);
+        if (cached && (Date.now() - cached.timestamp) < CACHE_TTL_COMPLETED) {
+            return cached.files;
+        }
+    }
+
+    try {
+        const stat = await fsPromises.stat(folderPath);
+        if (!stat.isDirectory()) return [];
+        const files = await walkAsync(folderPath, folderPath);
+
+        if (isTerminal) {
+            // Evict oldest if cache is too large
+            if (fileListCache.size >= CACHE_MAX_SIZE) {
+                const oldestKey = fileListCache.keys().next().value;
+                fileListCache.delete(oldestKey);
+            }
+            fileListCache.set(folderPath, { files, timestamp: Date.now() });
+        }
+        return files;
+    } catch (e) {
+        return [];
+    }
+}
+
 // 获取任务详情
-router.get('/task_details/:taskId', (req, res) => {
+router.get('/task_details/:taskId', async (req, res) => {
     const { taskId } = req.params;
     const taskDir = path.join(config.TASKS_DIR, taskId);
 
@@ -22,50 +71,37 @@ router.get('/task_details/:taskId', (req, res) => {
 
         // Join with model_configs to get endpoint_name
         const runs = db.prepare(`
-            SELECT mr.*, mc.endpoint_name 
-            FROM model_runs mr 
+            SELECT mr.*, mc.endpoint_name
+            FROM model_runs mr
             LEFT JOIN model_configs mc ON mc.model_id = mr.model_id
             WHERE mr.task_id = ?
         `).all(taskId);
+
+        // Fetch file lists in parallel for all runs
+        const fileListPromises = runs.map(run => {
+            const folderPath = path.join(taskDir, run.model_id);
+            return getFileList(folderPath, run.status);
+        });
+        const allFileLists = await Promise.all(fileListPromises);
 
         const responseData = {
             taskId: task.task_id,
             title: task.title,
             prompt: task.prompt,
-            runs: runs.map(run => {
-                // Use model_id for folder path (this is the 5-char ID)
-                const folderPath = path.join(taskDir, run.model_id);
-                let generatedFiles = [];
-
-                if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
-                    const walkSync = (dir, filelist = []) => {
-                        fs.readdirSync(dir).forEach(file => {
-                            if (file === 'node_modules' || file === '.git' || file === '.DS_Store') return;
-                            const filepath = path.join(dir, file);
-                            if (fs.statSync(filepath).isDirectory()) {
-                                walkSync(filepath, filelist);
-                            } else {
-                                filelist.push(path.relative(folderPath, filepath));
-                            }
-                        });
-                        return filelist;
-                    };
-                    generatedFiles = walkSync(folderPath);
-                }
-
-                // Check if any files exist (ignoring strict HTML check to support backend-rendered apps)
+            runs: runs.map((run, i) => {
+                const generatedFiles = allFileLists[i];
                 const hasFiles = generatedFiles.length > 0;
 
                 return {
                     runId: run.id,
                     folderName: path.join(taskId, run.model_id),
                     modelId: run.model_id,
-                    modelName: run.endpoint_name || run.model_id, // Display name for UI
+                    modelName: run.endpoint_name || run.model_id,
                     endpointName: run.endpoint_name,
                     status: run.status,
                     stopReason: run.stop_reason || null,
                     retryCount: run.retry_count || 0,
-                    previewable: run.previewable || ((run.status === 'completed' && hasFiles) ? 'static' : 'unpreviewable'), // Fallback for old tasks, ensure running tasks don't show preview
+                    previewable: run.previewable || ((run.status === 'completed' && hasFiles) ? 'static' : 'unpreviewable'),
                     generatedFiles,
                     stats: {
                         duration: run.duration,

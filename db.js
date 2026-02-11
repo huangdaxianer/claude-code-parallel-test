@@ -209,6 +209,7 @@ db.exec(`
 
     CREATE INDEX IF NOT EXISTS idx_gsb_jobs_user_id ON gsb_jobs(user_id);
     CREATE INDEX IF NOT EXISTS idx_gsb_tasks_job_id ON gsb_tasks(job_id);
+    CREATE INDEX IF NOT EXISTS idx_model_runs_status ON model_runs(status);
 `);
 
 // Migration: Add new columns to log_entries if they don't exist

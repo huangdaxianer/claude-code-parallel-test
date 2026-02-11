@@ -293,6 +293,10 @@
             if (data.error) {
                 alert(data.error);
             } else {
+                // Restore high-frequency polling after restart/start action
+                if (action === 'start' && App.adjustPollingInterval) {
+                    App.adjustPollingInterval(3000);
+                }
                 App.fetchTaskDetails();
             }
         } catch (e) {

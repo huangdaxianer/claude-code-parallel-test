@@ -10,6 +10,10 @@
     /**
      * 获取任务详情
      */
+    const POLL_INTERVAL_ACTIVE = 3000;  // 3s for active tasks
+    const POLL_INTERVAL_IDLE = 30000;   // 30s for fully completed tasks
+    const TERMINAL_STATUSES = new Set(['completed', 'stopped', 'error', 'evaluated']);
+
     App.fetchTaskDetails = async function () {
         try {
             const data = await App.api.getTaskDetails(App.state.currentTaskId);
@@ -23,6 +27,10 @@
                 App.elements.modelListEl.innerHTML = '<div style="padding:1rem; color:#94a3b8; font-size:0.9rem;">正在启动任务...</div>';
                 return;
             }
+
+            // Smart polling: switch to low-frequency if all runs are terminal
+            const allTerminal = data.runs.every(r => TERMINAL_STATUSES.has(r.status));
+            App.adjustPollingInterval(allTerminal ? POLL_INTERVAL_IDLE : POLL_INTERVAL_ACTIVE);
 
             // Initialize batch previews (Concurrent Start)
             if (App.preview && App.preview.initAll) {
@@ -95,6 +103,19 @@
         } catch (err) {
             console.error('Failed to fetch details:', err);
         }
+    };
+
+    /**
+     * 调整轮询间隔 (避免重复创建定时器)
+     */
+    App.adjustPollingInterval = function (interval) {
+        if (App.state._currentPollingInterval === interval) return;
+        App.state._currentPollingInterval = interval;
+
+        if (App.state.refreshIntervalId) {
+            clearInterval(App.state.refreshIntervalId);
+        }
+        App.state.refreshIntervalId = setInterval(App.fetchTaskDetails, interval);
     };
 
     /**

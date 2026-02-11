@@ -27,23 +27,22 @@ const upload = multer({
     }
 });
 
-// 获取所有任务 (支持用户过滤)
+// 获取所有任务 (支持用户过滤, 默认返回最近50条)
 router.get('/', (req, res) => {
-    const { userId } = req.query;
+    const { userId, limit } = req.query;
+    const queryLimit = Math.min(parseInt(limit) || 50, 200);
 
     try {
         let tasks;
         if (userId) {
-            tasks = db.prepare('SELECT * FROM tasks WHERE user_id = ? ORDER BY created_at DESC').all(userId);
+            tasks = db.prepare('SELECT task_id, title, user_id, created_at FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT ?').all(userId, queryLimit);
         } else {
-            tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at DESC').all();
+            tasks = db.prepare('SELECT task_id, title, user_id, created_at FROM tasks ORDER BY created_at DESC LIMIT ?').all(queryLimit);
         }
 
         return res.json(tasks.map(t => ({
             taskId: t.task_id,
             title: t.title,
-            prompt: t.prompt,
-            baseDir: t.base_dir,
             userId: t.user_id,
             createdAt: t.created_at
         })));

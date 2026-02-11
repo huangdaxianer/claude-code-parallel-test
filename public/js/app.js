@@ -99,7 +99,7 @@
     /**
      * 加载任务
      */
-    App.loadTask = function (id, pushState, initialModel, initialPage) {
+    App.loadTask = function (id, pushState, initialModel, initialPage, skipFetchHistory) {
         if (pushState === undefined) pushState = true;
         initialModel = initialModel || null;
 
@@ -152,7 +152,9 @@
 
         // 重新获取数据
         App.fetchTaskDetails();
-        App.fetchTaskHistory();
+        if (!skipFetchHistory) {
+            App.fetchTaskHistory();
+        }
         App.comments.loadComments();
 
         // 重启定时器
@@ -202,27 +204,25 @@
 
         App.initElements();
 
-        // Load model display names early for task details rendering
-        await App.loadModelDisplayNames();
-
-        // 获取 URL 参数（新格式：user/task/model/page）
+        // 获取 URL 参数
         const urlParams = new URLSearchParams(window.location.search);
         const taskId = urlParams.get('task');
         const model = urlParams.get('model');
         const page = urlParams.get('page');
-        // user is for login, view_user is for admin viewing
         const viewUserParam = urlParams.get('view_user');
         const userParam = urlParams.get('user');
 
-        // 处理目标用户 (查看模式) - 优先使用 view_user
         const targetUserParam = viewUserParam || userParam;
-
-        // 只有当有明确的 view_user 或者 (user 且不等于当前用户) 时才进入 viewing 模式
-        // 注意：如果是 view_user，即使是自己也允许进入 view 模式（虽然没必要，但逻辑一致）
-        // 如果是 user 参数，通常 auth.js 已经处理了登录，这里主要是为了处理 "用户A访问?user=B但没权限" 的情况
         const shouldCheckView = viewUserParam || (userParam && userParam !== App.state.currentUser.username);
 
-        if (shouldCheckView) {
+        // 如果 URL 中有任务 ID，先设置到状态中，防止 fetchTaskHistory 自动加载第一个任务
+        if (taskId) {
+            App.state.currentTaskId = taskId;
+        }
+
+        // ====== Phase 1: 并行加载模型名 + 验证目标用户 (互不依赖) ======
+        const resolveTargetUser = async () => {
+            if (!shouldCheckView) return;
             try {
                 const targetUser = await App.api.verifyUser(targetUserParam);
                 if (targetUser) {
@@ -230,7 +230,6 @@
                         App.state.targetUser = targetUser;
                         console.log(`[App] Admin viewing as user: ${targetUser.username} (${targetUser.id})`);
 
-                        // Add "Current Showing: [User]" indicator to dropdown
                         const dropdownMenu = document.getElementById('user-dropdown-menu');
                         if (dropdownMenu) {
                             const infoId = 'viewing-user-info';
@@ -241,7 +240,6 @@
                                 infoDiv.style.cssText = 'padding: 0.5rem 1rem; color: #64748b; font-size: 0.85rem; border-bottom: 1px solid #e2e8f0; background: #f8fafc; cursor: default;';
                                 infoDiv.innerHTML = `当前展示：<span style="font-weight:600; color:#334155;">${targetUser.username}</span>`;
 
-                                // Insert after the first element (username display)
                                 const firstChild = dropdownMenu.firstElementChild;
                                 if (firstChild) {
                                     firstChild.after(infoDiv);
@@ -251,8 +249,6 @@
                             }
                         }
                     } else if (targetUser.username !== App.state.currentUser.username) {
-                        // Non-admin user trying to access another user's view
-                        // Alert and redirect
                         alert('您无法访问该任务');
                         window.location.href = '/task.html';
                         return;
@@ -263,12 +259,12 @@
             } catch (e) {
                 console.error('[App] Failed to verify target user:', e);
             }
-        }
+        };
 
-        // 如果 URL 中有任务 ID，先设置到状态中，防止 fetchTaskHistory 自动加载第一个任务
-        if (taskId) {
-            App.state.currentTaskId = taskId;
-        }
+        await Promise.all([
+            App.loadModelDisplayNames(),
+            resolveTargetUser()
+        ]);
 
         // 显示用户名
         const usernameDisplay = document.getElementById('username-display');
@@ -284,7 +280,7 @@
                 adminLink.id = 'admin-panel-link';
                 adminLink.href = '/task_manager.html';
                 adminLink.target = '_blank';
-                adminLink.className = 'user-dropdown-item'; // Use existing class if available or add style
+                adminLink.className = 'user-dropdown-item';
                 adminLink.style.display = 'block';
                 adminLink.style.padding = '0.5rem 1rem';
                 adminLink.style.textDecoration = 'none';
@@ -296,7 +292,6 @@
 
                 adminLink.innerHTML = '<span>⚙️</span> 管理后台';
 
-                // Insert before logout button
                 const logoutBtn = dropdownMenu.querySelector('.user-dropdown-logout');
                 if (logoutBtn) {
                     dropdownMenu.insertBefore(adminLink, logoutBtn);
@@ -306,8 +301,23 @@
             }
         }
 
-        // 初始化侧边栏
-        App.fetchTaskHistory();
+        // ====== Phase 2: 并行加载任务历史 + 验证任务 (targetUser 已就绪) ======
+        const userId = App.state.targetUser ? App.state.targetUser.id : App.state.currentUser.id;
+        const [_, taskValidation] = await Promise.all([
+            App.fetchTaskHistory(),
+            taskId ? App.api.verifyTask(taskId, userId) : Promise.resolve(null)
+        ]);
+
+        // ====== Phase 3: 加载任务详情 (不重复请求历史) ======
+        if (taskId && taskValidation) {
+            if (!taskValidation.exists) {
+                App.toast.show('任务不存在或无权访问');
+                App.state.currentTaskId = null;
+                App.updateUrl(null, null, null);
+            } else {
+                App.loadTask(taskId, false, model, page, true);
+            }
+        }
 
         // 侧边栏折叠
         document.getElementById('sidebar-toggle').addEventListener('click', () => {
@@ -322,7 +332,7 @@
 
         // Dropdown options
         document.getElementById('trigger-zip-upload').addEventListener('click', (e) => {
-            e.stopPropagation(); // prevent bubbling to main button if nested (though it's sibling here)
+            e.stopPropagation();
             App.modal.triggerZipBrowse();
         });
         document.getElementById('trigger-folder-upload').addEventListener('click', (e) => {
@@ -336,27 +346,6 @@
 
         // prompt 输入监听
         document.getElementById('task-prompt').addEventListener('input', App.modal.updateStartButtonStyle);
-
-        // 验证任务和模型
-        if (taskId) {
-            try {
-                const taskValidation = await App.api.verifyTask(taskId, App.state.currentUser.id);
-
-                if (!taskValidation.exists) {
-                    App.toast.show('任务不存在或无权访问');
-                    // 清除 URL 参数，显示用户主页
-                    App.state.currentTaskId = null;
-                    App.updateUrl(null, null, null);
-                } else {
-                    // 任务存在，加载任务
-                    // model 验证会在 loadTask -> fetchTaskDetails 中自然处理
-                    App.loadTask(taskId, false, model, page);
-                }
-            } catch (e) {
-                console.error('[App] Task validation error:', e);
-                App.toast.show('验证任务失败');
-            }
-        }
 
         // 关闭预览模态框
         App.elements.previewModal.addEventListener('click', (e) => {
@@ -398,7 +387,7 @@
         // 浏览器前进后退
         window.addEventListener('popstate', (event) => {
             const params = new URLSearchParams(window.location.search);
-            const id = params.get('task'); // 改为 task
+            const id = params.get('task');
             const model = params.get('model');
             const page = params.get('page');
             if (id) {
