@@ -351,16 +351,19 @@
         const job = state.currentJob;
         const results = job.results || {};
 
+        const modelAName = job.model_a_display || job.model_a;
+        const modelBName = job.model_b_display || job.model_b;
+
         document.getElementById('results-job-name').textContent = job.name;
-        document.getElementById('results-models').textContent = `${job.model_a} vs ${job.model_b}`;
+        document.getElementById('results-models').textContent = `${modelAName} vs ${modelBName}`;
 
         document.getElementById('result-model-a-wins').textContent = results.model_a_wins || 0;
         document.getElementById('result-model-b-wins').textContent = results.model_b_wins || 0;
         document.getElementById('result-same').textContent = results.same_count || 0;
         document.getElementById('result-failed').textContent = results.failed_count || 0;
 
-        document.getElementById('result-model-a-label').textContent = `${job.model_a} 胜出`;
-        document.getElementById('result-model-b-label').textContent = `${job.model_b} 胜出`;
+        document.getElementById('result-model-a-label').textContent = `${modelAName} 胜出`;
+        document.getElementById('result-model-b-label').textContent = `${modelBName} 胜出`;
 
         // Render task details table
         GSB.renderTaskDetails(job);
@@ -372,10 +375,12 @@
     GSB.renderTaskDetails = function (job) {
         const tbody = document.getElementById('results-task-tbody');
         const tasks = job.tasks || [];
+        const modelAName = job.model_a_display || job.model_a;
+        const modelBName = job.model_b_display || job.model_b;
 
         const ratingLabels = {
-            'left_better': `${job.model_a} 胜`,
-            'right_better': `${job.model_b} 胜`,
+            'left_better': `${modelAName} 胜`,
+            'right_better': `${modelBName} 胜`,
             'same': '平局',
             'failed': '加载失败'
         };
@@ -450,9 +455,9 @@
             const res = await fetch(`/api/gsb/available-models?userId=${state.currentUser.id}`);
             state.availableModels = await res.json();
 
-            // Models now come as objects with model_id and endpoint_name
+            // Models come as objects with model_id, endpoint_name, and displayName
             const options = state.availableModels.map(m => {
-                const displayName = m.endpoint_name || m.model_id;
+                const displayName = m.displayName || m.endpoint_name || m.model_id;
                 const value = m.model_id;
                 return `<option value="${escapeHtml(value)}" data-display="${escapeHtml(displayName)}">${escapeHtml(displayName)}</option>`;
             }).join('');
@@ -548,14 +553,18 @@
         const tbody = document.getElementById('task-selection-tbody');
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:2rem;">加载中...</td></tr>';
 
-        // 更新表头模型名称
+        // 更新表头模型名称 - 使用 displayName 而非 model_id
         const thModelA = document.getElementById('th-model-a');
         const thModelB = document.getElementById('th-model-b');
+        const modelAObj = state.availableModels.find(m => m.model_id === modelA);
+        const modelBObj = state.availableModels.find(m => m.model_id === modelB);
+        const modelADisplay = modelAObj ? (modelAObj.displayName || modelAObj.endpoint_name || modelA) : modelA;
+        const modelBDisplay = modelBObj ? (modelBObj.displayName || modelBObj.endpoint_name || modelB) : modelB;
         if (thModelA) {
-            thModelA.innerHTML = `<div class="model-header"><span class="model-name">${escapeHtml(modelA)}</span><span class="preview-label">预览状态</span></div>`;
+            thModelA.innerHTML = `<div class="model-header"><span class="model-name">${escapeHtml(modelADisplay)}</span><span class="preview-label">预览状态</span></div>`;
         }
         if (thModelB) {
-            thModelB.innerHTML = `<div class="model-header"><span class="model-name">${escapeHtml(modelB)}</span><span class="preview-label">预览状态</span></div>`;
+            thModelB.innerHTML = `<div class="model-header"><span class="model-name">${escapeHtml(modelBDisplay)}</span><span class="preview-label">预览状态</span></div>`;
         }
 
         try {
@@ -675,6 +684,16 @@
             console.error('[GSB] Error creating job:', e);
             alert('创建失败');
         }
+    };
+
+    /**
+     * Toggle sidebar collapse/expand
+     */
+    GSB.toggleSidebar = function () {
+        const sidebar = document.getElementById('gsb-sidebar');
+        const toggleBtn = document.getElementById('gsb-sidebar-toggle');
+        const collapsed = sidebar.classList.toggle('collapsed');
+        toggleBtn.classList.toggle('visible', collapsed);
     };
 
     // Utility functions

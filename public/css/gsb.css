@@ -16,6 +16,65 @@
     border-right: 1px solid #e2e8f0;
     display: flex;
     flex-direction: column;
+    transition: margin-left 0.3s ease, opacity 0.3s ease;
+}
+
+.gsb-sidebar.collapsed {
+    margin-left: -320px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Sidebar collapse button (inside sidebar header) */
+.gsb-sidebar-collapse-btn {
+    position: absolute;
+    right: 12px;
+    top: 12px;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.gsb-sidebar-collapse-btn:hover {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+/* Floating toggle ball (visible when sidebar is collapsed) */
+.gsb-sidebar-toggle {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #0f172a;
+    color: white;
+    border: none;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.gsb-sidebar-toggle:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.gsb-sidebar-toggle.visible {
+    display: flex;
 }
 
 .gsb-main {
@@ -27,6 +86,7 @@
 
 /* Sidebar Header */
 .gsb-sidebar-header {
+    position: relative;
     padding: 1.5rem;
     border-bottom: 1px solid #e2e8f0;
 }

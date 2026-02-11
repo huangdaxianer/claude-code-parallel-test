@@ -11,9 +11,23 @@
 
 <body>
     <div class="gsb-layout">
+        <!-- Sidebar Toggle (floating ball when collapsed) -->
+        <button class="gsb-sidebar-toggle" id="gsb-sidebar-toggle" onclick="GSB.toggleSidebar()" title="展开侧栏">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
+
         <!-- Sidebar -->
-        <aside class="gsb-sidebar">
+        <aside class="gsb-sidebar" id="gsb-sidebar">
             <div class="gsb-sidebar-header">
+                <button class="gsb-sidebar-collapse-btn" onclick="GSB.toggleSidebar()" title="收起侧栏">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                </button>
                 <a href="/task.html" class="gsb-back-link">← 返回任务列表</a>
                 <h1>GSB 评测</h1>
                 <button class="btn-new-job" onclick="GSB.openCreateModal()">

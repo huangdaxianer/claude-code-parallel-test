@@ -17,14 +17,24 @@ router.get('/jobs', (req, res) => {
             return res.status(400).json({ error: 'Missing userId' });
         }
 
+        // Get user's group_id for per-group display name resolution
+        const user = db.prepare('SELECT group_id FROM users WHERE id = ?').get(userId);
+        const groupId = user ? user.group_id : null;
+
         const jobs = db.prepare(`
-            SELECT 
-                id, name, model_a_id as model_a, model_b_id as model_b, user_id, status,
-                total_count, completed_count, created_at, completed_at
-            FROM gsb_jobs 
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-        `).all(userId);
+            SELECT
+                gj.id, gj.name, gj.model_a_id as model_a, gj.model_b_id as model_b, gj.user_id, gj.status,
+                gj.total_count, gj.completed_count, gj.created_at, gj.completed_at,
+                COALESCE(mgs_a.display_name, mc_a.description, mc_a.endpoint_name, gj.model_a_id) as model_a_display,
+                COALESCE(mgs_b.display_name, mc_b.description, mc_b.endpoint_name, gj.model_b_id) as model_b_display
+            FROM gsb_jobs gj
+            LEFT JOIN model_configs mc_a ON mc_a.model_id = gj.model_a_id
+            LEFT JOIN model_group_settings mgs_a ON mc_a.id = mgs_a.model_id AND mgs_a.group_id = ?
+            LEFT JOIN model_configs mc_b ON mc_b.model_id = gj.model_b_id
+            LEFT JOIN model_group_settings mgs_b ON mc_b.id = mgs_b.model_id AND mgs_b.group_id = ?
+            WHERE gj.user_id = ?
+            ORDER BY gj.created_at DESC
+        `).all(groupId, groupId, userId);
 
         res.json(jobs);
     } catch (e) {
@@ -85,10 +95,10 @@ router.get('/jobs/:id', (req, res) => {
         const { id } = req.params;
 
         const job = db.prepare(`
-            SELECT 
+            SELECT
                 id, name, model_a_id as model_a, model_b_id as model_b, user_id, status,
                 total_count, completed_count, created_at, completed_at
-            FROM gsb_jobs 
+            FROM gsb_jobs
             WHERE id = ?
         `).get(id);
 
@@ -96,9 +106,31 @@ router.get('/jobs/:id', (req, res) => {
             return res.status(404).json({ error: 'Job not found' });
         }
 
+        // Get user's group_id for per-group display name resolution
+        const user = db.prepare('SELECT group_id FROM users WHERE id = ?').get(job.user_id);
+        const groupId = user ? user.group_id : null;
+
+        // Resolve model display names
+        const modelADisplay = db.prepare(`
+            SELECT COALESCE(mgs.display_name, mc.description, mc.endpoint_name, mc.model_id) as displayName
+            FROM model_configs mc
+            LEFT JOIN model_group_settings mgs ON mc.id = mgs.model_id AND mgs.group_id = ?
+            WHERE mc.model_id = ?
+        `).get(groupId, job.model_a);
+
+        const modelBDisplay = db.prepare(`
+            SELECT COALESCE(mgs.display_name, mc.description, mc.endpoint_name, mc.model_id) as displayName
+            FROM model_configs mc
+            LEFT JOIN model_group_settings mgs ON mc.id = mgs.model_id AND mgs.group_id = ?
+            WHERE mc.model_id = ?
+        `).get(groupId, job.model_b);
+
+        job.model_a_display = modelADisplay ? modelADisplay.displayName : job.model_a;
+        job.model_b_display = modelBDisplay ? modelBDisplay.displayName : job.model_b;
+
         // Get tasks with original task info
         const tasks = db.prepare(`
-            SELECT 
+            SELECT
                 gt.id, gt.task_id, gt.display_order, gt.rating, gt.rated_at,
                 t.title, t.prompt
             FROM gsb_tasks gt
@@ -332,19 +364,29 @@ router.get('/available-models', (req, res) => {
             return res.status(400).json({ error: 'Missing userId' });
         }
 
+        // Get user's group_id for per-group display name resolution
+        const user = db.prepare('SELECT group_id FROM users WHERE id = ?').get(userId);
+        const groupId = user ? user.group_id : null;
+
         // Get distinct model_ids from completed runs for this user's tasks
         const models = db.prepare(`
-            SELECT DISTINCT mr.model_id, mc.endpoint_name
+            SELECT DISTINCT mr.model_id, mc.endpoint_name,
+                COALESCE(mgs.display_name, mc.description, mc.endpoint_name) as displayName
             FROM model_runs mr
             INNER JOIN tasks t ON mr.task_id = t.task_id
             LEFT JOIN model_configs mc ON mc.model_id = mr.model_id
+            LEFT JOIN model_group_settings mgs ON mc.id = mgs.model_id AND mgs.group_id = ?
             WHERE t.user_id = ?
               AND mr.status = 'completed'
               AND (mr.previewable = 'static' OR mr.previewable = 'dynamic')
             ORDER BY mc.endpoint_name ASC
-        `).all(userId);
+        `).all(groupId, userId);
 
-        res.json(models.map(m => ({ model_id: m.model_id, endpoint_name: m.endpoint_name || m.model_id })));
+        res.json(models.map(m => ({
+            model_id: m.model_id,
+            endpoint_name: m.endpoint_name || m.model_id,
+            displayName: m.displayName || m.endpoint_name || m.model_id
+        })));
     } catch (e) {
         console.error('[GSB] Error fetching available models:', e);
         res.status(500).json({ error: 'Failed to fetch available models' });
