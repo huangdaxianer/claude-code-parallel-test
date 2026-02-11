@@ -290,6 +290,8 @@
             const data = await res.json();
             if (data.status === 'ready' && data.url) {
                 // Static preview - already ready
+                // Must remove srcdoc first, as srcdoc takes precedence over src
+                iframe.removeAttribute('srcdoc');
                 iframe.src = data.url;
             } else if (data.url) {
                 // Dynamic preview - poll until ready
@@ -316,6 +318,7 @@
                 const data = await res.json();
 
                 if (data.status === 'ready') {
+                    iframe.removeAttribute('srcdoc');
                     iframe.src = url;
                     return;
                 }
