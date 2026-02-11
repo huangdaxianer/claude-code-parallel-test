@@ -216,9 +216,9 @@
         document.getElementById('model-a-label').textContent = '方案 A';
         document.getElementById('model-b-label').textContent = '方案 B';
 
-        // Load previews
-        GSB.loadPreview('preview-iframe-a', task.task_id, task.modelA, task.modelAPreviewable);
-        GSB.loadPreview('preview-iframe-b', task.task_id, task.modelB, task.modelBPreviewable);
+        // Load previews using randomized left/right positions from server
+        GSB.loadPreview('preview-iframe-a', task.task_id, task.leftModel, task.leftModelPreviewable);
+        GSB.loadPreview('preview-iframe-b', task.task_id, task.rightModel, task.rightModelPreviewable);
     };
 
     /**

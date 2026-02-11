@@ -311,6 +311,9 @@ try { db.exec("ALTER TABLE user_feedback ADD COLUMN model_id TEXT"); } catch (e)
 try { db.exec("ALTER TABLE gsb_jobs ADD COLUMN model_a_id TEXT"); } catch (e) { }
 try { db.exec("ALTER TABLE gsb_jobs ADD COLUMN model_b_id TEXT"); } catch (e) { }
 
+// Migration: Add swapped column to gsb_tasks (1 = model A/B positions are swapped for this task)
+try { db.exec("ALTER TABLE gsb_tasks ADD COLUMN swapped INTEGER DEFAULT 0"); } catch (e) { }
+
 // Helper function to generate 5-character model ID
 function generateModelId() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

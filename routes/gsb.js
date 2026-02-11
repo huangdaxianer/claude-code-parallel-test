@@ -194,8 +194,8 @@ router.get('/jobs/:id/next', (req, res) => {
 
         // Get next unrated task
         const nextTask = db.prepare(`
-            SELECT 
-                gt.id, gt.task_id, gt.display_order,
+            SELECT
+                gt.id, gt.task_id, gt.display_order, gt.swapped,
                 t.title, t.prompt
             FROM gsb_tasks gt
             LEFT JOIN tasks t ON gt.task_id = t.task_id
@@ -209,25 +209,35 @@ router.get('/jobs/:id/next', (req, res) => {
             return res.json({ completed: true, task: null });
         }
 
-        // Get previewable info for both models
-        const modelAInfo = db.prepare(`
-            SELECT previewable FROM model_runs 
-            WHERE task_id = ? AND model_id = ?
-        `).get(nextTask.task_id, job.model_a);
+        // Randomly decide whether to swap model positions for this task
+        // swapped=0: left=A, right=B; swapped=1: left=B, right=A
+        const swapped = Math.random() < 0.5 ? 1 : 0;
+        db.prepare('UPDATE gsb_tasks SET swapped = ? WHERE id = ?').run(swapped, nextTask.id);
 
-        const modelBInfo = db.prepare(`
-            SELECT previewable FROM model_runs 
+        // Determine which model appears on left vs right based on swap
+        const leftModel = swapped ? job.model_b : job.model_a;
+        const rightModel = swapped ? job.model_a : job.model_b;
+
+        // Get previewable info for both models
+        const leftModelInfo = db.prepare(`
+            SELECT previewable FROM model_runs
             WHERE task_id = ? AND model_id = ?
-        `).get(nextTask.task_id, job.model_b);
+        `).get(nextTask.task_id, leftModel);
+
+        const rightModelInfo = db.prepare(`
+            SELECT previewable FROM model_runs
+            WHERE task_id = ? AND model_id = ?
+        `).get(nextTask.task_id, rightModel);
 
         res.json({
             completed: false,
             task: {
                 ...nextTask,
-                modelA: job.model_a,
-                modelB: job.model_b,
-                modelAPreviewable: modelAInfo?.previewable,
-                modelBPreviewable: modelBInfo?.previewable
+                swapped: swapped,
+                leftModel: leftModel,
+                rightModel: rightModel,
+                leftModelPreviewable: leftModelInfo?.previewable,
+                rightModelPreviewable: rightModelInfo?.previewable
             }
         });
     } catch (e) {
@@ -251,17 +261,33 @@ router.post('/jobs/:id/rate', (req, res) => {
             return res.status(400).json({ error: 'Invalid rating data' });
         }
 
-        // Update task rating
+        // Get the swapped state for this task to correctly attribute the rating
+        const gsbTask = db.prepare(`
+            SELECT swapped FROM gsb_tasks WHERE job_id = ? AND task_id = ?
+        `).get(id, taskId);
+        const swapped = gsbTask ? gsbTask.swapped : 0;
+
+        // Translate UI rating (left/right) to actual model rating (model_a/model_b)
+        // When swapped=0: left=A, right=B → left_better=model_a_wins, right_better=model_b_wins
+        // When swapped=1: left=B, right=A → left_better=model_b_wins, right_better=model_a_wins
+        let actualRating = rating;
+        if (swapped && rating === 'left_better') {
+            actualRating = 'right_better'; // left was actually model B
+        } else if (swapped && rating === 'right_better') {
+            actualRating = 'left_better'; // right was actually model A
+        }
+
+        // Update task rating (store the actual model-based rating, not the UI position)
         const updateTask = db.prepare(`
-            UPDATE gsb_tasks 
+            UPDATE gsb_tasks
             SET rating = ?, rated_at = CURRENT_TIMESTAMP
             WHERE job_id = ? AND task_id = ?
         `);
-        updateTask.run(rating, id, taskId);
+        updateTask.run(actualRating, id, taskId);
 
         // Update job completed count
         const completedCount = db.prepare(`
-            SELECT COUNT(*) as count FROM gsb_tasks 
+            SELECT COUNT(*) as count FROM gsb_tasks
             WHERE job_id = ? AND rating IS NOT NULL
         `).get(id).count;
 
@@ -272,8 +298,8 @@ router.post('/jobs/:id/rate', (req, res) => {
         const isCompleted = completedCount >= totalCount;
 
         db.prepare(`
-            UPDATE gsb_jobs 
-            SET completed_count = ?, 
+            UPDATE gsb_jobs
+            SET completed_count = ?,
                 status = ?,
                 completed_at = ?
             WHERE id = ?
@@ -284,16 +310,16 @@ router.post('/jobs/:id/rate', (req, res) => {
             id
         );
 
-        // Update results
+        // Update results - use the actual (translated) rating
         const updateResultField = {
             'left_better': 'model_a_wins',
             'right_better': 'model_b_wins',
             'same': 'same_count',
             'failed': 'failed_count'
-        }[rating];
+        }[actualRating];
 
         db.prepare(`
-            UPDATE gsb_results 
+            UPDATE gsb_results
             SET ${updateResultField} = ${updateResultField} + 1
             WHERE job_id = ?
         `).run(id);
