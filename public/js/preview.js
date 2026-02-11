@@ -203,6 +203,12 @@
 
             // 轮询状态
             pollInterval = setInterval(async () => {
+                // Guard: if user switched to a different model, stop this stale poll
+                if (currentModelId !== modelId || currentTaskId !== taskId) {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                    return;
+                }
                 try {
                     const info = await App.api.getPreviewStatus(taskId, modelId);
 
@@ -373,6 +379,17 @@
         pollInterval = null;
         countdownInterval = null;
         heartbeatInterval = null;
+
+        // 移除所有旧的 overlay（防止切换时残留失败/加载页面）
+        document.querySelectorAll('.preview-loading-overlay').forEach(el => el.remove());
+
+        // 隐藏 iframe 并清空 src（防止切换时闪现旧页面内容）
+        const iframe = document.getElementById('preview-iframe');
+        if (iframe) {
+            iframe.style.display = 'none';
+            iframe.removeAttribute('src');
+            iframe.removeAttribute('data-src');
+        }
 
         // 如果切换到了不同的 parent task，才真正停止后端进程
         if (currentTaskId && currentModelId && (!nextTaskId || nextTaskId !== currentTaskId)) {
