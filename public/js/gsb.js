@@ -14,7 +14,8 @@
         availableModels: [],
         availableTasks: [],
         selectedTasks: new Set(),
-        createStep: 1
+        createStep: 1,
+        heartbeatInterval: null
     };
 
     // GSB namespace
@@ -147,6 +148,7 @@
      * Select a job
      */
     GSB.selectJob = async function (jobId) {
+        GSB.stopHeartbeats();
         if (!jobId) {
             state.currentJob = null;
             state.currentTask = null;
@@ -195,6 +197,39 @@
     };
 
     /**
+     * Stop preview heartbeats
+     */
+    GSB.stopHeartbeats = function () {
+        if (state.heartbeatInterval) {
+            clearInterval(state.heartbeatInterval);
+            state.heartbeatInterval = null;
+        }
+    };
+
+    /**
+     * Start preview heartbeats for current task's models
+     */
+    GSB.startHeartbeats = function (taskId, leftModelId, rightModelId) {
+        GSB.stopHeartbeats();
+
+        const sendHeartbeat = () => {
+            fetch('/api/preview/heartbeat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ taskId, modelId: leftModelId })
+            }).catch(() => {});
+            fetch('/api/preview/heartbeat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ taskId, modelId: rightModelId })
+            }).catch(() => {});
+        };
+
+        sendHeartbeat();
+        state.heartbeatInterval = setInterval(sendHeartbeat, 2000);
+    };
+
+    /**
      * Show scoring view
      */
     GSB.showScoringView = function () {
@@ -215,6 +250,9 @@
         // Update model labels (anonymous)
         document.getElementById('model-a-label').textContent = '方案 A';
         document.getElementById('model-b-label').textContent = '方案 B';
+
+        // Start heartbeats to keep previews alive
+        GSB.startHeartbeats(task.task_id, task.leftModel, task.rightModel);
 
         // Load previews using randomized left/right positions from server
         GSB.loadPreview('preview-iframe-a', task.task_id, task.leftModel, task.leftModelPreviewable);
@@ -336,6 +374,8 @@
      */
     GSB.showResults = async function () {
         if (!state.currentJob) return;
+
+        GSB.stopHeartbeats();
 
         // Refresh job data to get results
         try {
