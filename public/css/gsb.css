@@ -577,6 +577,21 @@
     color: #dc2626;
 }
 
+.gsb-detail-link {
+    color: #3b82f6;
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s;
+}
+
+.gsb-detail-link:hover {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
 /* Modal */
 .gsb-modal {
     position: fixed;
