@@ -68,6 +68,17 @@
                             <div class="gsb-preview-header left">
                                 <span class="model-label" id="model-a-label">Model A</span>
                             </div>
+                            <div class="gsb-preview-status-bar" id="preview-status-bar-a" style="display:none;">
+                                <div style="display:flex;align-items:center;gap:0.5rem;">
+                                    <span class="gsb-status-dot" id="preview-status-dot-a"></span>
+                                    <span class="gsb-status-text" id="preview-status-text-a">Ready</span>
+                                </div>
+                                <div style="display:flex;gap:0.5rem;">
+                                    <button class="gsb-preview-btn" id="preview-fullscreen-a" onclick="GSB.openFullscreen('a')" style="display:none;">↗ 全屏打开</button>
+                                    <button class="gsb-preview-btn" onclick="GSB.restartPreview('a')">🔄 重启服务</button>
+                                </div>
+                            </div>
+                            <div class="gsb-preview-logs" id="preview-logs-a" style="display:none;"></div>
                             <iframe id="preview-iframe-a" class="gsb-preview-iframe"></iframe>
                         </div>
                         <div class="gsb-resize-handle" id="gsb-resize-handle"></div>
@@ -75,6 +86,17 @@
                             <div class="gsb-preview-header right">
                                 <span class="model-label" id="model-b-label">Model B</span>
                             </div>
+                            <div class="gsb-preview-status-bar" id="preview-status-bar-b" style="display:none;">
+                                <div style="display:flex;align-items:center;gap:0.5rem;">
+                                    <span class="gsb-status-dot" id="preview-status-dot-b"></span>
+                                    <span class="gsb-status-text" id="preview-status-text-b">Ready</span>
+                                </div>
+                                <div style="display:flex;gap:0.5rem;">
+                                    <button class="gsb-preview-btn" id="preview-fullscreen-b" onclick="GSB.openFullscreen('b')" style="display:none;">↗ 全屏打开</button>
+                                    <button class="gsb-preview-btn" onclick="GSB.restartPreview('b')">🔄 重启服务</button>
+                                </div>
+                            </div>
+                            <div class="gsb-preview-logs" id="preview-logs-b" style="display:none;"></div>
                             <iframe id="preview-iframe-b" class="gsb-preview-iframe"></iframe>
                         </div>
                     </div>

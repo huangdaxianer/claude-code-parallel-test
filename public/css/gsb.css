@@ -407,6 +407,64 @@
     color: #1e40af;
 }
 
+.gsb-preview-status-bar {
+    padding: 0.4rem 0.75rem;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: #64748b;
+    flex-shrink: 0;
+}
+
+.gsb-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.gsb-status-dot.starting { background: #3b82f6; }
+.gsb-status-dot.success { background: #22c55e; }
+.gsb-status-dot.failed { background: #ef4444; }
+
+.gsb-status-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gsb-preview-btn {
+    border: 1px solid #e2e8f0;
+    background: white;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    color: #475569;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.gsb-preview-btn:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+
+.gsb-preview-logs {
+    padding: 0.5rem 0.75rem;
+    background: #f9fafb;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: #374151;
+    flex: 1;
+    border-bottom: 1px solid #e2e8f0;
+}
+
 .gsb-preview-iframe {
     flex: 1;
     border: none;

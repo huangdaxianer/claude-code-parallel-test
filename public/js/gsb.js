@@ -319,26 +319,91 @@
         GSB.loadPreview('preview-iframe-b', task.task_id, task.rightModel, task.rightModelPreviewable);
     };
 
+    // Store active poll timers per side so we can clear them
+    const previewPolls = { a: null, b: null };
+    // Store taskId/modelId per side for restart/fullscreen
+    const previewMeta = { a: {}, b: {} };
+
+    /**
+     * Get DOM elements for a preview side ('a' or 'b')
+     */
+    function getPreviewEls(side) {
+        return {
+            iframe: document.getElementById(`preview-iframe-${side}`),
+            statusBar: document.getElementById(`preview-status-bar-${side}`),
+            statusDot: document.getElementById(`preview-status-dot-${side}`),
+            statusText: document.getElementById(`preview-status-text-${side}`),
+            fullscreenBtn: document.getElementById(`preview-fullscreen-${side}`),
+            logsDiv: document.getElementById(`preview-logs-${side}`)
+        };
+    }
+
+    /**
+     * Show preview failure state for a side
+     */
+    function showGsbPreviewFailure(side, logs) {
+        const els = getPreviewEls(side);
+        els.statusBar.style.display = 'flex';
+        els.statusDot.className = 'gsb-status-dot failed';
+        els.statusText.innerHTML = '预览启动失败 <span title="预览失败可能是因为产物代码有问题，也有可能是在线环境问题，建议下载产物后在本地运行" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1.5px solid #94a3af;color:#94a3af;font-size:10px;cursor:help;margin-left:3px;font-family:serif;line-height:1;">i</span>';
+        els.fullscreenBtn.style.display = 'none';
+        els.iframe.style.display = 'none';
+        els.iframe.removeAttribute('src');
+        els.iframe.removeAttribute('srcdoc');
+        if (logs && logs.length > 0) {
+            els.logsDiv.style.display = 'block';
+            els.logsDiv.innerHTML = logs.map(l =>
+                `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:4px;">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
+            ).join('');
+        } else {
+            els.logsDiv.style.display = 'block';
+            els.logsDiv.innerHTML = '<div style="color:#9ca3af;padding:0.5rem;">无日志</div>';
+        }
+    }
+
     /**
      * Load preview in iframe
-     * Both static and dynamic previews go through /api/preview/start,
-     * which correctly resolves the HTML filename and uses the _preview isolation directory.
      */
     GSB.loadPreview = function (iframeId, taskId, modelId, previewable) {
-        const iframe = document.getElementById(iframeId);
+        const side = iframeId.endsWith('-a') ? 'a' : 'b';
+        const els = getPreviewEls(side);
+
+        // Store meta for restart
+        previewMeta[side] = { taskId, modelId, previewable };
+
+        // Clear any existing poll
+        if (previewPolls[side]) {
+            clearInterval(previewPolls[side]);
+            previewPolls[side] = null;
+        }
 
         if (previewable === 'static' || previewable === 'dynamic') {
-            GSB.startPreview(iframe, taskId, modelId);
+            GSB.startPreview(side, taskId, modelId);
         } else {
-            iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;">无法预览</div>`;
+            // Not previewable
+            els.statusBar.style.display = 'none';
+            els.logsDiv.style.display = 'none';
+            els.iframe.style.display = '';
+            els.iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;">无法预览</div>`;
         }
     };
 
     /**
-     * Start preview via /api/preview/start (handles both static and dynamic)
+     * Start preview via /api/preview/start
      */
-    GSB.startPreview = async function (iframe, taskId, modelId) {
-        iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;">启动预览中...</div>`;
+    GSB.startPreview = async function (side, taskId, modelId) {
+        const els = getPreviewEls(side);
+
+        // Show starting state
+        els.statusBar.style.display = 'flex';
+        els.statusDot.className = 'gsb-status-dot starting';
+        els.statusText.textContent = '预览服务启动中';
+        els.fullscreenBtn.style.display = 'none';
+        els.iframe.style.display = 'none';
+        els.iframe.removeAttribute('src');
+        els.iframe.removeAttribute('srcdoc');
+        els.logsDiv.style.display = 'block';
+        els.logsDiv.innerHTML = '<div style="color:#9ca3af;padding:0.5rem;">等待服务响应...</div>';
 
         try {
             const res = await fetch('/api/preview/start', {
@@ -350,51 +415,110 @@
             const data = await res.json();
             if (data.status === 'ready' && data.url) {
                 // Static preview - already ready
-                // Must remove srcdoc first, as srcdoc takes precedence over src
-                iframe.removeAttribute('srcdoc');
-                iframe.src = data.url;
+                GSB.showPreviewReady(side, data.url);
             } else if (data.url) {
                 // Dynamic preview - poll until ready
-                GSB.pollPreviewStatus(iframe, taskId, modelId, data.url);
+                GSB.pollPreviewStatus(side, taskId, modelId, data.url);
             } else {
-                iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#dc2626;">预览启动失败</div>`;
+                showGsbPreviewFailure(side, [{ msg: '服务未返回预览地址', ts: Date.now() }]);
             }
         } catch (e) {
             console.error('[GSB] Preview start error:', e);
-            iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#dc2626;">预览启动失败</div>`;
+            showGsbPreviewFailure(side, [{ msg: `API Error: ${e.message}`, ts: Date.now() }]);
         }
+    };
+
+    /**
+     * Show preview ready state
+     */
+    GSB.showPreviewReady = function (side, url) {
+        const els = getPreviewEls(side);
+        els.statusBar.style.display = 'flex';
+        els.statusDot.className = 'gsb-status-dot success';
+        els.statusText.textContent = '预览运行中';
+        els.fullscreenBtn.style.display = 'flex';
+        els.fullscreenBtn.setAttribute('data-url', url);
+        els.logsDiv.style.display = 'none';
+        els.iframe.removeAttribute('srcdoc');
+        els.iframe.src = url;
+        els.iframe.style.display = '';
     };
 
     /**
      * Poll preview status
      */
-    GSB.pollPreviewStatus = async function (iframe, taskId, modelId, url) {
-        let attempts = 0;
-        const maxAttempts = 30;
+    GSB.pollPreviewStatus = function (side, taskId, modelId, url) {
+        const els = getPreviewEls(side);
 
-        const poll = async () => {
+        // Clear any existing poll for this side
+        if (previewPolls[side]) {
+            clearInterval(previewPolls[side]);
+        }
+
+        previewPolls[side] = setInterval(async () => {
             try {
                 const res = await fetch(`/api/preview/status/${taskId}/${modelId}`);
                 const data = await res.json();
 
+                // Update logs
+                if (data.logs && data.logs.length > 0) {
+                    els.logsDiv.innerHTML = data.logs.map(l =>
+                        `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:4px;">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
+                    ).join('');
+                    els.logsDiv.scrollTop = els.logsDiv.scrollHeight;
+                }
+
                 if (data.status === 'ready') {
-                    iframe.removeAttribute('srcdoc');
-                    iframe.src = url;
+                    clearInterval(previewPolls[side]);
+                    previewPolls[side] = null;
+                    GSB.showPreviewReady(side, url);
                     return;
                 }
 
-                attempts++;
-                if (attempts < maxAttempts) {
-                    setTimeout(poll, 1000);
-                } else {
-                    iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#dc2626;">预览启动超时</div>`;
+                if (data.status === 'error' || data.status === 'not_running') {
+                    clearInterval(previewPolls[side]);
+                    previewPolls[side] = null;
+                    showGsbPreviewFailure(side, data.logs || []);
+                    return;
+                }
+
+                // Check log content for failure
+                if (data.logs && data.logs.length > 0) {
+                    const lastLog = data.logs[data.logs.length - 1];
+                    if (lastLog.msg && lastLog.msg.includes('Preview not running')) {
+                        clearInterval(previewPolls[side]);
+                        previewPolls[side] = null;
+                        showGsbPreviewFailure(side, data.logs);
+                        return;
+                    }
                 }
             } catch (e) {
-                iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#dc2626;">预览状态检查失败</div>`;
+                clearInterval(previewPolls[side]);
+                previewPolls[side] = null;
+                showGsbPreviewFailure(side, [{ msg: `状态检查失败: ${e.message}`, ts: Date.now() }]);
             }
-        };
+        }, 1000);
+    };
 
-        poll();
+    /**
+     * Restart preview for a side
+     */
+    GSB.restartPreview = function (side) {
+        const meta = previewMeta[side];
+        if (meta && meta.taskId && meta.modelId) {
+            GSB.startPreview(side, meta.taskId, meta.modelId);
+        }
+    };
+
+    /**
+     * Open preview fullscreen in new tab
+     */
+    GSB.openFullscreen = function (side) {
+        const btn = document.getElementById(`preview-fullscreen-${side}`);
+        const url = btn && btn.getAttribute('data-url');
+        if (url) {
+            window.open(url, '_blank');
+        }
     };
 
     /**
