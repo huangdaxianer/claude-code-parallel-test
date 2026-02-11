@@ -14,7 +14,11 @@ Instructions:
    - Ideally, redirect other logs to `server.log`.
    - IMPORTANT: Always use `python3` instead of `python`, and `pip3` instead of `pip` in the script. Many systems do not have `python` or `pip` symlinked.
    - For `pip3 install`, always add the `--break-system-packages` flag to avoid PEP 668 errors on externally-managed Python environments.
-   
+   - CRITICAL: The server process MUST run in the FOREGROUND (no `&` backgrounding). The parent process manager relies on the script's process lifecycle to track the server. If you background the server with `&`, the script will exit immediately and the process manager will lose track of it.
+   - For Python tools like uvicorn, gunicorn, flask, streamlit, always invoke them via `python3 -m <tool>` instead of calling the bare command directly (e.g., `python3 -m uvicorn main:app` instead of `uvicorn main:app`). The bare command may not be in PATH.
+   - For Flask apps with `debug=True`, change it to `debug=False` to avoid the reloader restarting the process and dropping the port temporarily.
+   - Add `export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"` near the top of the script to ensure pip-installed tools are found.
+
 Do not change files other than the current directory you are working on (typically the working directory should be a "xxx-preview" folder).
 Do not ask for clarification. Just analyze the files and create the script.
 If you cannot determine how to start the server, create a script that echoes "Error: Could not determine startup command" and exits with 1.

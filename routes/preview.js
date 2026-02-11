@@ -208,17 +208,59 @@ router.post('/start', async (req, res) => {
         // Ensure script is executable
         try { fs.chmodSync(runScript, '755'); } catch (e) { }
 
-        // Auto-fix: replace `python ` with `python3 ` and `pip ` with `pip3 ` in run_server.sh
+        // Auto-fix run_server.sh for common issues
         try {
             let scriptContent = fs.readFileSync(runScript, 'utf-8');
-            let fixed = scriptContent
-                .replace(/\bpython\b(?!3)/g, 'python3')
-                .replace(/\bpip\b(?!3)/g, 'pip3');
-            if (fixed !== scriptContent) {
-                fs.writeFileSync(runScript, fixed, 'utf-8');
-                addLog('Auto-fixed python/pip to python3/pip3 in run_server.sh');
+            let fixed = scriptContent;
+            const fixes = [];
+
+            // 1. python -> python3, pip -> pip3
+            fixed = fixed.replace(/\bpython\b(?!3)/g, 'python3');
+            fixed = fixed.replace(/\bpip\b(?!3)/g, 'pip3');
+            if (fixed !== scriptContent) fixes.push('python/pip→python3/pip3');
+
+            // 2. Bare commands -> python3 -m (uvicorn, gunicorn, flask, etc.)
+            //    e.g. "uvicorn main:app" -> "python3 -m uvicorn main:app"
+            //    But skip if already "python3 -m uvicorn" or "exec python3 -m uvicorn"
+            const bareCommands = ['uvicorn', 'gunicorn', 'flask', 'streamlit', 'fastapi'];
+            for (const cmd of bareCommands) {
+                const re = new RegExp(`(?<!python3\\s+-m\\s+)(?<!\\w)${cmd}\\b`, 'g');
+                const before = fixed;
+                fixed = fixed.replace(re, (match, offset) => {
+                    // Check if preceded by "python3 -m " already (with varying spaces)
+                    const preceding = fixed.substring(Math.max(0, offset - 20), offset);
+                    if (/python3\s+-m\s+$/.test(preceding)) return match;
+                    return `python3 -m ${cmd}`;
+                });
+                if (fixed !== before) fixes.push(`${cmd}→python3 -m ${cmd}`);
             }
-        } catch (e) { }
+
+            // 3. Remove background operator (&) from server start commands
+            //    e.g. "python3 app.py > server.log 2>&1 &" -> "python3 app.py > server.log 2>&1"
+            //    But preserve "2>&1" redirections
+            const bgFixed = fixed.replace(/^(.+(?:python3|node|npm|uvicorn|gunicorn|flask|exec)[^\n]*?)\s+&\s*$/gm, (match, cmd) => {
+                // Don't strip & from lines that are clearly not server start commands
+                return cmd;
+            });
+            if (bgFixed !== fixed) {
+                fixes.push('removed background &');
+                fixed = bgFixed;
+            }
+
+            // 4. Add PATH export for pip-installed binaries if not present
+            if (!fixed.includes('/.local/bin') && (fixed.includes('pip3') || fixed.includes('uvicorn') || fixed.includes('gunicorn'))) {
+                fixed = '#!/bin/bash\nexport PATH="$HOME/.local/bin:/usr/local/bin:$PATH"\n' +
+                    fixed.replace(/^#!\/bin\/bash\s*\n?/, '');
+                fixes.push('added PATH for pip binaries');
+            }
+
+            if (fixes.length > 0) {
+                fs.writeFileSync(runScript, fixed, 'utf-8');
+                addLog(`Auto-fixed run_server.sh: ${fixes.join(', ')}`);
+            }
+        } catch (e) {
+            console.error('[Preview] Auto-fix error:', e.message);
+        }
 
         console.log(`[Preview] Launching: ${spawnCmd} ${spawnArgs.join(' ')}`);
         const child = spawn(spawnCmd, spawnArgs, spawnOptions);
