@@ -208,6 +208,18 @@ router.post('/start', async (req, res) => {
         // Ensure script is executable
         try { fs.chmodSync(runScript, '755'); } catch (e) { }
 
+        // Auto-fix: replace `python ` with `python3 ` and `pip ` with `pip3 ` in run_server.sh
+        try {
+            let scriptContent = fs.readFileSync(runScript, 'utf-8');
+            let fixed = scriptContent
+                .replace(/\bpython\b(?!3)/g, 'python3')
+                .replace(/\bpip\b(?!3)/g, 'pip3');
+            if (fixed !== scriptContent) {
+                fs.writeFileSync(runScript, fixed, 'utf-8');
+                addLog('Auto-fixed python/pip to python3/pip3 in run_server.sh');
+            }
+        } catch (e) { }
+
         console.log(`[Preview] Launching: ${spawnCmd} ${spawnArgs.join(' ')}`);
         const child = spawn(spawnCmd, spawnArgs, spawnOptions);
 

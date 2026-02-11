@@ -12,6 +12,8 @@ Instructions:
    - The script should be executable (`chmod +x run_server.sh`).
    - The script MUST output "Server started on port <PORT>" to stdout when ready.
    - Ideally, redirect other logs to `server.log`.
+   - IMPORTANT: Always use `python3` instead of `python`, and `pip3` instead of `pip` in the script. Many systems do not have `python` or `pip` symlinked.
+   - For `pip3 install`, always add the `--break-system-packages` flag to avoid PEP 668 errors on externally-managed Python environments.
    
 Do not change files other than the current directory you are working on (typically the working directory should be a "xxx-preview" folder).
 Do not ask for clarification. Just analyze the files and create the script.
