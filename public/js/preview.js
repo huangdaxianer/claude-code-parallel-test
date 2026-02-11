@@ -136,36 +136,26 @@
             // Ignore fast path errors
         }
 
+        // 显示状态栏：蓝色指示灯 + "预览服务启动中"
         if (statusBar) {
-            statusBar.style.display = 'none'; // Hide initially
+            statusBar.style.display = 'flex';
+            statusBar.style.background = '#f8fafc';
+            statusBar.style.borderBottomColor = '#e2e8f0';
             statusDot.className = 'status-dot status-starting'; // Blue
-            statusText.textContent = '初始化中...';
-            urlDisplay.textContent = '-';
+            statusText.textContent = '预览服务启动中';
+            if (urlDisplay) urlDisplay.style.display = 'none';
             if (countdownEl) countdownEl.style.display = 'none';
         }
 
+        // 隐藏 iframe，显示日志区域
+        iframe.style.display = 'none';
         if (progressDiv) {
-            progressDiv.style.display = 'none'; // Keep hidden
-            progressDiv.innerHTML = '';
+            progressDiv.style.display = 'block';
+            progressDiv.style.height = '100%';
+            progressDiv.style.flex = '1';
+            progressDiv.style.background = '#f9fafb';
+            progressDiv.innerHTML = '<div style="color:#9ca3af; padding:1rem;">等待服务响应...</div>';
         }
-
-        const overlay = document.createElement('div');
-        overlay.className = 'preview-loading-overlay';
-        overlay.style.cssText = 'position:absolute; inset:0; background:white; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:10; top:0;';
-        overlay.innerHTML = `
-            <div style="display:flex; flex-direction:column; align-items:center; width:300px;">
-                <p style="margin-bottom:1rem; color:#64748b; font-size:0.9rem; font-weight:500;">预览服务启动中，请稍候...</p>
-                <div class="progress-bar-container" style="width:100%; height:6px; background:#eff6ff; border-radius:3px; overflow:hidden; margin-bottom:0.5rem; border:1px solid #e2e8f0;">
-                    <div id="preview-progress-bar" style="width:0%; height:100%; background:#3b82f6; transition:width 0.3s ease;"></div>
-                </div>
-                <p id="preview-loading-text" style="color:#94a3b8; font-size:0.8rem; height:1.2em; overflow:hidden; white-space:nowrap; text-align:center; width:100%;">等待服务响应...</p>
-            </div>
-        `;
-
-        if (getComputedStyle(container).position === 'static') {
-            container.style.position = 'relative';
-        }
-        container.appendChild(overlay);
 
         // 启动心跳以保活 (立即启动，防止并发的其他 Preview 被杀)
         if (!heartbeatInterval) {
@@ -220,75 +210,29 @@
                         countdownEl.style.display = 'none';
                     }
 
-                    // 更新日志
+                    // 更新日志到 progressDiv
                     if (info.logs && progressDiv) {
-                        progressDiv.innerHTML = info.logs.map(l =>
-                            `<div style="margin-bottom:4px; font-family: monospace; font-size: 0.85rem;"><span style="color:#999; margin-right:8px">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
+                        const logsHtml = info.logs.map(l =>
+                            `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:6px;">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
                         ).join('');
+                        progressDiv.innerHTML = logsHtml || '<div style="color:#9ca3af; padding:1rem;">等待服务响应...</div>';
                         progressDiv.scrollTop = progressDiv.scrollHeight;
+                    }
 
-                        // 动态更新状态栏文本为最新消息
-                        if (info.logs.length > 0) {
-                            const relevantLogs = info.logs.filter(l => !l.msg.startsWith('[Debug]'));
-                            const latestLog = relevantLogs.length > 0 ? relevantLogs[relevantLogs.length - 1] : info.logs[info.logs.length - 1];
-                            statusText.textContent = latestLog.msg;
-
-                            // Update loading overlay text and progress
-                            const loadingTextEl = document.getElementById('preview-loading-text');
-                            const progressBarEl = document.getElementById('preview-progress-bar');
-                            const logsStr = info.logs.map(l => l.msg).join('\n');
-                            const isFastPath = logsStr.includes('Fast Path detected');
-
-                            // Determine Target Text first
-                            let targetText = latestLog.msg;
-
-                            if ((latestLog && latestLog.msg && latestLog.msg.includes('Preview not running')) || info.status === 'not_running') {
-                                clearInterval(pollInterval);
-                                pollInterval = null;
-                                showPreviewFailure(info.logs, overlay, statusBar, statusDot, statusText, urlDisplay, progressDiv);
-                                return;
-                            } else if (isFastPath) {
-                                targetText = '正在启动后端服务';
-                            }
-
-                            if (loadingTextEl && targetText !== lastLogMsg) {
-                                lastLogMsg = targetText;
-                                loadingTextEl.textContent = targetText;
-                                loadingTextEl.style.animation = 'none';
-                                loadingTextEl.offsetHeight;
-                                loadingTextEl.style.animation = 'fadeInUp 0.3s ease';
-                            }
-
-                            if (progressBarEl) {
-                                let progress = 0;
-                                if (logsStr.includes('正在分配端口')) progress += 10;
-                                if (logsStr.includes('端口分配成功')) progress += 10;
-                                if (logsStr.includes('尝试启动服务')) progress += 5;
-
-                                if (isFastPath) {
-                                    progress = Math.max(progress, 30);
-                                }
-
-                                const bashLogs = info.logs.filter(l =>
-                                    !l.msg.includes('正在分配端口') &&
-                                    !l.msg.includes('端口分配成功') &&
-                                    !l.msg.includes('尝试启动服务') &&
-                                    !l.msg.startsWith('[Debug]') &&
-                                    !l.msg.startsWith('>>')
-                                );
-
-                                progress += (bashLogs.length * 10);
-                                if (progress > 95) progress = 95;
-
-                                if (progress > lastProgress) {
-                                    progressBarEl.style.transition = 'none';
-                                    progressBarEl.style.width = `${lastProgress}%`;
-                                    progressBarEl.offsetHeight;
-                                    progressBarEl.style.transition = `width 10s ease-out`;
-                                    progressBarEl.style.width = `${progress}%`;
-                                    lastProgress = progress;
-                                }
-                            }
+                    // 检测 not_running 状态
+                    if (info.status === 'not_running') {
+                        clearInterval(pollInterval);
+                        pollInterval = null;
+                        showPreviewFailure(info.logs, null, statusBar, statusDot, statusText, urlDisplay, progressDiv);
+                        return;
+                    }
+                    if (info.logs && info.logs.length > 0) {
+                        const latestLog = info.logs.filter(l => !l.msg.startsWith('[Debug]')).pop() || info.logs[info.logs.length - 1];
+                        if (latestLog && latestLog.msg && latestLog.msg.includes('Preview not running')) {
+                            clearInterval(pollInterval);
+                            pollInterval = null;
+                            showPreviewFailure(info.logs, null, statusBar, statusDot, statusText, urlDisplay, progressDiv);
+                            return;
                         }
                     }
 
@@ -304,7 +248,6 @@
                             iframe.style.display = 'block';
                         }
 
-                        overlay.remove();
                         if (progressDiv) progressDiv.style.display = 'none';
 
                         if (statusBar) {
@@ -319,7 +262,7 @@
                     } else if (info.status === 'error') {
                         clearInterval(pollInterval);
                         pollInterval = null;
-                        showPreviewFailure(info.logs, overlay, statusBar, statusDot, statusText, urlDisplay, progressDiv);
+                        showPreviewFailure(info.logs, null, statusBar, statusDot, statusText, urlDisplay, progressDiv);
                     }
                 } catch (e) {
                     console.warn('Preview poll failed', e);
@@ -327,7 +270,7 @@
             }, 1000);
 
         } catch (e) {
-            showPreviewFailure([{ msg: `API Error: ${e.message}`, ts: Date.now() }], overlay, statusBar, statusDot, statusText, urlDisplay, progressDiv);
+            showPreviewFailure([{ msg: `API Error: ${e.message}`, ts: Date.now() }], null, statusBar, statusDot, statusText, urlDisplay, progressDiv);
         }
     };
 
