@@ -134,6 +134,17 @@
                         </div>
                         <span id="status-left" class="status-badge" style="display:none"></span>
                     </div>
+                    <div class="cmp-preview-status-bar" id="cmp-status-bar-left" style="display:none;">
+                        <div style="display:flex;align-items:center;gap:0.5rem;">
+                            <span class="cmp-status-dot" id="cmp-status-dot-left"></span>
+                            <span class="cmp-status-text" id="cmp-status-text-left">Ready</span>
+                        </div>
+                        <div style="display:flex;gap:0.5rem;">
+                            <button class="cmp-preview-btn" id="cmp-fullscreen-left" onclick="App.compare.openFullscreen('left')" style="display:none;">↗ 全屏打开</button>
+                            <button class="cmp-preview-btn" onclick="App.compare.restartPreview('left')">🔄 重启服务</button>
+                        </div>
+                    </div>
+                    <div class="cmp-preview-logs" id="cmp-logs-left" style="display:none;"></div>
                     <div style="flex:1; position:relative; overflow:hidden;">
                         <iframe id="iframe-left" class="comparison-iframe"></iframe>
                         <div id="empty-left" class="empty-state" style="position:absolute; inset:0; background:white;">
@@ -150,6 +161,17 @@
                         </div>
                         <span id="status-right" class="status-badge" style="display:none"></span>
                     </div>
+                    <div class="cmp-preview-status-bar" id="cmp-status-bar-right" style="display:none;">
+                        <div style="display:flex;align-items:center;gap:0.5rem;">
+                            <span class="cmp-status-dot" id="cmp-status-dot-right"></span>
+                            <span class="cmp-status-text" id="cmp-status-text-right">Ready</span>
+                        </div>
+                        <div style="display:flex;gap:0.5rem;">
+                            <button class="cmp-preview-btn" id="cmp-fullscreen-right" onclick="App.compare.openFullscreen('right')" style="display:none;">↗ 全屏打开</button>
+                            <button class="cmp-preview-btn" onclick="App.compare.restartPreview('right')">🔄 重启服务</button>
+                        </div>
+                    </div>
+                    <div class="cmp-preview-logs" id="cmp-logs-right" style="display:none;"></div>
                     <div style="flex:1; position:relative; overflow:hidden;">
                         <iframe id="iframe-right" class="comparison-iframe"></iframe>
                         <div id="empty-right" class="empty-state" style="position:absolute; inset:0; background:white;">
