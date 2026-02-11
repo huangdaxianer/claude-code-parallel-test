@@ -641,7 +641,7 @@ router.delete('/:taskId', (req, res) => {
     res.json({ success: true });
 });
 
-// 下载任务轨迹 (打包任务目录)
+// 下载任务轨迹 (流式打包任务目录，避免代理超时)
 router.get('/:taskId/download', (req, res) => {
     const { taskId } = req.params;
     const taskDir = path.join(config.TASKS_DIR, taskId);
@@ -651,48 +651,37 @@ router.get('/:taskId/download', (req, res) => {
         return res.status(404).json({ error: 'Task directory not found' });
     }
 
-    const tempZipName = `task_${taskId}_${Date.now()}.zip`;
-    const tempZipPath = path.join(config.TASKS_DIR, 'temp_uploads', tempZipName);
+    req.setTimeout(0);
 
-    const tempDir = path.dirname(tempZipPath);
-    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    const downloadName = `task_${taskId}.zip`;
 
-    console.log(`[Download] Starting zip generation for ${taskId} to ${tempZipPath}`);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadName)}"`);
 
-    const output = fs.createWriteStream(tempZipPath);
     const archive = archiver('zip', {
         zlib: { level: 1 }
     });
 
-    output.on('close', function () {
-        console.log(`[Download] Zip created: ${archive.pointer()} total bytes`);
-
-        res.download(tempZipPath, `task_${taskId}.zip`, (err) => {
-            if (err) {
-                console.error('[Download] Send error:', err);
-                if (!res.headersSent) res.status(500).send({ error: 'Download failed during transmission' });
-            }
-
-            try {
-                if (fs.existsSync(tempZipPath)) {
-                    fs.unlinkSync(tempZipPath);
-                    console.log(`[Download] Temp file deleted: ${tempZipPath}`);
-                }
-            } catch (e) {
-                console.error(`[Download] Failed to delete temp file: ${tempZipPath}`, e);
-            }
-        });
+    archive.on('warning', (err) => {
+        if (err.code === 'ENOENT') {
+            console.warn('[Download Warning]', err);
+        } else {
+            console.error('[Download Error]', err);
+        }
     });
 
     archive.on('error', (err) => {
         console.error('[Download] Archive error:', err);
-        if (!res.headersSent) res.status(500).send({ error: err.message });
-        try { if (fs.existsSync(tempZipPath)) fs.unlinkSync(tempZipPath); } catch (e) { }
+        if (!res.headersSent) {
+            res.status(500).send({ error: err.message });
+        } else {
+            res.destroy();
+        }
     });
 
-    archive.pipe(output);
+    archive.pipe(res);
 
-    console.log(`[Download] Archiving task directory: ${taskDir}`);
+    console.log(`[Download] Streaming archive for task directory: ${taskDir}`);
 
     archive.glob('**/*', {
         cwd: taskDir,

@@ -188,7 +188,7 @@ router.get('/file_content', (req, res) => {
     }
 });
 
-// 下载文件夹 ZIP
+// 下载文件夹 ZIP（流式下载，避免代理超时）
 router.get('/download_zip', (req, res) => {
     const { folderName } = req.query;
     console.log(`[ZIP Request] Request for folder: ${folderName}`);
@@ -207,37 +207,15 @@ router.get('/download_zip', (req, res) => {
         return res.status(404).send('Folder not found');
     }
 
+    req.setTimeout(0);
+
     const downloadName = folderName.replace(/[\/\\]/g, '_') + '.zip';
-    const tempZipPath = path.join(config.TASKS_DIR, 'temp_uploads', `${downloadName}_${Date.now()}`);
 
-    const tempDir = path.dirname(tempZipPath);
-    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadName)}"`);
 
-    console.log(`[ZIP] Writing to temp file: ${tempZipPath}`);
-
-    const output = fs.createWriteStream(tempZipPath);
     const archive = archiver('zip', {
         zlib: { level: 1 }
-    });
-
-    output.on('close', function () {
-        console.log(`[ZIP] Archive created: ${archive.pointer()} bytes`);
-
-        res.download(tempZipPath, downloadName, (err) => {
-            if (err) {
-                console.error('[ZIP] Download send error:', err);
-                if (!res.headersSent) res.status(500).send({ error: 'Download failed' });
-            }
-
-            try {
-                if (fs.existsSync(tempZipPath)) {
-                    fs.unlinkSync(tempZipPath);
-                    console.log(`[ZIP] Temp file deleted: ${tempZipPath}`);
-                }
-            } catch (e) {
-                console.error(`[ZIP] Failed to delete temp file:`, e);
-            }
-        });
     });
 
     archive.on('warning', function (err) {
@@ -250,13 +228,16 @@ router.get('/download_zip', (req, res) => {
 
     archive.on('error', function (err) {
         console.error('[ZIP Error]', err);
-        if (!res.headersSent) res.status(500).send({ error: err.message });
-        try { if (fs.existsSync(tempZipPath)) fs.unlinkSync(tempZipPath); } catch (e) { }
+        if (!res.headersSent) {
+            res.status(500).send({ error: err.message });
+        } else {
+            res.destroy();
+        }
     });
 
-    archive.pipe(output);
+    archive.pipe(res);
 
-    console.log(`[ZIP] Archiving directory: ${folderPath}`);
+    console.log(`[ZIP] Streaming archive for directory: ${folderPath}`);
 
     archive.glob('**/*', {
         cwd: folderPath,
