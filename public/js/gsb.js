@@ -207,6 +207,19 @@
     };
 
     /**
+     * Show full prompt modal
+     */
+    GSB.showFullPrompt = function () {
+        const text = state.currentTask ? state.currentTask.prompt : '';
+        document.getElementById('prompt-modal-text').textContent = text;
+        document.getElementById('prompt-modal').classList.add('show');
+    };
+
+    GSB.closeFullPrompt = function () {
+        document.getElementById('prompt-modal').classList.remove('show');
+    };
+
+    /**
      * Start preview heartbeats for current task's models
      */
     GSB.startHeartbeats = function (taskId, leftModelId, rightModelId) {
@@ -243,9 +256,16 @@
 
         // Update info
         document.getElementById('scoring-task-title').textContent = task.title || 'Untitled';
-        document.getElementById('scoring-task-prompt').textContent = task.prompt || '';
+        const promptEl = document.getElementById('scoring-task-prompt');
+        promptEl.textContent = task.prompt || '';
         document.getElementById('scoring-progress').textContent =
             `${state.currentJob.completed_count + 1} / ${state.currentJob.total_count}`;
+
+        // Show expand button if prompt is truncated
+        const expandBtn = document.getElementById('prompt-expand-btn');
+        requestAnimationFrame(() => {
+            expandBtn.style.display = promptEl.scrollWidth > promptEl.clientWidth ? '' : 'none';
+        });
 
         // Update model labels (anonymous)
         document.getElementById('model-a-label').textContent = '方案 A';

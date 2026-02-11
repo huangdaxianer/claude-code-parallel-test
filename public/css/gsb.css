@@ -290,6 +290,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    transition: padding-left 0.3s ease;
+}
+
+.gsb-sidebar.collapsed ~ .gsb-main .gsb-scoring-header {
+    padding-left: 4.5rem;
 }
 
 .gsb-task-info h2 {
@@ -299,6 +304,12 @@
     margin: 0 0 0.25rem 0;
 }
 
+.prompt-preview-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 .gsb-task-info .prompt-preview {
     font-size: 0.85rem;
     color: #64748b;
@@ -306,6 +317,24 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.prompt-expand-btn {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid #cbd5e1;
+    color: #3b82f6;
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.prompt-expand-btn:hover {
+    background: #eff6ff;
+    border-color: #93c5fd;
 }
 
 .gsb-progress-info {
