@@ -382,8 +382,8 @@ router.post('/config', (req, res) => {
 
     if (maxParallelSubtasks !== undefined) {
         const value = parseInt(maxParallelSubtasks, 10);
-        if (isNaN(value) || value < 1 || value > 50) {
-            return res.status(400).json({ error: 'maxParallelSubtasks must be between 1 and 50' });
+        if (isNaN(value) || value < 1) {
+            return res.status(400).json({ error: 'maxParallelSubtasks must be at least 1' });
         }
         config.updateAppConfig({ maxParallelSubtasks: value });
     }
