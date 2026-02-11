@@ -122,9 +122,12 @@
 
                 if (statusBar) {
                     statusBar.style.display = 'flex';
+                    statusBar.style.background = '#f8fafc';
+                    statusBar.style.borderBottomColor = '#e2e8f0';
                     statusDot.className = 'status-dot status-success';
                     statusText.textContent = '预览运行中';
                     urlDisplay.textContent = preCheck.url;
+                    if (urlDisplay) urlDisplay.style.display = '';
                 }
                 if (progressDiv) progressDiv.style.display = 'none';
                 return;
@@ -306,10 +309,12 @@
 
                         if (statusBar) {
                             statusBar.style.display = 'flex'; // Show when ready
+                            statusBar.style.background = '#f8fafc';
+                            statusBar.style.borderBottomColor = '#e2e8f0';
                             statusDot.className = 'status-dot status-success'; // Green
                             statusText.textContent = '预览运行中';
-                            statusText.textContent = '预览运行中';
                             urlDisplay.textContent = info.url;
+                            if (urlDisplay) urlDisplay.style.display = '';
                         }
                     } else if (info.status === 'error') {
                         clearInterval(pollInterval);
@@ -337,8 +342,8 @@
         // 2. 更新 status bar 为失败状态
         if (statusBar) {
             statusBar.style.display = 'flex';
-            statusBar.style.background = '#fff5f5';
-            statusBar.style.borderBottomColor = '#fecaca';
+            statusBar.style.background = '#f8fafc';
+            statusBar.style.borderBottomColor = '#e2e8f0';
         }
         if (statusDot) statusDot.className = 'status-dot status-failed';
         if (statusText) statusText.textContent = '预览启动失败';
