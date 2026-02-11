@@ -453,6 +453,25 @@ async function preparePreview(taskId, modelId) {
             return;
         }
 
+        // 3.5 Check for pre-built output (dist/build) as static fallback
+        const buildDirs = ['dist', 'build', 'output', 'out'];
+        for (const dir of buildDirs) {
+            const buildPath = path.join(isolatedPath, dir);
+            if (fs.existsSync(buildPath)) {
+                try {
+                    const buildFiles = fs.readdirSync(buildPath);
+                    if (buildFiles.find(f => f.toLowerCase() === 'index.html')) {
+                        console.log(`[PreviewPrep] Found pre-built ${dir}/index.html, copying to root as static: ${folderName}`);
+                        execSync(`cp -R "${buildPath}/"* "${isolatedPath}/"`, { stdio: 'pipe' });
+                        db.prepare("UPDATE model_runs SET previewable = 'static' WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+                        return;
+                    }
+                } catch (e) {
+                    console.error(`[PreviewPrep] Error checking ${dir}: ${e.message}`);
+                }
+            }
+        }
+
         // 4. Dynamic Project Preparation
         console.log(`[PreviewPrep] Identified as Dynamic (Indicators: ${hasDynamicIndicators}), starting Claude Code preparation: ${folderName}`);
 
