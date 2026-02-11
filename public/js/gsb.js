@@ -345,7 +345,7 @@
         const els = getPreviewEls(side);
         els.statusBar.style.display = 'flex';
         els.statusDot.className = 'gsb-status-dot failed';
-        els.statusText.innerHTML = '预览启动失败 <span title="预览失败可能是因为产物代码有问题，也有可能是在线环境问题，建议下载产物后在本地运行" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1.5px solid #94a3af;color:#94a3af;font-size:10px;cursor:help;margin-left:3px;font-family:serif;line-height:1;">i</span>';
+        els.statusText.innerHTML = '预览启动失败 <span class="preview-info-tip" data-tip="预览失败可能是因为产物代码有问题，也有可能是在线环境问题，建议下载产物后在本地运行">i</span>';
         els.fullscreenBtn.style.display = 'none';
         els.iframe.style.display = 'none';
         els.iframe.removeAttribute('src');

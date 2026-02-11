@@ -290,7 +290,7 @@
         }
         if (statusDot) statusDot.className = 'status-dot status-failed';
         if (statusText) {
-            statusText.innerHTML = '预览启动失败 <span title="预览失败可能是因为产物代码有问题，也有可能是在线环境问题，建议下载产物后在本地运行" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;border:1.5px solid #94a3af;color:#94a3af;font-size:11px;font-style:normal;cursor:help;margin-left:4px;font-family:serif;line-height:1;">i</span>';
+            statusText.innerHTML = '预览启动失败 <span class="preview-info-tip" data-tip="预览失败可能是因为产物代码有问题，也有可能是在线环境问题，建议下载产物后在本地运行">i</span>';
         }
         if (urlDisplay) urlDisplay.style.display = 'none';
 

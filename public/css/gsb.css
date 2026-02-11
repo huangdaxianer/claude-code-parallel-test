@@ -465,6 +465,47 @@
     border-bottom: 1px solid #e2e8f0;
 }
 
+/* Preview info tooltip */
+.preview-info-tip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 1.5px solid #b0b7c3;
+    color: #b0b7c3;
+    font-size: 9px;
+    font-family: Georgia, serif;
+    line-height: 1;
+    margin-left: 4px;
+    cursor: default;
+    vertical-align: middle;
+}
+.preview-info-tip::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 50%;
+    top: calc(100% + 6px);
+    transform: translateX(-50%);
+    background: #1e293b;
+    color: #f1f5f9;
+    font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+    padding: 6px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 100;
+}
+.preview-info-tip:hover::after {
+    opacity: 1;
+}
+
 .gsb-preview-iframe {
     flex: 1;
     border: none;
