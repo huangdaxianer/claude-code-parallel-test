@@ -537,9 +537,11 @@ export const UI = {
             document.getElementById('m-activity-timeout').value = model.activity_timeout_seconds ?? '';
             document.getElementById('m-task-timeout').value = model.task_timeout_seconds ?? '';
             document.getElementById('m-default-checked').checked = !!model.is_default_checked;
+            document.getElementById('m-preview-model').checked = !!model.is_preview_model;
         } else {
             title.textContent = '新增模型';
             document.getElementById('m-default-checked').checked = true;
+            document.getElementById('m-preview-model').checked = false;
             document.getElementById('m-auto-retry-limit').value = 0;
             document.getElementById('m-activity-timeout').value = '';
             document.getElementById('m-task-timeout').value = '';

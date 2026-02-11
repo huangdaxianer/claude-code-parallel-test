@@ -294,6 +294,9 @@ try { db.exec("ALTER TABLE model_configs ADD COLUMN auto_retry_limit INTEGER DEF
 try { db.exec("ALTER TABLE model_configs ADD COLUMN activity_timeout_seconds INTEGER"); } catch (e) { }
 try { db.exec("ALTER TABLE model_configs ADD COLUMN task_timeout_seconds INTEGER"); } catch (e) { }
 
+// Migration: Add is_preview_model flag (only one model should have this set to 1)
+try { db.exec("ALTER TABLE model_configs ADD COLUMN is_preview_model INTEGER DEFAULT 0"); } catch (e) { }
+
 // Migration: Add retry_count to model_runs (tracks how many times this run has been retried)
 try { db.exec("ALTER TABLE model_runs ADD COLUMN retry_count INTEGER DEFAULT 0"); } catch (e) { }
 

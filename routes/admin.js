@@ -584,7 +584,7 @@ router.get('/feedback-stats', (req, res) => {
 // 获取所有模型配置 (Admin) - 包含每个用户组的设置
 router.get('/models', (req, res) => {
     try {
-        const models = db.prepare('SELECT id as internal_id, model_id as id, endpoint_name as name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, created_at FROM model_configs ORDER BY created_at DESC').all();
+        const models = db.prepare('SELECT id as internal_id, model_id as id, endpoint_name as name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, is_preview_model, created_at FROM model_configs ORDER BY created_at DESC').all();
         const groups = db.prepare('SELECT * FROM user_groups ORDER BY is_default DESC, name ASC').all();
 
         // Get all model group settings
@@ -795,9 +795,14 @@ router.post('/models', (req, res) => {
 // 更新模型 (Admin)
 router.put('/models/:id', (req, res) => {
     const { id } = req.params; // This is the model_id string
-    const { endpoint_name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds } = req.body;
+    const { endpoint_name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, is_preview_model } = req.body;
 
     try {
+        // If this model is being set as preview model, clear all others first
+        if (is_preview_model) {
+            db.prepare('UPDATE model_configs SET is_preview_model = 0').run();
+        }
+
         const updates = [];
         const params = [];
 
@@ -822,6 +827,10 @@ router.put('/models/:id', (req, res) => {
         if (task_timeout_seconds !== undefined) {
             updates.push('task_timeout_seconds = ?');
             params.push(task_timeout_seconds != null ? Math.max(0, parseInt(task_timeout_seconds)) : null);
+        }
+        if (is_preview_model !== undefined) {
+            updates.push('is_preview_model = ?');
+            params.push(is_preview_model ? 1 : 0);
         }
 
         if (updates.length === 0) {

@@ -498,8 +498,12 @@ async function preparePreview(taskId, modelId) {
         const fileStructure = getFileStructure(isolatedPath);
         const fullPrompt = `${promptContent}\n\nCurrent File Structure:\n${fileStructure}`;
 
-        // Spawn Claude Code
-        const previewModel = process.env.PREVIEW_PREPARATION_MODEL || process.env.ANTHROPIC_MODEL || 'tomato';
+        // Spawn Claude Code — read model config from DB (is_preview_model=1)
+        const previewModelConfig = db.prepare("SELECT model_name, endpoint_name, api_base_url, api_key FROM model_configs WHERE is_preview_model = 1 LIMIT 1").get();
+        const previewModel = (previewModelConfig && previewModelConfig.model_name) || process.env.PREVIEW_PREPARATION_MODEL || process.env.ANTHROPIC_MODEL || 'tomato';
+        const previewApiBaseUrl = (previewModelConfig && previewModelConfig.api_base_url) || process.env.ANTHROPIC_BASE_URL || '';
+        const previewApiKey = (previewModelConfig && previewModelConfig.api_key) || process.env.ANTHROPIC_AUTH_TOKEN || '';
+
         const args = [
             '--model', previewModel,
             '--allowedTools', 'Read(./**),Edit(./**),Bash(.**)',
@@ -508,7 +512,7 @@ async function preparePreview(taskId, modelId) {
             '--verbose'
         ];
 
-        console.log(`[PreviewPrep] Spawning Claude with model '${previewModel}': ${claudeBin} ${args.join(' ')}`);
+        console.log(`[PreviewPrep] Spawning Claude with model '${previewModel}' (source: ${previewModelConfig ? 'DB:' + previewModelConfig.endpoint_name : 'env'}): ${claudeBin} ${args.join(' ')}`);
 
         // Check isolation
         let useIsolation = false;
@@ -521,7 +525,7 @@ async function preparePreview(taskId, modelId) {
         let spawnArgs = args;
         let spawnOptions = {
             cwd: isolatedPath,
-            env: { ...process.env, CI: 'true' },
+            env: { ...process.env, CI: 'true', ANTHROPIC_AUTH_TOKEN: previewApiKey, ANTHROPIC_BASE_URL: previewApiBaseUrl },
             stdio: ['pipe', 'pipe', 'pipe']
         };
 
@@ -529,8 +533,8 @@ async function preparePreview(taskId, modelId) {
             spawnCmd = 'sudo';
             const envVars = [
                 `PATH=${process.env.PATH}`,
-                `ANTHROPIC_AUTH_TOKEN=${process.env.ANTHROPIC_AUTH_TOKEN || ''}`,
-                `ANTHROPIC_BASE_URL=${process.env.ANTHROPIC_BASE_URL || ''}`,
+                `ANTHROPIC_AUTH_TOKEN=${previewApiKey}`,
+                `ANTHROPIC_BASE_URL=${previewApiBaseUrl}`,
                 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC || ''}`,
                 `CI=true`
             ];
