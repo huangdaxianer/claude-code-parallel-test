@@ -437,9 +437,8 @@
             return `
                 <tr>
                     <td>${index + 1}</td>
-                    <td>${escapeHtml(task.title || 'Untitled')}</td>
+                    <td><a href="/task.html?task=${task.task_id}" target="_blank" class="gsb-task-title-link">${escapeHtml(task.title || 'Untitled')}</a></td>
                     <td><span class="rating-badge ${badgeClass}">${ratingLabel}</span></td>
-                    <td><a href="/task.html?task=${task.task_id}" target="_blank" class="gsb-detail-link" title="查看任务详情">详情 ↗</a></td>
                 </tr>
             `;
         }).join('');
