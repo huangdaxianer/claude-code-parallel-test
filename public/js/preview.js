@@ -242,23 +242,7 @@
                             if ((latestLog && latestLog.msg && latestLog.msg.includes('Preview not running')) || info.status === 'not_running') {
                                 clearInterval(pollInterval);
                                 pollInterval = null;
-
-                                // Show failure overlay with logs
-                                const failLogsHtml = (info.logs || []).map(l =>
-                                    `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:6px;">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
-                                ).join('');
-                                overlay.style.cssText = 'position:absolute; inset:0; background:#fefefe; display:flex; flex-direction:column; z-index:10; top:0; overflow:hidden;';
-                                overlay.innerHTML = `
-                                    <div style="flex:none; padding:1.25rem 1.5rem; text-align:center; border-bottom:1px solid #fee2e2; background:#fff5f5;">
-                                        <div style="color:#dc2626; font-size:0.95rem; font-weight:600; margin-bottom:0.25rem;">预览启动失败</div>
-                                        <div style="color:#9ca3af; font-size:0.8rem;">不是所有产物都能被正确加载，请尝试刷新页面或下载产物自行预览</div>
-                                    </div>
-                                    <div style="flex:1; overflow-y:auto; padding:0.75rem 1rem; font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace; font-size:0.78rem; line-height:1.6; color:#374151; background:#f9fafb;">
-                                        ${failLogsHtml || '<div style="color:#9ca3af;">无日志</div>'}
-                                    </div>
-                                `;
-                                if (statusDot) statusDot.className = 'status-dot status-failed';
-                                if (statusText) statusText.textContent = 'Start Failed';
+                                showPreviewFailure(info.logs, overlay, statusBar, statusDot, statusText, urlDisplay, progressDiv);
                                 return;
                             } else if (isFastPath) {
                                 targetText = '正在启动后端服务';
@@ -330,24 +314,7 @@
                     } else if (info.status === 'error') {
                         clearInterval(pollInterval);
                         pollInterval = null;
-
-                        // Build error overlay with logs
-                        const logsHtml = (info.logs || []).map(l =>
-                            `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:6px;">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
-                        ).join('');
-
-                        overlay.style.cssText = 'position:absolute; inset:0; background:#fefefe; display:flex; flex-direction:column; z-index:10; top:0; overflow:hidden;';
-                        overlay.innerHTML = `
-                            <div style="flex:none; padding:1.25rem 1.5rem; text-align:center; border-bottom:1px solid #fee2e2; background:#fff5f5;">
-                                <div style="color:#dc2626; font-size:0.95rem; font-weight:600; margin-bottom:0.25rem;">预览启动失败</div>
-                                <div style="color:#9ca3af; font-size:0.8rem;">服务进程异常退出，以下是启动日志</div>
-                            </div>
-                            <div style="flex:1; overflow-y:auto; padding:0.75rem 1rem; font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace; font-size:0.78rem; line-height:1.6; color:#374151; background:#f9fafb;">
-                                ${logsHtml || '<div style="color:#9ca3af;">无日志</div>'}
-                            </div>
-                        `;
-                        statusDot.className = 'status-dot status-failed';
-                        statusText.textContent = 'Start Failed';
+                        showPreviewFailure(info.logs, overlay, statusBar, statusDot, statusText, urlDisplay, progressDiv);
                     }
                 } catch (e) {
                     console.warn('Preview poll failed', e);
@@ -355,11 +322,40 @@
             }, 1000);
 
         } catch (e) {
-            overlay.innerHTML = `<p style="color:#ef4444; padding:1rem; text-align:center">Failed to initiate preview:<br>${e.message}</p>`;
-            statusDot.className = 'status-dot status-failed';
-            statusText.textContent = 'API Error';
+            showPreviewFailure([{ msg: `API Error: ${e.message}`, ts: Date.now() }], overlay, statusBar, statusDot, statusText, urlDisplay, progressDiv);
         }
     };
+
+    /**
+     * 统一的预览失败展示
+     * 使用与运行中相同的 status bar（红色指示灯 + 重新启动按钮），日志展示在下方
+     */
+    function showPreviewFailure(logs, overlay, statusBar, statusDot, statusText, urlDisplay, progressDiv) {
+        // 1. 移除 overlay
+        if (overlay && overlay.parentNode) overlay.remove();
+
+        // 2. 更新 status bar 为失败状态
+        if (statusBar) {
+            statusBar.style.display = 'flex';
+            statusBar.style.background = '#fff5f5';
+            statusBar.style.borderBottomColor = '#fecaca';
+        }
+        if (statusDot) statusDot.className = 'status-dot status-failed';
+        if (statusText) statusText.textContent = '预览启动失败';
+        if (urlDisplay) urlDisplay.style.display = 'none';
+
+        // 3. 展示日志在 progressDiv 中
+        if (progressDiv) {
+            const logsHtml = (logs || []).map(l =>
+                `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:6px;">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
+            ).join('');
+            progressDiv.style.display = 'block';
+            progressDiv.style.height = '100%';
+            progressDiv.style.flex = '1';
+            progressDiv.style.background = '#f9fafb';
+            progressDiv.innerHTML = logsHtml || '<div style="color:#9ca3af; padding:1rem;">无日志</div>';
+        }
+    }
 
     /**
      * 倒计时逻辑 (弃用，改为由轮询同步后端时间)
