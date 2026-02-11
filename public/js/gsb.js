@@ -223,25 +223,23 @@
 
     /**
      * Load preview in iframe
+     * Both static and dynamic previews go through /api/preview/start,
+     * which correctly resolves the HTML filename and uses the _preview isolation directory.
      */
     GSB.loadPreview = function (iframeId, taskId, modelId, previewable) {
         const iframe = document.getElementById(iframeId);
 
-        if (previewable === 'static') {
-            // Static preview - direct file serving
-            iframe.src = `/api/preview/view/${taskId}/${modelId}/index.html`;
-        } else if (previewable === 'dynamic') {
-            // Dynamic preview - need to start server
-            GSB.startDynamicPreview(iframe, taskId, modelId);
+        if (previewable === 'static' || previewable === 'dynamic') {
+            GSB.startPreview(iframe, taskId, modelId);
         } else {
             iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#94a3b8;">无法预览</div>`;
         }
     };
 
     /**
-     * Start dynamic preview
+     * Start preview via /api/preview/start (handles both static and dynamic)
      */
-    GSB.startDynamicPreview = async function (iframe, taskId, modelId) {
+    GSB.startPreview = async function (iframe, taskId, modelId) {
         iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748b;">启动预览中...</div>`;
 
         try {
@@ -252,8 +250,11 @@
             });
 
             const data = await res.json();
-            if (data.url) {
-                // Poll until ready
+            if (data.status === 'ready' && data.url) {
+                // Static preview - already ready
+                iframe.src = data.url;
+            } else if (data.url) {
+                // Dynamic preview - poll until ready
                 GSB.pollPreviewStatus(iframe, taskId, modelId, data.url);
             } else {
                 iframe.srcdoc = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#dc2626;">预览启动失败</div>`;
