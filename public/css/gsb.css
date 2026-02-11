@@ -23,6 +23,7 @@
     margin-left: -320px;
     opacity: 0;
     pointer-events: none;
+    border-right: none;
 }
 
 /* Sidebar collapse button (inside sidebar header) */
