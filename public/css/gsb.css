@@ -345,9 +345,9 @@
 .gsb-preview-area {
     flex: 1;
     display: flex;
-    gap: 1px;
     background: #e2e8f0;
     overflow: hidden;
+    position: relative;
 }
 
 .gsb-preview-panel {
@@ -356,6 +356,26 @@
     flex-direction: column;
     background: white;
     overflow: hidden;
+    min-width: 120px;
+}
+
+.gsb-resize-handle {
+    width: 5px;
+    background: #e2e8f0;
+    cursor: col-resize;
+    flex-shrink: 0;
+    transition: background 0.15s;
+    position: relative;
+    z-index: 5;
+}
+
+.gsb-resize-handle:hover,
+.gsb-resize-handle.dragging {
+    background: #3b82f6;
+}
+
+.gsb-preview-area.resizing iframe {
+    pointer-events: none;
 }
 
 .gsb-preview-header {
@@ -560,11 +580,8 @@
     border-bottom: 1px solid #f1f5f9;
 }
 
-.gsb-results-table th {
-    background: #fafafa;
-    font-weight: 600;
-    color: #64748b;
-    font-size: 0.8rem;
+.gsb-results-table thead {
+    display: none;
 }
 
 .gsb-results-table tr:last-child td {

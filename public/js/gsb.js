@@ -58,6 +58,9 @@
             }
         });
 
+        // Init resize handle
+        GSB.initResizeHandle();
+
         // Load jobs
         await GSB.loadJobs();
     };
@@ -217,6 +220,43 @@
 
     GSB.closeFullPrompt = function () {
         document.getElementById('prompt-modal').classList.remove('show');
+    };
+
+    /**
+     * Initialize resize handle for preview panels
+     */
+    GSB.initResizeHandle = function () {
+        const handle = document.getElementById('gsb-resize-handle');
+        const area = document.querySelector('.gsb-preview-area');
+        const panelA = document.getElementById('preview-panel-a');
+        const panelB = document.getElementById('preview-panel-b');
+        if (!handle || !area || !panelA || !panelB) return;
+
+        let dragging = false;
+
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            dragging = true;
+            handle.classList.add('dragging');
+            area.classList.add('resizing');
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+            const rect = area.getBoundingClientRect();
+            const offset = e.clientX - rect.left;
+            const total = rect.width;
+            const ratio = Math.max(0.1, Math.min(0.9, offset / total));
+            panelA.style.flex = ratio;
+            panelB.style.flex = 1 - ratio;
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!dragging) return;
+            dragging = false;
+            handle.classList.remove('dragging');
+            area.classList.remove('resizing');
+        });
     };
 
     /**
