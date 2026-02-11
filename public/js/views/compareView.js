@@ -64,7 +64,7 @@
         els.iframe.style.display = 'block';
     }
 
-    function startCmpPreview(side, taskId, modelId) {
+    function startCmpPreview(side, taskId, modelId, forceRestart) {
         const els = getCmpEls(side);
 
         // Clear old poll
@@ -76,23 +76,52 @@
         // Store meta
         cmpMeta[side] = { taskId, modelId };
 
-        // Show starting state
-        els.statusBar.style.display = 'flex';
-        els.statusDot.className = 'cmp-status-dot starting';
-        els.statusText.textContent = '预览服务启动中';
-        els.fullscreenBtn.style.display = 'none';
-        els.iframe.style.display = 'none';
-        els.iframe.removeAttribute('src');
-        els.emptyState.style.display = 'none';
-        els.logsDiv.style.display = 'block';
-        els.logsDiv.innerHTML = '<div style="color:#9ca3af;padding:0.5rem;">等待服务响应...</div>';
-
         // Start heartbeat for this side
         startCmpHeartbeat();
 
-        // Call API
         (async () => {
             try {
+                // Fast path: check if already running (reuse existing preview service)
+                if (!forceRestart) {
+                    const statusRes = await fetch(`/api/preview/status/${taskId}/${modelId}`);
+                    const statusData = await statusRes.json();
+
+                    if (statusData.status === 'ready' && statusData.url) {
+                        // Already running, reuse directly
+                        console.log(`[Compare] Fast path: reusing existing preview for ${side} (${modelId})`);
+                        showCmpReady(side, statusData.url);
+                        return;
+                    }
+
+                    if (statusData.status === 'starting' && statusData.url) {
+                        // Already starting, just poll for status
+                        console.log(`[Compare] Preview already starting for ${side} (${modelId}), polling...`);
+                        els.statusBar.style.display = 'flex';
+                        els.statusDot.className = 'cmp-status-dot starting';
+                        els.statusText.textContent = '预览服务启动中';
+                        els.fullscreenBtn.style.display = 'none';
+                        els.iframe.style.display = 'none';
+                        els.emptyState.style.display = 'none';
+                        els.logsDiv.style.display = 'block';
+                        els.logsDiv.innerHTML = '<div style="color:#9ca3af;padding:0.5rem;">等待服务响应...</div>';
+                        pollCmpStatus(side, taskId, modelId, statusData.url);
+                        return;
+                    }
+                }
+
+                // Show starting state
+                els.statusBar.style.display = 'flex';
+                els.statusDot.className = 'cmp-status-dot starting';
+                els.statusText.textContent = '预览服务启动中';
+                els.fullscreenBtn.style.display = 'none';
+                els.iframe.style.display = 'none';
+                els.iframe.removeAttribute('src');
+                els.emptyState.style.display = 'none';
+                els.logsDiv.style.display = 'block';
+                els.logsDiv.innerHTML = '<div style="color:#9ca3af;padding:0.5rem;">等待服务响应...</div>';
+
+                // Not running, start a new preview
+                console.log(`[Compare] Starting new preview for ${side} (${modelId})`);
                 const res = await fetch('/api/preview/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -190,7 +219,12 @@
     App.compare.restartPreview = function (side) {
         const meta = cmpMeta[side];
         if (meta && meta.taskId && meta.modelId) {
-            startCmpPreview(side, meta.taskId, meta.modelId);
+            // Force restart: kill existing and start new
+            const els = getCmpEls(side);
+            if (els.iframe) {
+                els.iframe.dataset.runId = ''; // Reset guard so it triggers fresh
+            }
+            startCmpPreview(side, meta.taskId, meta.modelId, true);
         }
     };
 

@@ -390,22 +390,50 @@
 
     /**
      * Start preview via /api/preview/start
+     * Checks status first to reuse existing preview services (avoids killing running ones)
      */
-    GSB.startPreview = async function (side, taskId, modelId) {
+    GSB.startPreview = async function (side, taskId, modelId, forceRestart) {
         const els = getPreviewEls(side);
 
-        // Show starting state
-        els.statusBar.style.display = 'flex';
-        els.statusDot.className = 'gsb-status-dot starting';
-        els.statusText.textContent = '预览服务启动中';
-        els.fullscreenBtn.style.display = 'none';
-        els.iframe.style.display = 'none';
-        els.iframe.removeAttribute('src');
-        els.iframe.removeAttribute('srcdoc');
-        els.logsDiv.style.display = 'block';
-        els.logsDiv.innerHTML = '<div style="color:#9ca3af;padding:0.5rem;">等待服务响应...</div>';
-
         try {
+            // Fast path: check if already running (reuse existing preview service)
+            if (!forceRestart) {
+                const statusRes = await fetch(`/api/preview/status/${taskId}/${modelId}`);
+                const statusData = await statusRes.json();
+
+                if (statusData.status === 'ready' && statusData.url) {
+                    console.log(`[GSB] Fast path: reusing existing preview for ${side} (${modelId})`);
+                    GSB.showPreviewReady(side, statusData.url);
+                    return;
+                }
+
+                if (statusData.status === 'starting' && statusData.url) {
+                    console.log(`[GSB] Preview already starting for ${side} (${modelId}), polling...`);
+                    els.statusBar.style.display = 'flex';
+                    els.statusDot.className = 'gsb-status-dot starting';
+                    els.statusText.textContent = '预览服务启动中';
+                    els.fullscreenBtn.style.display = 'none';
+                    els.iframe.style.display = 'none';
+                    els.logsDiv.style.display = 'block';
+                    els.logsDiv.innerHTML = '<div style="color:#9ca3af;padding:0.5rem;">等待服务响应...</div>';
+                    GSB.pollPreviewStatus(side, taskId, modelId, statusData.url);
+                    return;
+                }
+            }
+
+            // Show starting state
+            els.statusBar.style.display = 'flex';
+            els.statusDot.className = 'gsb-status-dot starting';
+            els.statusText.textContent = '预览服务启动中';
+            els.fullscreenBtn.style.display = 'none';
+            els.iframe.style.display = 'none';
+            els.iframe.removeAttribute('src');
+            els.iframe.removeAttribute('srcdoc');
+            els.logsDiv.style.display = 'block';
+            els.logsDiv.innerHTML = '<div style="color:#9ca3af;padding:0.5rem;">等待服务响应...</div>';
+
+            // Not running, start a new preview
+            console.log(`[GSB] Starting new preview for ${side} (${modelId})`);
             const res = await fetch('/api/preview/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -506,7 +534,8 @@
     GSB.restartPreview = function (side) {
         const meta = previewMeta[side];
         if (meta && meta.taskId && meta.modelId) {
-            GSB.startPreview(side, meta.taskId, meta.modelId);
+            // Force restart: kill existing and start new
+            GSB.startPreview(side, meta.taskId, meta.modelId, true);
         }
     };
 
