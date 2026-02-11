@@ -234,18 +234,25 @@
                             let targetText = latestLog.msg;
 
                             if ((latestLog && latestLog.msg && latestLog.msg.includes('Preview not running')) || info.status === 'not_running') {
-                                targetText = '预览服务启动失败';
-                                if (progressBarEl) progressBarEl.style.width = '0%';
+                                clearInterval(pollInterval);
+                                pollInterval = null;
 
-                                const topTextEl = overlay.querySelector('p');
-                                if (topTextEl) topTextEl.textContent = '预览服务启动失败';
-                                if (loadingTextEl) {
-                                    loadingTextEl.textContent = '不是所有产物都能被正确加载，请尝试刷新页面或下载产物自行预览';
-                                    loadingTextEl.style.whiteSpace = 'normal';
-                                    loadingTextEl.style.height = 'auto';
-                                    loadingTextEl.style.lineHeight = '1.5';
-                                    loadingTextEl.style.marginTop = '4px';
-                                }
+                                // Show failure overlay with logs
+                                const failLogsHtml = (info.logs || []).map(l =>
+                                    `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:6px;">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
+                                ).join('');
+                                overlay.style.cssText = 'position:absolute; inset:0; background:#fefefe; display:flex; flex-direction:column; z-index:10; top:0; overflow:hidden;';
+                                overlay.innerHTML = `
+                                    <div style="flex:none; padding:1.25rem 1.5rem; text-align:center; border-bottom:1px solid #fee2e2; background:#fff5f5;">
+                                        <div style="color:#dc2626; font-size:0.95rem; font-weight:600; margin-bottom:0.25rem;">预览启动失败</div>
+                                        <div style="color:#9ca3af; font-size:0.8rem;">不是所有产物都能被正确加载，请尝试刷新页面或下载产物自行预览</div>
+                                    </div>
+                                    <div style="flex:1; overflow-y:auto; padding:0.75rem 1rem; font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace; font-size:0.78rem; line-height:1.6; color:#374151; background:#f9fafb;">
+                                        ${failLogsHtml || '<div style="color:#9ca3af;">无日志</div>'}
+                                    </div>
+                                `;
+                                if (statusDot) statusDot.className = 'status-dot status-failed';
+                                if (statusText) statusText.textContent = 'Start Failed';
                                 return;
                             } else if (isFastPath) {
                                 targetText = '正在启动后端服务';
@@ -317,7 +324,22 @@
                     } else if (info.status === 'error') {
                         clearInterval(pollInterval);
                         pollInterval = null;
-                        overlay.innerHTML = `<p style="color:#ef4444; padding:2rem; text-align:center">Preview Failed to Start.<br>Check logs below.</p>`;
+
+                        // Build error overlay with logs
+                        const logsHtml = (info.logs || []).map(l =>
+                            `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:6px;">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
+                        ).join('');
+
+                        overlay.style.cssText = 'position:absolute; inset:0; background:#fefefe; display:flex; flex-direction:column; z-index:10; top:0; overflow:hidden;';
+                        overlay.innerHTML = `
+                            <div style="flex:none; padding:1.25rem 1.5rem; text-align:center; border-bottom:1px solid #fee2e2; background:#fff5f5;">
+                                <div style="color:#dc2626; font-size:0.95rem; font-weight:600; margin-bottom:0.25rem;">预览启动失败</div>
+                                <div style="color:#9ca3af; font-size:0.8rem;">服务进程异常退出，以下是启动日志</div>
+                            </div>
+                            <div style="flex:1; overflow-y:auto; padding:0.75rem 1rem; font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace; font-size:0.78rem; line-height:1.6; color:#374151; background:#f9fafb;">
+                                ${logsHtml || '<div style="color:#9ca3af;">无日志</div>'}
+                            </div>
+                        `;
                         statusDot.className = 'status-dot status-failed';
                         statusText.textContent = 'Start Failed';
                     }
