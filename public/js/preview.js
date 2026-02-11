@@ -126,8 +126,8 @@
                     statusBar.style.borderBottomColor = '#e2e8f0';
                     statusDot.className = 'status-dot status-success';
                     statusText.textContent = '预览运行中';
-                    urlDisplay.textContent = preCheck.url;
-                    if (urlDisplay) urlDisplay.style.display = '';
+                    urlDisplay.setAttribute('data-url', preCheck.url);
+                    if (urlDisplay) urlDisplay.style.display = 'flex';
                 }
                 if (progressDiv) progressDiv.style.display = 'none';
                 return;
@@ -256,8 +256,8 @@
                             statusBar.style.borderBottomColor = '#e2e8f0';
                             statusDot.className = 'status-dot status-success'; // Green
                             statusText.textContent = '预览运行中';
-                            urlDisplay.textContent = info.url;
-                            if (urlDisplay) urlDisplay.style.display = '';
+                            urlDisplay.setAttribute('data-url', info.url);
+                            if (urlDisplay) urlDisplay.style.display = 'flex';
                         }
                     } else if (info.status === 'error') {
                         clearInterval(pollInterval);
@@ -431,9 +431,19 @@
             .replace(/'/g, "&#039;");
     }
 
+    // 全屏打开预览
+    App.preview.openFullscreen = function () {
+        const urlDisplay = document.getElementById('preview-url-display');
+        const url = urlDisplay && urlDisplay.getAttribute('data-url');
+        if (url) {
+            window.open(url, '_blank');
+        }
+    };
+
     // 全局快捷方式
     window.reloadPreview = App.preview.reloadPreview;
     window.closePreview = App.preview.closePreview;
+    window.openPreviewFullscreen = App.preview.openFullscreen;
 
     // 页面卸载时清理进程
     window.addEventListener('beforeunload', () => {
