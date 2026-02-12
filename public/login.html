@@ -124,10 +124,13 @@
     </div>
 
     <script>
+        // Get redirect target from URL params (default: /task.html)
+        const _redirectTo = new URLSearchParams(window.location.search).get('redirect') || '/task.html';
+
         // Check if already logged in
         const savedUser = localStorage.getItem('claude_user');
         if (savedUser) {
-            window.location.href = '/task.html';
+            window.location.href = _redirectTo;
         }
 
         document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -173,8 +176,8 @@
                     console.log('[Login] Storing user info:', userInfo);
                     localStorage.setItem('claude_user', JSON.stringify(userInfo));
 
-                    // Redirect to task page
-                    window.location.href = '/task.html';
+                    // Redirect to original page (or task page by default)
+                    window.location.href = _redirectTo;
                 } else {
                     console.error('[Login] Invalid response:', data);
                     errorEl.textContent = data.error || '登录失败';

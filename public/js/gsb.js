@@ -27,8 +27,9 @@
     GSB.init = async function () {
         // Check login
         const savedUserStr = localStorage.getItem('claude_user');
+        const loginRedirect = '/login.html?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
         if (!savedUserStr) {
-            window.location.href = '/login.html';
+            window.location.href = loginRedirect;
             return;
         }
 
@@ -45,7 +46,7 @@
                 return;
             }
         } catch (e) {
-            window.location.href = '/login.html';
+            window.location.href = loginRedirect;
             return;
         }
 

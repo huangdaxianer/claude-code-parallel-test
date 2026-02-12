@@ -16,8 +16,9 @@ document.addEventListener('DOMContentLoaded', () => {
 function init() {
     // Auth Check
     const savedUserStr = localStorage.getItem('claude_user');
+    const loginRedirect = '/login.html?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
     if (!savedUserStr) {
-        window.location.href = '/login.html';
+        window.location.href = loginRedirect;
         return;
     }
 
@@ -37,7 +38,7 @@ function init() {
 
     } catch (e) {
         console.error('Auth error:', e);
-        window.location.href = '/login.html';
+        window.location.href = loginRedirect;
         return;
     }
 

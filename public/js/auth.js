@@ -89,8 +89,8 @@
             }
         }
 
-        // 3. No session and no valid URL param -> Redirect to login
-        window.location.href = '/login.html';
+        // 3. No session and no valid URL param -> Redirect to login (with return URL)
+        window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
         return false;
     };
 
