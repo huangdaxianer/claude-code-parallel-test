@@ -168,10 +168,12 @@
                 console.log('[Login] Response:', data);
 
                 if (data.success && data.user && data.user.id) {
-                    // Store user info in localStorage
+                    // Store user info in localStorage (include role for permission checks)
                     const userInfo = {
                         id: data.user.id,
-                        username: data.user.username
+                        username: data.user.username,
+                        role: data.user.role,
+                        group_id: data.user.group_id
                     };
                     console.log('[Login] Storing user info:', userInfo);
                     localStorage.setItem('claude_user', JSON.stringify(userInfo));
