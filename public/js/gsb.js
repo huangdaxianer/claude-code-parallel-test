@@ -843,12 +843,17 @@
                 const bStatus = (task.model_b_previewable === 'static' || task.model_b_previewable === 'dynamic')
                     ? 'available' : 'unavailable';
 
+                // Auto-select all selectable tasks
+                if (canSelect) {
+                    state.selectedTasks.add(task.task_id);
+                }
+
                 return `
                     <tr class="${canSelect ? '' : 'disabled'}">
                         <td>
-                            <input type="checkbox" class="gsb-checkbox" 
+                            <input type="checkbox" class="gsb-checkbox"
                                    data-task-id="${task.task_id}"
-                                   ${canSelect ? '' : 'disabled'}
+                                   ${canSelect ? 'checked' : 'disabled'}
                                    onchange="GSB.toggleTask('${task.task_id}', this.checked)">
                         </td>
                         <td class="title-cell" title="${escapeHtml(task.title || 'Untitled')}">${escapeHtml(task.title || 'Untitled')}</td>
@@ -858,6 +863,10 @@
                     </tr>
                 `;
             }).join('');
+
+            // Check the "select all" checkbox
+            const selectAllCb = document.getElementById('select-all-tasks');
+            if (selectAllCb) selectAllCb.checked = true;
 
             GSB.updateSelectedCount();
         } catch (e) {
