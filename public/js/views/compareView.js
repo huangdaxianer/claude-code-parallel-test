@@ -38,6 +38,7 @@
         els.fullscreenBtn.style.display = 'none';
         els.iframe.style.display = 'none';
         els.iframe.removeAttribute('src');
+        els.iframe.parentElement.style.display = 'none'; // Hide iframe wrapper so logs fill the space
         els.emptyState.style.display = 'none';
         if (logs && logs.length > 0) {
             els.logsDiv.style.display = 'block';
@@ -59,6 +60,7 @@
         els.fullscreenBtn.setAttribute('data-url', url);
         els.logsDiv.style.display = 'none';
         els.emptyState.style.display = 'none';
+        els.iframe.parentElement.style.display = ''; // Restore iframe wrapper
         els.iframe.removeAttribute('srcdoc');
         els.iframe.src = url;
         els.iframe.style.display = 'block';
@@ -101,6 +103,7 @@
                         els.statusText.textContent = '预览服务启动中';
                         els.fullscreenBtn.style.display = 'none';
                         els.iframe.style.display = 'none';
+                        els.iframe.parentElement.style.display = 'none';
                         els.emptyState.style.display = 'none';
                         els.logsDiv.style.display = 'block';
                         els.logsDiv.innerHTML = '<div style="color:#9ca3af;padding:0.5rem;">等待服务响应...</div>';
@@ -115,6 +118,7 @@
                 els.statusText.textContent = '预览服务启动中';
                 els.fullscreenBtn.style.display = 'none';
                 els.iframe.style.display = 'none';
+                els.iframe.parentElement.style.display = 'none';
                 els.iframe.removeAttribute('src');
                 els.emptyState.style.display = 'none';
                 els.logsDiv.style.display = 'block';

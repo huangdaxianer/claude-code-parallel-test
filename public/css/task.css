@@ -868,9 +868,8 @@
             font-family: monospace;
             font-size: 0.75rem;
             color: #374151;
-            max-height: 150px;
+            flex: 1;
             border-bottom: 1px solid #e2e8f0;
-            flex-shrink: 0;
         }
 
         /* Main Content - Split View */
