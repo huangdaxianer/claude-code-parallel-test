@@ -483,28 +483,7 @@
     cursor: default;
     vertical-align: middle;
 }
-.preview-info-tip::after {
-    content: attr(data-tip);
-    position: absolute;
-    left: 0;
-    top: calc(100% + 6px);
-    background: #1e293b;
-    color: #f1f5f9;
-    font-size: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    line-height: 1.5;
-    padding: 6px 10px;
-    border-radius: 6px;
-    white-space: normal;
-    max-width: 260px;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-    z-index: 100;
-}
-.preview-info-tip:hover::after {
-    opacity: 1;
-}
+/* Tooltip is rendered via JS as a fixed-position element to avoid overflow:hidden clipping */
 
 .gsb-preview-iframe {
     flex: 1;
