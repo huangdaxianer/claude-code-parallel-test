@@ -449,16 +449,35 @@
         if (!promptEl) return;
 
         const text = promptEl.textContent;
-        navigator.clipboard.writeText(text).then(() => {
+
+        function onSuccess() {
             const btn = document.getElementById('copy-prompt-btn');
             const originalHtml = btn.innerHTML;
-            btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#10b981"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+            btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#10b981"><polyline points="20 6 9 17 4 12"></polyline></svg> 已复制`;
             setTimeout(() => {
                 btn.innerHTML = originalHtml;
             }, 2000);
-        }).catch(err => {
-            console.error('Failed to copy content: ', err);
-        });
+        }
+
+        // navigator.clipboard requires HTTPS; fallback to execCommand for HTTP
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(onSuccess).catch(err => {
+                console.error('Failed to copy content: ', err);
+            });
+        } else {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                onSuccess();
+            } catch (err) {
+                console.error('Failed to copy content: ', err);
+            }
+            document.body.removeChild(textarea);
+        }
     };
 
 })();
