@@ -532,7 +532,7 @@ router.post('/:taskId/start', (req, res) => {
                     count_read = NULL,
                     count_write = NULL,
                     count_bash = NULL,
-                    previewable = 0,
+                    previewable = NULL,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE task_id = ? AND model_id = ?
             `).run(taskId, modelId);

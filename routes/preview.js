@@ -106,7 +106,8 @@ router.post('/start', async (req, res) => {
     if (previewableStatus === 'unpreviewable') {
         return res.status(400).json({ status: 'unpreviewable', error: 'Project is not previewable' });
     }
-    if (!previewableStatus || previewableStatus == 1) {
+    const validPreviewStates = ['preparing', 'static', 'dynamic', 'unpreviewable'];
+    if (!previewableStatus || !validPreviewStates.includes(previewableStatus)) {
         // Fallback: Check if completed
         const runStatus = db.prepare("SELECT status FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId)?.status;
         if (runStatus !== 'completed') {
