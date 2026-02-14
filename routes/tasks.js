@@ -11,6 +11,7 @@ const db = require('../db');
 const config = require('../config');
 const { generateTitle } = require('../services/titleService');
 const { processQueue, activeSubtaskProcesses, checkAndUpdateTaskStatus } = require('../services/queueService');
+const { streamZip } = require('../utils/zipStream');
 
 // Multer 配置
 const storage = multer.diskStorage({
@@ -644,52 +645,12 @@ router.delete('/:taskId', (req, res) => {
 router.get('/:taskId/download', (req, res) => {
     const { taskId } = req.params;
     const taskDir = path.join(config.TASKS_DIR, taskId);
-    const archiver = require('archiver');
 
     if (!fs.existsSync(taskDir)) {
         return res.status(404).json({ error: 'Task directory not found' });
     }
 
-    req.setTimeout(0);
-
-    const downloadName = `task_${taskId}.zip`;
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadName)}"`);
-
-    const archive = archiver('zip', {
-        zlib: { level: 1 }
-    });
-
-    archive.on('warning', (err) => {
-        if (err.code === 'ENOENT') {
-            console.warn('[Download Warning]', err);
-        } else {
-            console.error('[Download Error]', err);
-        }
-    });
-
-    archive.on('error', (err) => {
-        console.error('[Download] Archive error:', err);
-        if (!res.headersSent) {
-            res.status(500).send({ error: err.message });
-        } else {
-            res.destroy();
-        }
-    });
-
-    archive.pipe(res);
-
-    console.log(`[Download] Streaming archive for task directory: ${taskDir}`);
-
-    archive.glob('**/*', {
-        cwd: taskDir,
-        ignore: ['**/.DS_Store'],
-        dot: true,
-        follow: false
-    });
-
-    archive.finalize();
+    streamZip(taskDir, `task_${taskId}.zip`, req, res);
 });
 
 // 批量任务上传

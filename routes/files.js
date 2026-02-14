@@ -6,9 +6,9 @@ const router = express.Router();
 const fs = require('fs');
 const fsPromises = fs.promises;
 const path = require('path');
-const archiver = require('archiver');
 const db = require('../db');
 const config = require('../config');
+const { streamZip } = require('../utils/zipStream');
 
 // File list cache: key=folderPath, value={ files: [], timestamp: number }
 const fileListCache = new Map();
@@ -243,46 +243,8 @@ router.get('/download_zip', (req, res) => {
         return res.status(404).send('Folder not found');
     }
 
-    req.setTimeout(0);
-
     const downloadName = folderName.replace(/[\/\\]/g, '_') + '.zip';
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadName)}"`);
-
-    const archive = archiver('zip', {
-        zlib: { level: 1 }
-    });
-
-    archive.on('warning', function (err) {
-        if (err.code === 'ENOENT') {
-            console.warn('[ZIP Warning]', err);
-        } else {
-            console.error('[ZIP Error from Warning]', err);
-        }
-    });
-
-    archive.on('error', function (err) {
-        console.error('[ZIP Error]', err);
-        if (!res.headersSent) {
-            res.status(500).send({ error: err.message });
-        } else {
-            res.destroy();
-        }
-    });
-
-    archive.pipe(res);
-
-    console.log(`[ZIP] Streaming archive for directory: ${folderPath}`);
-
-    archive.glob('**/*', {
-        cwd: folderPath,
-        ignore: ['**/.DS_Store'],
-        dot: true,
-        follow: false
-    });
-
-    archive.finalize();
+    streamZip(folderPath, downloadName, req, res);
 });
 
 module.exports = router;

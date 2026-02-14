@@ -407,3 +407,4 @@ try {
 }
 
 module.exports = db;
+module.exports.generateModelId = generateModelId;

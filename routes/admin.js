@@ -4,6 +4,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { generateModelId } = require('../db');
 const config = require('../config');
 const { processQueue } = require('../services/queueService');
 
@@ -689,16 +690,6 @@ router.put('/models/:modelId/group-settings/:groupId', (req, res) => {
 function cleanInvisibleChars(str) {
     if (!str) return str;
     return str.replace(/[\u200B\u200C\u200D\uFEFF\u00A0]/g, '').trim();
-}
-
-// Helper function to generate 5-character model ID
-function generateModelId() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < 5; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
 }
 
 // 创建新模型 (Admin)
