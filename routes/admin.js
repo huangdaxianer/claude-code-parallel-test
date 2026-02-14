@@ -632,47 +632,7 @@ router.get('/models', (req, res) => {
     }
 });
 
-// 获取对当前用户组启用的模型 (Public/User)
-router.get('/models/enabled', (req, res) => {
-    try {
-        const username = req.cookies?.username || req.headers['x-username'];
-        console.log('[Models] Fetching enabled models for user:', username);
-
-        if (!username) {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
-
-        const user = db.prepare('SELECT id, group_id FROM users WHERE username = ?').get(username);
-        if (!user) {
-            return res.status(401).json({ error: 'User not found' });
-        }
-
-        console.log('[Models] User group_id:', user.group_id);
-
-        // Get models enabled for this user's group
-        const models = db.prepare(`
-            SELECT
-                mc.model_id as id,
-                mc.model_id,
-                mc.endpoint_name as name,
-                mc.endpoint_name,
-                mc.description,
-                COALESCE(mgs.is_enabled, 1) as is_enabled,
-                COALESCE(mgs.is_default_checked, mc.is_default_checked) as is_default_checked,
-                COALESCE(mgs.display_name, mc.description, mc.endpoint_name) as displayName
-            FROM model_configs mc
-            LEFT JOIN model_group_settings mgs ON mc.id = mgs.model_id AND mgs.group_id = ?
-            WHERE COALESCE(mgs.is_enabled, 1) = 1 AND mc.model_id IS NOT NULL
-            ORDER BY mc.endpoint_name ASC
-        `).all(user.group_id);
-
-        console.log('[Models] Returning models for group:', models.map(m => ({ id: m.id, name: m.name })));
-        res.json(models);
-    } catch (e) {
-        console.error('Error fetching enabled models:', e);
-        res.status(500).json({ error: 'Failed to fetch enabled models' });
-    }
-});
+// 注意: /models/enabled 接口已移至 routes/index.js，不需要管理员权限
 
 // 更新模型的用户组设置 (Admin)
 router.put('/models/:modelId/group-settings/:groupId', (req, res) => {

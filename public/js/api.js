@@ -206,7 +206,7 @@
      * 获取当前启用的模型
      */
     App.api.getEnabledModels = async function () {
-        const res = await fetch('/api/admin/models/enabled', {
+        const res = await fetch('/api/models/enabled', {
             headers: App.api.getAuthHeaders()
         });
         return res.json();
