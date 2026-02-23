@@ -1,7 +1,3 @@
-/**
- * 执行器服务
- * 负责执行 Claude CLI 命令，替代 batch_claude_parallel.sh
- */
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -321,6 +317,23 @@ function executeModel(taskId, modelId, modelConfig) {
         throw e;
     }
 
+    // 构建敏感信息脱敏函数：精确匹配当前任务使用的 token 和 URL
+    const sensitiveValues = [];
+    const authToken = modelConfig.apiKey || process.env.ANTHROPIC_AUTH_TOKEN;
+    const baseUrl = modelConfig.apiBaseUrl || process.env.ANTHROPIC_BASE_URL;
+    if (authToken) sensitiveValues.push({ value: authToken, replacement: '***REDACTED_TOKEN***' });
+    if (baseUrl) sensitiveValues.push({ value: baseUrl, replacement: '***REDACTED_URL***' });
+
+    function sanitizeLine(line) {
+        let result = line;
+        for (const { value, replacement } of sensitiveValues) {
+            if (result.includes(value)) {
+                result = result.split(value).join(replacement);
+            }
+        }
+        return result;
+    }
+
     // 创建 readline 接口处理 stdout
     const rl = readline.createInterface({
         input: child.stdout,
@@ -328,16 +341,18 @@ function executeModel(taskId, modelId, modelConfig) {
     });
 
     rl.on('line', (line) => {
-        logStream.write(line + '\n');
-        ingestHandler.processLine(line);
+        const sanitized = sanitizeLine(line);
+        logStream.write(sanitized + '\n');
+        ingestHandler.processLine(sanitized);
         // 更新最后活动时间，供 watchdog 检测卡死
         const entry = activeProcesses.get(subtaskKey);
         if (entry) entry.lastActivityTime = Date.now();
     });
 
     child.stderr.on('data', (data) => {
-        logStream.write(data);
-        console.error(`[Executor ${subtaskKey} STDERR] ${data.toString().slice(0, 200)}`);
+        const sanitized = sanitizeLine(data.toString());
+        logStream.write(sanitized);
+        console.error(`[Executor ${subtaskKey} STDERR] ${sanitized.slice(0, 200)}`);
     });
 
     child.on('close', () => {
