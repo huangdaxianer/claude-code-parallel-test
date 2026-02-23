@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const db = require('../db');
 const config = require('../config');
+const { buildSafeEnv } = require('../utils/envWhitelist');
 
 // 活跃进程 Map<"taskId/modelId", ChildProcess>
 const activeProcesses = new Map();
@@ -171,20 +172,8 @@ function buildFirejailArgs(taskDir, modelId) {
     return args;
 }
 
-/**
- * 构建环境变量（支持每个模型独立的 API 配置）
- * @param {Object} modelConfig - 模型配置，可包含 apiBaseUrl 和 apiKey
- */
-function buildEnv(modelConfig = {}) {
-    return {
-        ...process.env,
-        LANG: 'en_US.UTF-8',
-        LC_ALL: 'en_US.UTF-8',
-        ANTHROPIC_AUTH_TOKEN: modelConfig.apiKey || process.env.ANTHROPIC_AUTH_TOKEN,
-        ANTHROPIC_BASE_URL: modelConfig.apiBaseUrl || process.env.ANTHROPIC_BASE_URL,
-        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC || '1'
-    };
-}
+// buildEnv 已被 utils/envWhitelist.js 的 buildSafeEnv 取代
+// 子进程通过内部代理访问 API，不再直接持有真实 token
 
 /**
  * 执行单个模型任务
@@ -247,7 +236,7 @@ function executeModel(taskId, modelId, modelConfig) {
 
         console.log(`[Executor] Using firejail sandbox for ${subtaskKey}`);
 
-        const envVars = buildEnv(modelConfig);
+        const envVars = buildSafeEnv(modelId);
         if (executorConfig.useIsolation) {
             // 隔离用户模式
             child = spawn('sudo', [
@@ -274,7 +263,7 @@ function executeModel(taskId, modelId, modelConfig) {
     } else {
         // 无沙箱模式
         console.log(`[Executor] Running without sandbox for ${subtaskKey}`);
-        const envVars = buildEnv(modelConfig);
+        const envVars = buildSafeEnv(modelId);
 
         if (executorConfig.useIsolation) {
             child = spawn('sudo', [

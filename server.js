@@ -23,6 +23,9 @@ const PORT = 3001;
 app.use(cors());
 app.use(cookieParser());
 
+// 内部 API 代理（供 Claude CLI 子进程使用，必须在 body-parser 之前挂载）
+app.use('/internal-proxy', require('./routes/internal-proxy'));
+
 // Body parser should skip multipart/form-data (handled by multer)
 app.use((req, res, next) => {
     if (req.is('multipart/form-data')) {

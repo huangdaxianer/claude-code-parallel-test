@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const db = require('../db');
 const config = require('../config');
+const { buildSafeEnv } = require('../utils/envWhitelist');
 
 // 运行中的预览 Map<folderName, { proc, port, url, lastAccess, status, logs, timeoutId, lastHeartbeat }>
 const runningPreviews = {};
@@ -499,10 +500,10 @@ async function preparePreview(taskId, modelId) {
         const fullPrompt = `${promptContent}\n\nCurrent File Structure:\n${fileStructure}`;
 
         // Spawn Claude Code — read model config from DB (is_preview_model=1)
-        const previewModelConfig = db.prepare("SELECT model_name, endpoint_name, api_base_url, api_key FROM model_configs WHERE is_preview_model = 1 LIMIT 1").get();
+        const previewModelConfig = db.prepare("SELECT model_id, model_name, endpoint_name, api_base_url, api_key FROM model_configs WHERE is_preview_model = 1 LIMIT 1").get();
         const previewModel = (previewModelConfig && previewModelConfig.model_name) || process.env.PREVIEW_PREPARATION_MODEL || process.env.ANTHROPIC_MODEL || 'tomato';
-        const previewApiBaseUrl = (previewModelConfig && previewModelConfig.api_base_url) || process.env.ANTHROPIC_BASE_URL || '';
-        const previewApiKey = (previewModelConfig && previewModelConfig.api_key) || process.env.ANTHROPIC_AUTH_TOKEN || '';
+        // 用于代理路由的 modelId：有 DB 配置用其 model_id，否则走 __default__
+        const previewModelId = (previewModelConfig && previewModelConfig.model_id) || '__default__';
 
         const args = [
             '--model', previewModel,
@@ -523,19 +524,20 @@ async function preparePreview(taskId, modelId) {
 
         let spawnCmd = claudeBin;
         let spawnArgs = args;
+        const safeEnv = buildSafeEnv(previewModelId, { CI: 'true' });
         let spawnOptions = {
             cwd: isolatedPath,
-            env: { ...process.env, CI: 'true', ANTHROPIC_AUTH_TOKEN: previewApiKey, ANTHROPIC_BASE_URL: previewApiBaseUrl },
+            env: safeEnv,
             stdio: ['pipe', 'pipe', 'pipe']
         };
 
         if (useIsolation) {
             spawnCmd = 'sudo';
             const envVars = [
-                `PATH=${process.env.PATH}`,
-                `ANTHROPIC_AUTH_TOKEN=${previewApiKey}`,
-                `ANTHROPIC_BASE_URL=${previewApiBaseUrl}`,
-                `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC || ''}`,
+                `PATH=${safeEnv.PATH || ''}`,
+                `ANTHROPIC_AUTH_TOKEN=${safeEnv.ANTHROPIC_AUTH_TOKEN}`,
+                `ANTHROPIC_BASE_URL=${safeEnv.ANTHROPIC_BASE_URL}`,
+                `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${safeEnv.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC || ''}`,
                 `CI=true`
             ];
             spawnArgs = ['-n', '-H', '-u', 'claude-user', 'env', ...envVars, claudeBin, ...args];
