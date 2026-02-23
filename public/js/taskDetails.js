@@ -252,7 +252,7 @@
             if (taskId) {
                 fetch('/api/preview/heartbeat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', ...App.api.getAuthHeaders() },
                     body: JSON.stringify({ taskId: taskId })
                 }).catch(e => console.error('Task heartbeat failed', e));
             }

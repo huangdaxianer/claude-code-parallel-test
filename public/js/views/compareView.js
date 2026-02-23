@@ -85,7 +85,7 @@
             try {
                 // Fast path: check if already running (reuse existing preview service)
                 if (!forceRestart) {
-                    const statusRes = await fetch(`/api/preview/status/${taskId}/${modelId}`);
+                    const statusRes = await fetch(`/api/preview/status/${taskId}/${modelId}`, { headers: App.api.getAuthHeaders() });
                     const statusData = await statusRes.json();
 
                     if (statusData.status === 'ready' && statusData.url) {
@@ -128,7 +128,7 @@
                 console.log(`[Compare] Starting new preview for ${side} (${modelId})`);
                 const res = await fetch('/api/preview/start', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', ...App.api.getAuthHeaders() },
                     body: JSON.stringify({ taskId, modelId })
                 });
                 const data = await res.json();
@@ -151,7 +151,7 @@
 
         cmpPolls[side] = setInterval(async () => {
             try {
-                const res = await fetch(`/api/preview/status/${taskId}/${modelId}`);
+                const res = await fetch(`/api/preview/status/${taskId}/${modelId}`, { headers: App.api.getAuthHeaders() });
                 const data = await res.json();
 
                 // Update logs
@@ -201,7 +201,7 @@
                 if (meta && meta.taskId && meta.modelId) {
                     fetch('/api/preview/heartbeat', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', ...App.api.getAuthHeaders() },
                         body: JSON.stringify({ taskId: meta.taskId, modelId: meta.modelId })
                     }).catch(() => {});
                 }
@@ -213,7 +213,7 @@
             if (meta && meta.taskId && meta.modelId) {
                 fetch('/api/preview/heartbeat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', ...App.api.getAuthHeaders() },
                     body: JSON.stringify({ taskId: meta.taskId, modelId: meta.modelId })
                 }).catch(() => {});
             }

@@ -231,7 +231,7 @@
             // 传统日志回退
             if (activeRun.outputLog === undefined || activeRun.outputLog === null) {
                 App.elements.logDisplayEl.innerHTML = '<div style="padding:2rem;">Loading legacy logs...</div>';
-                fetch(`/api/task_logs/${App.state.currentTaskId}/${activeRun.modelName}`)
+                fetch(`/api/task_logs/${App.state.currentTaskId}/${activeRun.modelName}`, { headers: App.api.getAuthHeaders() })
                     .then(res => res.json())
                     .then(data => {
                         activeRun.outputLog = data.outputLog || '';

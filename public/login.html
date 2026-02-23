@@ -178,6 +178,9 @@
                     console.log('[Login] Storing user info:', userInfo);
                     localStorage.setItem('claude_user', JSON.stringify(userInfo));
 
+                    // 设置 cookie，让 <img> 等浏览器原生请求也能带身份
+                    document.cookie = `username=${encodeURIComponent(userInfo.username)}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
+
                     // Redirect to original page (or task page by default)
                     window.location.href = _redirectTo;
                 } else {

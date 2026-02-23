@@ -4,7 +4,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { requireAdmin } = require('../middleware/auth');
+const { requireLogin, requireAdmin } = require('../middleware/auth');
 const db = require('../db');
 
 const authRoutes = require('./auth');
@@ -15,22 +15,11 @@ const previewRoutes = require('./preview');
 const filesRoutes = require('./files');
 const usersRoutes = require('./users');
 
-// 获取对当前用户组启用的模型 (Public/User) — 不需要管理员权限
-router.get('/models/enabled', (req, res) => {
+// 获取对当前用户组启用的模型 (Public/User) — 不需要管理员权限，但需要登录
+router.get('/models/enabled', requireLogin, (req, res) => {
     try {
-        const username = req.cookies?.username || req.headers['x-username'];
-        console.log('[Models] Fetching enabled models for user:', username);
-
-        if (!username) {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
-
-        const user = db.prepare('SELECT id, group_id FROM users WHERE username = ?').get(username);
-        if (!user) {
-            return res.status(401).json({ error: 'User not found' });
-        }
-
-        console.log('[Models] User group_id:', user.group_id);
+        const user = req.user; // requireLogin 已经验证并注入了 user
+        console.log('[Models] Fetching enabled models for user:', user.username, 'group_id:', user.group_id);
 
         const models = db.prepare(`
             SELECT
@@ -57,14 +46,14 @@ router.get('/models/enabled', (req, res) => {
 });
 
 // 挂载路由
-router.use('/', authRoutes);
-router.use('/admin', requireAdmin, adminRoutes);
-router.use('/feedback', feedbackRoutes);
-router.use('/tasks', tasksRoutes);
-router.use('/preview', previewRoutes);
-router.use('/comments', require('./comments'));
-router.use('/', filesRoutes);
-router.use('/users', usersRoutes);
-router.use('/gsb', require('./gsb'));
+router.use('/', authRoutes);                                    // 登录接口，不需要鉴权
+router.use('/admin', requireAdmin, adminRoutes);                // 管理员接口，已有 requireAdmin
+router.use('/feedback', requireLogin, feedbackRoutes);          // 反馈接口，需要登录
+router.use('/tasks', requireLogin, tasksRoutes);                // 任务接口，需要登录
+router.use('/preview', requireLogin, previewRoutes);            // 预览接口，需要登录
+router.use('/comments', requireLogin, require('./comments'));   // 评论接口，需要登录
+router.use('/', requireLogin, filesRoutes);                     // 文件接口，需要登录
+router.use('/users', requireLogin, usersRoutes);                // 用户接口，需要登录
+router.use('/gsb', requireLogin, require('./gsb'));              // GSB接口，需要登录
 
 module.exports = router;

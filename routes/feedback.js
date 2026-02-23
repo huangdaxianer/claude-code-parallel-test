@@ -4,6 +4,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { isTaskOwnerOrAdmin } = require('../middleware/auth');
 
 // 获取活跃的评价问题 (用户端)
 router.get('/questions', (req, res) => {
@@ -41,6 +42,9 @@ router.post('/submit', (req, res) => {
     if (!taskId || !modelId || !Array.isArray(responses) || responses.length === 0) {
         return res.status(400).json({ error: 'Invalid payload' });
     }
+
+    // 校验任务归属
+    if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
 
     try {
         const insertStmt = db.prepare(`

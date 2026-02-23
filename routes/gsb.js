@@ -5,6 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { isTaskOwnerOrAdmin } = require('../middleware/auth');
 
 /**
  * 获取当前用户的所有 GSB 作业列表
@@ -12,14 +13,9 @@ const db = require('../db');
  */
 router.get('/jobs', (req, res) => {
     try {
-        const { userId } = req.query;
-        if (!userId) {
-            return res.status(400).json({ error: 'Missing userId' });
-        }
-
-        // Get user's group_id for per-group display name resolution
-        const user = db.prepare('SELECT group_id FROM users WHERE id = ?').get(userId);
-        const groupId = user ? user.group_id : null;
+        // 使用服务端已验证的用户信息，不信任前端 userId
+        const userId = req.user.id;
+        const groupId = req.user.group_id;
 
         const jobs = db.prepare(`
             SELECT
@@ -50,11 +46,14 @@ router.get('/jobs', (req, res) => {
  */
 router.post('/jobs', (req, res) => {
     try {
-        const { name, modelA, modelB, userId, taskIds } = req.body;
+        const { name, modelA, modelB, taskIds } = req.body;
 
-        if (!name || !modelA || !modelB || !userId || !Array.isArray(taskIds) || taskIds.length === 0) {
+        if (!name || !modelA || !modelB || !Array.isArray(taskIds) || taskIds.length === 0) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
+
+        // 使用服务端已验证的用户 ID
+        const userId = req.user.id;
 
         // Create job
         const insertJob = db.prepare(`
@@ -106,9 +105,13 @@ router.get('/jobs/:id', (req, res) => {
             return res.status(404).json({ error: 'Job not found' });
         }
 
+        // 校验作业归属
+        if (req.user.role !== 'admin' && String(job.user_id) !== String(req.user.id)) {
+            return res.status(403).json({ error: '无权访问他人的作业' });
+        }
+
         // Get user's group_id for per-group display name resolution
-        const user = db.prepare('SELECT group_id FROM users WHERE id = ?').get(job.user_id);
-        const groupId = user ? user.group_id : null;
+        const groupId = req.user.group_id;
 
         // Resolve model display names
         const modelADisplay = db.prepare(`
@@ -165,6 +168,13 @@ router.delete('/jobs/:id', (req, res) => {
     try {
         const { id } = req.params;
 
+        // 校验作业归属
+        const job = db.prepare('SELECT user_id FROM gsb_jobs WHERE id = ?').get(id);
+        if (!job) return res.status(404).json({ error: 'Job not found' });
+        if (req.user.role !== 'admin' && String(job.user_id) !== String(req.user.id)) {
+            return res.status(403).json({ error: '无权删除他人的作业' });
+        }
+
         const result = db.prepare('DELETE FROM gsb_jobs WHERE id = ?').run(id);
 
         if (result.changes === 0) {
@@ -187,9 +197,13 @@ router.get('/jobs/:id/next', (req, res) => {
         const { id } = req.params;
 
         // Get job info
-        const job = db.prepare('SELECT model_a_id as model_a, model_b_id as model_b FROM gsb_jobs WHERE id = ?').get(id);
+        const job = db.prepare('SELECT model_a_id as model_a, model_b_id as model_b, user_id FROM gsb_jobs WHERE id = ?').get(id);
         if (!job) {
             return res.status(404).json({ error: 'Job not found' });
+        }
+        // 校验作业归属
+        if (req.user.role !== 'admin' && String(job.user_id) !== String(req.user.id)) {
+            return res.status(403).json({ error: '无权访问他人的作业' });
         }
 
         // Get next unrated task
@@ -259,6 +273,13 @@ router.post('/jobs/:id/rate', (req, res) => {
         const validRatings = ['left_better', 'right_better', 'same', 'failed'];
         if (!taskId || !validRatings.includes(rating)) {
             return res.status(400).json({ error: 'Invalid rating data' });
+        }
+
+        // 校验作业归属
+        const job = db.prepare('SELECT user_id FROM gsb_jobs WHERE id = ?').get(id);
+        if (!job) return res.status(404).json({ error: 'Job not found' });
+        if (req.user.role !== 'admin' && String(job.user_id) !== String(req.user.id)) {
+            return res.status(403).json({ error: '无权操作他人的作业' });
         }
 
         // Get the swapped state for this task to correctly attribute the rating
@@ -342,11 +363,14 @@ router.post('/jobs/:id/rate', (req, res) => {
  */
 router.get('/available-tasks', (req, res) => {
     try {
-        const { userId, modelA, modelB } = req.query;
+        const { modelA, modelB } = req.query;
 
-        if (!userId || !modelA || !modelB) {
+        if (!modelA || !modelB) {
             return res.status(400).json({ error: 'Missing required params' });
         }
+
+        // 使用服务端已验证的用户 ID
+        const userId = req.user.id;
 
         // Get tasks where both models have previewable results
         const tasks = db.prepare(`
@@ -384,15 +408,9 @@ router.get('/available-tasks', (req, res) => {
  */
 router.get('/available-models', (req, res) => {
     try {
-        const { userId } = req.query;
-
-        if (!userId) {
-            return res.status(400).json({ error: 'Missing userId' });
-        }
-
-        // Get user's group_id for per-group display name resolution
-        const user = db.prepare('SELECT group_id FROM users WHERE id = ?').get(userId);
-        const groupId = user ? user.group_id : null;
+        // 使用服务端已验证的用户信息
+        const userId = req.user.id;
+        const groupId = req.user.group_id;
 
         // Get distinct model_ids from completed runs for this user's tasks
         const models = db.prepare(`

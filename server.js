@@ -8,6 +8,7 @@ console.log("Starting server at " + new Date().toISOString());
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const multer = require('multer');
 
 const config = require('./config');
@@ -20,6 +21,7 @@ const PORT = 3001;
 
 // 中间件配置
 app.use(cors());
+app.use(cookieParser());
 
 // Body parser should skip multipart/form-data (handled by multer)
 app.use((req, res, next) => {
@@ -37,7 +39,10 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static('public'));
-app.use('/artifacts', express.static(config.TASKS_DIR));
+
+// /artifacts 静态文件需要登录才能访问（通过 cookie 鉴权）
+const { requireLogin } = require('./middleware/auth');
+app.use('/artifacts', requireLogin, express.static(config.TASKS_DIR));
 
 // 根路由重定向
 app.get('/', (req, res) => {

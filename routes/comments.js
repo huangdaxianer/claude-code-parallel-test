@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const config = require('../config');
+const { isTaskOwnerOrAdmin } = require('../middleware/auth');
 
 // Configure multer for image uploads
 const storage = multer.diskStorage({
@@ -82,21 +83,24 @@ router.get('/user-feedback', (req, res) => {
 
 // 添加评论
 router.post('/', (req, res) => {
-    const { taskId, modelId, userId, targetType, targetRef, selectionRange, content, originalContent } = req.body;
+    const { taskId, modelId, targetType, targetRef, selectionRange, content, originalContent } = req.body;
 
     if (!taskId || !modelId || !content || !targetType) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    // 校验任务归属
+    if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
+
     try {
         const result = db.prepare(`
             INSERT INTO feedback_comments (
-                task_id, model_id, user_id, target_type, target_ref, 
+                task_id, model_id, user_id, target_type, target_ref,
                 selection_range, content, original_content
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-            taskId, modelId, userId || null, targetType, targetRef || '',
+            taskId, modelId, req.user.id, targetType, targetRef || '',
             JSON.stringify(selectionRange || {}), content, originalContent || ''
         );
 
@@ -112,6 +116,13 @@ router.delete('/:id', (req, res) => {
     const { id } = req.params;
 
     try {
+        // 校验评论归属：只有评论作者或管理员可删除
+        const comment = db.prepare('SELECT user_id FROM feedback_comments WHERE id = ?').get(id);
+        if (!comment) return res.status(404).json({ error: 'Comment not found' });
+        if (req.user.role !== 'admin' && String(comment.user_id) !== String(req.user.id)) {
+            return res.status(403).json({ error: '无权删除他人的评论' });
+        }
+
         const result = db.prepare('DELETE FROM feedback_comments WHERE id = ?').run(id);
         if (result.changes > 0) {
             res.json({ success: true });
@@ -126,11 +137,14 @@ router.delete('/:id', (req, res) => {
 
 // 添加用户反馈（支持图片上传）
 router.post('/user-feedback', upload.array('images', 10), (req, res) => {
-    const { taskId, modelId, userId, content } = req.body;
+    const { taskId, modelId, content } = req.body;
 
     if (!taskId || !content) {
         return res.status(400).json({ error: 'Missing required fields (taskId, content)' });
     }
+
+    // 校验任务归属
+    if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
 
     try {
         // Create comments directory for the task
@@ -150,7 +164,7 @@ router.post('/user-feedback', upload.array('images', 10), (req, res) => {
             }
         }
 
-        // Insert into database
+        // Insert into database — 使用服务端 req.user.id，不信任前端
         const result = db.prepare(`
             INSERT INTO user_feedback (
                 task_id, model_id, user_id, content, images
@@ -159,7 +173,7 @@ router.post('/user-feedback', upload.array('images', 10), (req, res) => {
         `).run(
             taskId,
             modelId || '',
-            userId || null,
+            req.user.id,
             content,
             JSON.stringify(imagePaths)
         );
@@ -184,6 +198,11 @@ router.delete('/user-feedback/:id', (req, res) => {
         const feedback = db.prepare('SELECT * FROM user_feedback WHERE id = ?').get(id);
         if (!feedback) {
             return res.status(404).json({ error: 'Feedback not found' });
+        }
+
+        // 校验反馈归属：只有反馈作者或管理员可删除
+        if (req.user.role !== 'admin' && String(feedback.user_id) !== String(req.user.id)) {
+            return res.status(403).json({ error: '无权删除他人的反馈' });
         }
 
         // Delete associated images

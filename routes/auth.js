@@ -74,4 +74,25 @@ router.get('/user/:userId', (req, res) => {
     }
 });
 
+// 验证用户是否存在（用于自动登录等场景，不需要登录态）
+router.get('/users/verify', (req, res) => {
+    try {
+        const { username } = req.query;
+
+        if (!username) {
+            return res.json({ exists: false, user: null });
+        }
+
+        const user = db.prepare('SELECT id, username, role, group_id FROM users WHERE username = ?').get(username);
+
+        res.json({
+            exists: !!user,
+            user: user || null
+        });
+    } catch (e) {
+        console.error('[API] User verify error:', e);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 module.exports = router;

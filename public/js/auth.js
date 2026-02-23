@@ -20,6 +20,8 @@
                 const user = JSON.parse(savedUserStr);
                 if (user && user.id) {
                     App.state.currentUser = user;
+                    // 确保 cookie 始终与 localStorage 同步（浏览器可能已清除过期 cookie）
+                    document.cookie = `username=${encodeURIComponent(user.username)}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
                     console.log('[Auth] Logged in via localStorage:', user);
 
                     // Background verify to ensure role and other info is up to date
@@ -77,6 +79,7 @@
                 if (user) {
                     App.state.currentUser = user;
                     localStorage.setItem('claude_user', JSON.stringify(user));
+                    document.cookie = `username=${encodeURIComponent(user.username)}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
                     console.log('[Auth] Logged in via URL:', user);
                     return true;
                 } else {
@@ -99,6 +102,8 @@
      */
     App.auth.logout = function () {
         localStorage.removeItem('claude_user');
+        // 清除身份 cookie
+        document.cookie = 'username=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
         window.location.href = '/login.html';
     };
 

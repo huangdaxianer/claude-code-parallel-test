@@ -3,7 +3,7 @@
  */
 
 import { AppState } from './state.js';
-import { TaskAPI } from './api.js';
+import { TaskAPI, getAuthHeaders } from './api.js';
 import { UI } from './ui.js';
 
 // Constants
@@ -513,7 +513,7 @@ async function fetchUserManagementData() {
         UI.renderUserManagement(users, AppState.userGroups);
 
         // Load registration toggle state
-        const configRes = await fetch('/api/admin/config');
+        const configRes = await fetch('/api/admin/config', { headers: getAuthHeaders() });
         const configData = await configRes.json();
         const toggle = document.getElementById('allow-registration-toggle');
         if (toggle) {

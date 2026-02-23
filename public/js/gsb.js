@@ -22,6 +22,16 @@
     window.GSB = {};
 
     /**
+     * 获取认证头
+     */
+    GSB.getAuthHeaders = function () {
+        if (state.currentUser && state.currentUser.username) {
+            return { 'x-username': state.currentUser.username };
+        }
+        return {};
+    };
+
+    /**
      * Initialize
      */
     GSB.init = async function () {
@@ -71,7 +81,7 @@
      */
     GSB.loadJobs = async function () {
         try {
-            const res = await fetch(`/api/gsb/jobs?userId=${state.currentUser.id}`);
+            const res = await fetch(`/api/gsb/jobs?userId=${state.currentUser.id}`, { headers: GSB.getAuthHeaders() });
             state.jobs = await res.json();
             GSB.renderJobList();
         } catch (e) {
@@ -164,7 +174,7 @@
         }
 
         try {
-            const res = await fetch(`/api/gsb/jobs/${jobId}`);
+            const res = await fetch(`/api/gsb/jobs/${jobId}`, { headers: GSB.getAuthHeaders() });
             state.currentJob = await res.json();
             GSB.renderJobList();
 
@@ -185,7 +195,7 @@
         if (!state.currentJob) return;
 
         try {
-            const res = await fetch(`/api/gsb/jobs/${state.currentJob.id}/next`);
+            const res = await fetch(`/api/gsb/jobs/${state.currentJob.id}/next`, { headers: GSB.getAuthHeaders() });
             const data = await res.json();
 
             if (data.completed) {
@@ -269,12 +279,12 @@
         const sendHeartbeat = () => {
             fetch('/api/preview/heartbeat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...GSB.getAuthHeaders() },
                 body: JSON.stringify({ taskId, modelId: leftModelId })
             }).catch(() => {});
             fetch('/api/preview/heartbeat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...GSB.getAuthHeaders() },
                 body: JSON.stringify({ taskId, modelId: rightModelId })
             }).catch(() => {});
         };
@@ -399,7 +409,7 @@
         try {
             // Fast path: check if already running (reuse existing preview service)
             if (!forceRestart) {
-                const statusRes = await fetch(`/api/preview/status/${taskId}/${modelId}`);
+                const statusRes = await fetch(`/api/preview/status/${taskId}/${modelId}`, { headers: GSB.getAuthHeaders() });
                 const statusData = await statusRes.json();
 
                 if (statusData.status === 'ready' && statusData.url) {
@@ -437,7 +447,7 @@
             console.log(`[GSB] Starting new preview for ${side} (${modelId})`);
             const res = await fetch('/api/preview/start', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...GSB.getAuthHeaders() },
                 body: JSON.stringify({ taskId, modelId })
             });
 
@@ -486,7 +496,7 @@
 
         previewPolls[side] = setInterval(async () => {
             try {
-                const res = await fetch(`/api/preview/status/${taskId}/${modelId}`);
+                const res = await fetch(`/api/preview/status/${taskId}/${modelId}`, { headers: GSB.getAuthHeaders() });
                 const data = await res.json();
 
                 // Update logs
@@ -560,7 +570,7 @@
         try {
             const res = await fetch(`/api/gsb/jobs/${state.currentJob.id}/rate`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...GSB.getAuthHeaders() },
                 body: JSON.stringify({
                     taskId: state.currentTask.task_id,
                     rating: rating
@@ -663,7 +673,7 @@
      */
     GSB.deleteJob = async function (jobId) {
         try {
-            await fetch(`/api/gsb/jobs/${jobId}`, { method: 'DELETE' });
+            await fetch(`/api/gsb/jobs/${jobId}`, { method: 'DELETE', headers: GSB.getAuthHeaders() });
 
             if (state.currentJob && state.currentJob.id === jobId) {
                 GSB.selectJob(null);
@@ -710,7 +720,7 @@
      */
     GSB.loadAvailableModels = async function () {
         try {
-            const res = await fetch(`/api/gsb/available-models?userId=${state.currentUser.id}`);
+            const res = await fetch(`/api/gsb/available-models?userId=${state.currentUser.id}`, { headers: GSB.getAuthHeaders() });
             state.availableModels = await res.json();
 
             // Models come as objects with model_id, endpoint_name, and displayName
@@ -827,7 +837,8 @@
 
         try {
             const res = await fetch(
-                `/api/gsb/available-tasks?userId=${state.currentUser.id}&modelA=${modelA}&modelB=${modelB}`
+                `/api/gsb/available-tasks?userId=${state.currentUser.id}&modelA=${modelA}&modelB=${modelB}`,
+                { headers: GSB.getAuthHeaders() }
             );
             state.availableTasks = await res.json();
             state.selectedTasks = new Set();
@@ -929,7 +940,7 @@
         try {
             const res = await fetch('/api/gsb/jobs', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...GSB.getAuthHeaders() },
                 body: JSON.stringify({
                     name,
                     modelA,

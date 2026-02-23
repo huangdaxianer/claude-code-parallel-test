@@ -2,6 +2,14 @@
  * API interaction layer for Task Manager
  */
 
+export function getAuthHeaders() {
+    try {
+        const user = JSON.parse(localStorage.getItem('claude_user') || '{}');
+        if (user && user.username) return { 'x-username': user.username };
+    } catch (e) { }
+    return {};
+}
+
 export const TaskAPI = {
     async fetchTasks({ page = 1, pageSize = 20, userId = '', search = '', modelFilters = {} } = {}) {
         const params = new URLSearchParams();
@@ -13,24 +21,24 @@ export const TaskAPI = {
         for (const [modelId, filterStatus] of Object.entries(modelFilters)) {
             if (filterStatus) params.set(`modelFilter_${modelId}`, filterStatus);
         }
-        const res = await fetch(`/api/admin/tasks?${params.toString()}`);
+        const res = await fetch(`/api/admin/tasks?${params.toString()}`, { headers: getAuthHeaders() });
         return await res.json();
     },
 
     async fetchQueueStatus() {
-        const res = await fetch('/api/admin/queue-status');
+        const res = await fetch('/api/admin/queue-status', { headers: getAuthHeaders() });
         return await res.json();
     },
 
     async fetchUsers() {
-        const res = await fetch('/api/admin/users');
+        const res = await fetch('/api/admin/users', { headers: getAuthHeaders() });
         return await res.json();
     },
 
     async updateConfig(config) {
         const res = await fetch('/api/admin/config', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(config)
         });
 
@@ -42,7 +50,7 @@ export const TaskAPI = {
     },
 
     async stopTask(taskId) {
-        const res = await fetch(`/api/tasks/${taskId}/stop`, { method: 'POST' });
+        const res = await fetch(`/api/tasks/${taskId}/stop`, { method: 'POST', headers: getAuthHeaders() });
         const data = await res.json();
 
         if (!data.success) {
@@ -52,7 +60,7 @@ export const TaskAPI = {
     },
 
     async restartTask(taskId) {
-        const res = await fetch(`/api/tasks/${taskId}/start`, { method: 'POST' });
+        const res = await fetch(`/api/tasks/${taskId}/start`, { method: 'POST', headers: getAuthHeaders() });
         const data = await res.json();
 
         if (!data.success) {
@@ -62,7 +70,7 @@ export const TaskAPI = {
     },
 
     async deleteTask(taskId) {
-        const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+        const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE', headers: getAuthHeaders() });
         const data = await res.json();
 
         if (!data.success) {
@@ -72,12 +80,12 @@ export const TaskAPI = {
     },
 
     async fetchQuestions() {
-        const res = await fetch('/api/admin/questions', { headers: { 'Cache-Control': 'no-cache' } });
+        const res = await fetch('/api/admin/questions', { headers: { 'Cache-Control': 'no-cache', ...getAuthHeaders() } });
         return await res.json();
     },
 
     async fetchModels() {
-        const res = await fetch('/api/admin/models');
+        const res = await fetch('/api/admin/models', { headers: getAuthHeaders() });
         return await res.json();
     },
 
@@ -86,7 +94,7 @@ export const TaskAPI = {
         const method = id ? 'PUT' : 'POST';
         const res = await fetch(url, {
             method,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(data)
         });
         if (!res.ok) {
@@ -97,7 +105,7 @@ export const TaskAPI = {
     },
 
     async deleteModel(id) {
-        const res = await fetch(`/api/admin/models/${id}`, { method: 'DELETE' });
+        const res = await fetch(`/api/admin/models/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
         if (!res.ok) {
             const error = await res.json();
             throw new Error(error.error || '未知错误');
@@ -108,7 +116,7 @@ export const TaskAPI = {
     async updateModelGroupSetting(modelId, groupId, data) {
         const res = await fetch(`/api/admin/models/${modelId}/group-settings/${groupId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(data)
         });
         if (!res.ok) {
@@ -129,7 +137,7 @@ export const TaskAPI = {
 
         const res = await fetch(url, {
             method,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify(payload)
         });
         return await res.json();
@@ -138,7 +146,7 @@ export const TaskAPI = {
     async updateQuestionStatus(id, isActive) {
         const res = await fetch(`/api/admin/questions/${id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ is_active: isActive })
         });
         if (!res.ok) throw new Error('Update failed');
@@ -148,7 +156,7 @@ export const TaskAPI = {
     async reorderQuestions(order) {
         const res = await fetch('/api/admin/questions/reorder', {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ order })
         });
         return res.ok;
@@ -156,14 +164,14 @@ export const TaskAPI = {
 
     // Evaluation related APIs
     async fetchFeedbackStats() {
-        const res = await fetch('/api/admin/feedback-stats');
+        const res = await fetch('/api/admin/feedback-stats', { headers: getAuthHeaders() });
         return await res.json();
     },
 
     async updateUserRole(userId, role) {
         const res = await fetch(`/api/admin/users/${userId}/role`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ role })
         });
         if (!res.ok) {
@@ -175,14 +183,14 @@ export const TaskAPI = {
 
     // User Groups APIs
     async fetchUserGroups() {
-        const res = await fetch('/api/admin/user-groups');
+        const res = await fetch('/api/admin/user-groups', { headers: getAuthHeaders() });
         return await res.json();
     },
 
     async createUserGroup(name) {
         const res = await fetch('/api/admin/user-groups', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ name })
         });
         if (!res.ok) {
@@ -195,7 +203,7 @@ export const TaskAPI = {
     async updateUserGroup(id, name) {
         const res = await fetch(`/api/admin/user-groups/${id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ name })
         });
         if (!res.ok) {
@@ -207,7 +215,8 @@ export const TaskAPI = {
 
     async deleteUserGroup(id) {
         const res = await fetch(`/api/admin/user-groups/${id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: getAuthHeaders()
         });
         if (!res.ok) {
             const error = await res.json();
@@ -219,7 +228,7 @@ export const TaskAPI = {
     async updateUserGroupAssignment(userId, groupId) {
         const res = await fetch(`/api/admin/users/${userId}/group`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ group_id: groupId })
         });
         if (!res.ok) {
@@ -232,7 +241,7 @@ export const TaskAPI = {
     async createUsers(usernames) {
         const res = await fetch('/api/admin/users', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ usernames })
         });
         if (!res.ok) {
@@ -244,7 +253,8 @@ export const TaskAPI = {
 
     async deleteUser(userId) {
         const res = await fetch(`/api/admin/users/${userId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: getAuthHeaders()
         });
         if (!res.ok) {
             const error = await res.json();

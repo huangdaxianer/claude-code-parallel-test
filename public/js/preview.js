@@ -105,7 +105,7 @@
                         if (taskIdToSend && modelIdToSend) {
                             fetch('/api/preview/heartbeat', {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
+                                headers: { 'Content-Type': 'application/json', ...App.api.getAuthHeaders() },
                                 body: JSON.stringify({ taskId: taskIdToSend, modelId: modelIdToSend })
                             }).catch(console.error);
                         }
@@ -165,7 +165,7 @@
                 if (taskIdToSend && modelIdToSend) {
                     fetch('/api/preview/heartbeat', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', ...App.api.getAuthHeaders() },
                         body: JSON.stringify({ taskId: taskIdToSend, modelId: modelIdToSend })
                     }).catch(console.error);
                 }

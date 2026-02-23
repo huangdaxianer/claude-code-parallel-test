@@ -24,7 +24,7 @@
      */
     App.api.getTasks = async function (userId) {
         const url = userId ? `/api/tasks?userId=${userId}` : '/api/tasks';
-        const res = await fetch(url);
+        const res = await fetch(url, { headers: App.api.getAuthHeaders() });
         return res.json();
     };
 
@@ -32,7 +32,7 @@
      * 获取任务详情
      */
     App.api.getTaskDetails = async function (taskId) {
-        const res = await fetch(`/api/task_details/${taskId}`);
+        const res = await fetch(`/api/task_details/${taskId}`, { headers: App.api.getAuthHeaders() });
         return res.json();
     };
 
@@ -55,7 +55,7 @@
      * 删除任务
      */
     App.api.deleteTask = async function (taskId) {
-        const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+        const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE', headers: App.api.getAuthHeaders() });
         return res.json();
     };
 
@@ -65,7 +65,7 @@
     App.api.controlTask = async function (taskId, action, modelId) {
         const res = await fetch(`/api/tasks/${taskId}/${action}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...App.api.getAuthHeaders() },
             body: JSON.stringify({ modelId })
         });
         return res.json();
@@ -75,7 +75,7 @@
      * 获取任务事件
      */
     App.api.getTaskEvents = async function (runId) {
-        const res = await fetch(`/api/task_events/${runId}`);
+        const res = await fetch(`/api/task_events/${runId}`, { headers: App.api.getAuthHeaders() });
         return res.json();
     };
 
@@ -83,7 +83,7 @@
      * 获取日志事件内容
      */
     App.api.getLogEventContent = async function (eventId) {
-        const res = await fetch(`/api/log_event_content/${eventId}`);
+        const res = await fetch(`/api/log_event_content/${eventId}`, { headers: App.api.getAuthHeaders() });
         return res.json();
     };
 
@@ -93,7 +93,7 @@
     App.api.toggleLogFlag = async function (eventId, isFlagged) {
         const res = await fetch(`/api/log_entries/${eventId}/flag`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...App.api.getAuthHeaders() },
             body: JSON.stringify({ isFlagged })
         });
         return res.json();
@@ -103,7 +103,7 @@
      * 获取文件内容
      */
     App.api.getFileContent = async function (folder, file) {
-        const res = await fetch(`/api/file_content?folder=${encodeURIComponent(folder)}&file=${encodeURIComponent(file)}`);
+        const res = await fetch(`/api/file_content?folder=${encodeURIComponent(folder)}&file=${encodeURIComponent(file)}`, { headers: App.api.getAuthHeaders() });
         return res.json();
     };
 
@@ -186,7 +186,7 @@
      * 验证用户是否存在
      */
     App.api.verifyUser = async function (username) {
-        const res = await fetch(`/api/users/verify?username=${encodeURIComponent(username)}`);
+        const res = await fetch(`/api/users/verify?username=${encodeURIComponent(username)}`, { headers: App.api.getAuthHeaders() });
         const data = await res.json();
         return data.exists ? data.user : null;
     };
@@ -216,7 +216,7 @@
      * Get comments
      */
     App.api.getComments = async function (taskId, modelId) {
-        const res = await fetch(`/api/comments?taskId=${taskId}&modelId=${encodeURIComponent(modelId)}`);
+        const res = await fetch(`/api/comments?taskId=${taskId}&modelId=${encodeURIComponent(modelId)}`, { headers: App.api.getAuthHeaders() });
         if (!res.ok) throw new Error('Failed to fetch comments');
         return await res.json();
     };
@@ -242,7 +242,8 @@
      */
     App.api.deleteComment = async function (id) {
         const res = await fetch(`/api/comments/${id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: App.api.getAuthHeaders()
         });
         if (!res.ok) throw new Error('Failed to delete comment');
         return await res.json();
@@ -252,7 +253,7 @@
      * Get user feedback (non-selection based feedback)
      */
     App.api.getUserFeedback = async function (taskId) {
-        const res = await fetch(`/api/comments/user-feedback?taskId=${taskId}`);
+        const res = await fetch(`/api/comments/user-feedback?taskId=${taskId}`, { headers: App.api.getAuthHeaders() });
         if (!res.ok) throw new Error('Failed to fetch user feedback');
         return await res.json();
     };
@@ -288,7 +289,8 @@
      */
     App.api.deleteUserFeedback = async function (id) {
         const res = await fetch(`/api/comments/user-feedback/${id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: App.api.getAuthHeaders()
         });
         if (!res.ok) throw new Error('Failed to delete user feedback');
         return await res.json();

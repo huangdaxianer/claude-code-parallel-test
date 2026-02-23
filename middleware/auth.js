@@ -41,4 +41,20 @@ function requireAdmin(req, res, next) {
     next();
 }
 
-module.exports = { getCurrentUser, requireLogin, requireAdmin };
+/**
+ * 检查当前用户是否是任务的拥有者（或管理员）
+ * 返回 true/false；失败时直接给 res 发 403
+ */
+function isTaskOwnerOrAdmin(req, res, taskId) {
+    const task = db.prepare('SELECT user_id FROM tasks WHERE task_id = ?').get(taskId);
+    if (!task) {
+        res.status(404).json({ error: '任务不存在' });
+        return false;
+    }
+    if (req.user.role === 'admin') return true;
+    if (String(task.user_id) === String(req.user.id)) return true;
+    res.status(403).json({ error: '无权操作他人的任务' });
+    return false;
+}
+
+module.exports = { getCurrentUser, requireLogin, requireAdmin, isTaskOwnerOrAdmin };

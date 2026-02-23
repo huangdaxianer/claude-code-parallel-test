@@ -9,6 +9,7 @@ const path = require('path');
 const db = require('../db');
 const config = require('../config');
 const { streamZip } = require('../utils/zipStream');
+const { isTaskOwnerOrAdmin } = require('../middleware/auth');
 
 // File list cache: key=folderPath, value={ files: [], timestamp: number }
 const fileListCache = new Map();
@@ -61,6 +62,7 @@ async function getFileList(folderPath, status) {
 // 获取任务详情
 router.get('/task_details/:taskId', async (req, res) => {
     const { taskId } = req.params;
+    if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
     const taskDir = path.join(config.TASKS_DIR, taskId);
 
     try {
@@ -131,6 +133,7 @@ router.get('/task_details/:taskId', async (req, res) => {
 // 获取特定模型的完整日志
 router.get('/task_logs/:taskId/:modelId', (req, res) => {
     const { taskId, modelId } = req.params;
+    if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
     const logFilePath = path.join(config.TASKS_DIR, taskId, 'logs', `${modelId}.txt`);
 
     if (fs.existsSync(logFilePath)) {
@@ -149,9 +152,14 @@ router.get('/task_logs/:taskId/:modelId', (req, res) => {
 router.get('/task_events/:runId', (req, res) => {
     const { runId } = req.params;
     try {
+        // 通过 runId 找到所属任务，校验归属
+        const run = db.prepare('SELECT task_id FROM model_runs WHERE id = ?').get(runId);
+        if (!run) return res.status(404).json({ error: 'Run not found' });
+        if (!isTaskOwnerOrAdmin(req, res, run.task_id)) return;
+
         const events = db.prepare(`
-            SELECT id, type, tool_name, tool_use_id, preview_text, status_class, is_flagged 
-            FROM log_entries 
+            SELECT id, type, tool_name, tool_use_id, preview_text, status_class, is_flagged
+            FROM log_entries
             WHERE run_id = ? AND type NOT LIKE 'HIDDEN_%'
             ORDER BY line_number ASC
         `).all(runId);
@@ -168,6 +176,10 @@ router.get('/log_event_content/:eventId', (req, res) => {
     try {
         const entry = db.prepare('SELECT run_id, tool_use_id, content FROM log_entries WHERE id = ?').get(eventId);
         if (!entry) return res.status(404).json({ error: 'Log entry not found' });
+
+        // 通过 runId 找到所属任务，校验归属
+        const run = db.prepare('SELECT task_id FROM model_runs WHERE id = ?').get(entry.run_id);
+        if (run && !isTaskOwnerOrAdmin(req, res, run.task_id)) return;
 
         if (entry.tool_use_id) {
             const entries = db.prepare(`
@@ -191,6 +203,12 @@ router.post('/log_entries/:id/flag', (req, res) => {
     const { isFlagged } = req.body;
 
     try {
+        // 通过日志条目 → run → task 校验归属
+        const entry = db.prepare('SELECT run_id FROM log_entries WHERE id = ?').get(id);
+        if (!entry) return res.status(404).json({ error: 'Log entry not found' });
+        const run = db.prepare('SELECT task_id FROM model_runs WHERE id = ?').get(entry.run_id);
+        if (run && !isTaskOwnerOrAdmin(req, res, run.task_id)) return;
+
         const stmt = db.prepare('UPDATE log_entries SET is_flagged = ? WHERE id = ?');
         const result = stmt.run(isFlagged ? 1 : 0, id);
 
@@ -209,6 +227,10 @@ router.post('/log_entries/:id/flag', (req, res) => {
 router.get('/file_content', (req, res) => {
     const { folder, file } = req.query;
     if (!folder || !file) return res.status(400).json({ error: 'Missing folder or file' });
+
+    // folder 格式通常是 "taskId/modelId"，提取 taskId 校验归属
+    const taskId = folder.split('/')[0];
+    if (taskId && !isTaskOwnerOrAdmin(req, res, taskId)) return;
 
     const targetPath = path.resolve(config.TASKS_DIR, folder, file);
     const resolvedTasksDir = path.resolve(config.TASKS_DIR);
@@ -231,6 +253,10 @@ router.get('/download_zip', (req, res) => {
     console.log(`[ZIP Request] Request for folder: ${folderName}`);
 
     if (!folderName) return res.status(400).json({ error: 'Missing folderName' });
+
+    // folderName 格式通常是 "taskId/modelId"，提取 taskId 校验归属
+    const taskId = folderName.split('/')[0];
+    if (taskId && !isTaskOwnerOrAdmin(req, res, taskId)) return;
 
     const folderPath = path.resolve(config.TASKS_DIR, folderName);
     const resolvedTasksDir = path.resolve(config.TASKS_DIR);

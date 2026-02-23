@@ -12,6 +12,7 @@ const config = require('../config');
 const { generateTitle } = require('../services/titleService');
 const { processQueue, activeSubtaskProcesses, checkAndUpdateTaskStatus } = require('../services/queueService');
 const { streamZip } = require('../utils/zipStream');
+const { isTaskOwnerOrAdmin } = require('../middleware/auth');
 
 // Multer 配置
 const storage = multer.diskStorage({
@@ -28,17 +29,23 @@ const upload = multer({
     }
 });
 
-// 获取所有任务 (支持用户过滤, 默认返回最近50条)
+// 获取任务列表（普通用户只能看自己的，管理员可看全部）
 router.get('/', (req, res) => {
     const { userId, limit } = req.query;
     const queryLimit = Math.min(parseInt(limit) || 50, 200);
 
     try {
         let tasks;
-        if (userId) {
-            tasks = db.prepare('SELECT task_id, title, user_id, created_at FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT ?').all(userId, queryLimit);
+        if (req.user.role === 'admin') {
+            // 管理员：支持 userId 筛选，默认返回全部
+            if (userId) {
+                tasks = db.prepare('SELECT task_id, title, user_id, created_at FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT ?').all(userId, queryLimit);
+            } else {
+                tasks = db.prepare('SELECT task_id, title, user_id, created_at FROM tasks ORDER BY created_at DESC LIMIT ?').all(queryLimit);
+            }
         } else {
-            tasks = db.prepare('SELECT task_id, title, user_id, created_at FROM tasks ORDER BY created_at DESC LIMIT ?').all(queryLimit);
+            // 普通用户：只能看自己的任务
+            tasks = db.prepare('SELECT task_id, title, user_id, created_at FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT ?').all(req.user.id, queryLimit);
         }
 
         return res.json(tasks.map(t => ({
@@ -65,17 +72,13 @@ router.get('/verify', (req, res) => {
             return res.json({ exists: false, task: null });
         }
 
-        // 检查当前用户是否是管理员
-        const username = req.cookies?.username || req.headers['x-username'];
-        const currentUser = username ? db.prepare('SELECT role FROM users WHERE username = ?').get(username) : null;
-        const isAdmin = currentUser && currentUser.role === 'admin';
-
         let task;
-        if (isAdmin) {
+        if (req.user.role === 'admin') {
             // 管理员可以访问所有任务
             task = db.prepare('SELECT * FROM tasks WHERE task_id = ?').get(taskId);
         } else {
-            task = db.prepare('SELECT * FROM tasks WHERE task_id = ? AND user_id = ?').get(taskId, userId);
+            // 普通用户只能验证自己的任务
+            task = db.prepare('SELECT * FROM tasks WHERE task_id = ? AND user_id = ?').get(taskId, req.user.id);
         }
 
         res.json({
@@ -380,12 +383,13 @@ router.post('/', (req, res) => {
         }
     }
 
-    // 写入数据库记录
-    console.log(`[Task Create] taskId=${task.taskId}, userId=${task.userId}, typeof userId=${typeof task.userId}`);
+    // 写入数据库记录 — 强制使用当前登录用户的 ID，不信任前端传来的 userId
+    const currentUserId = req.user.id;
+    console.log(`[Task Create] taskId=${task.taskId}, userId=${currentUserId} (from session)`);
     console.log(`[Task Create] Models received: ${JSON.stringify(task.models)}`);
     try {
         const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir, user_id) VALUES (?, ?, ?, ?, ?)');
-        insertTask.run(task.taskId, task.title, task.prompt, task.baseDir, task.userId || null);
+        insertTask.run(task.taskId, task.title, task.prompt, task.baseDir, currentUserId);
 
         const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_id, status) VALUES (?, ?, ?)');
         const models = Array.isArray(task.models) ? task.models : [];
@@ -428,6 +432,7 @@ router.post('/', (req, res) => {
 // 停止任务
 router.post('/:taskId/stop', async (req, res) => {
     const { taskId } = req.params;
+    if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
     const { modelId } = req.body || {};
 
     if (modelId) {
@@ -512,6 +517,7 @@ router.post('/:taskId/stop', async (req, res) => {
 // 启动任务 (重试/恢复)
 router.post('/:taskId/start', (req, res) => {
     const { taskId } = req.params;
+    if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
     const { modelId } = req.body || {};
     console.log(`[Control] Starting task ${taskId}${modelId ? ` for model ${modelId}` : ''}`);
 
@@ -635,6 +641,7 @@ router.post('/:taskId/start', (req, res) => {
 // 删除任务
 router.delete('/:taskId', (req, res) => {
     const { taskId } = req.params;
+    if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
 
     try {
         db.prepare('DELETE FROM tasks WHERE task_id = ?').run(taskId);
@@ -661,6 +668,7 @@ router.delete('/:taskId', (req, res) => {
 // 下载任务轨迹 (流式打包任务目录，避免代理超时)
 router.get('/:taskId/download', (req, res) => {
     const { taskId } = req.params;
+    if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
     const taskDir = path.join(config.TASKS_DIR, taskId);
 
     if (!fs.existsSync(taskDir)) {
@@ -686,16 +694,17 @@ router.post('/batch', upload.single('file'), (req, res) => {
         // Get enabled models using model_id
         const baseModels = db.prepare('SELECT model_id FROM model_configs WHERE model_id IS NOT NULL').all().map(m => m.model_id);
 
-        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir) VALUES (?, ?, ?, ?)');
+        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir, user_id) VALUES (?, ?, ?, ?, ?)');
         const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_id, status) VALUES (?, ?, ?)');
         const insertQueue = db.prepare("INSERT INTO task_queue (task_id, status) VALUES (?, 'pending')");
+        const batchUserId = req.user.id;
 
         const processBatch = db.transaction((lines) => {
             lines.forEach((prompt, index) => {
                 const taskId = crypto.randomBytes(4).toString('hex').toUpperCase();
                 const title = `Batch Task ${index + 1}`;
 
-                insertTask.run(taskId, title, prompt, null);
+                insertTask.run(taskId, title, prompt, null, batchUserId);
                 baseModels.forEach(m => insertRun.run(taskId, m, 'pending'));
                 insertQueue.run(taskId);
 
