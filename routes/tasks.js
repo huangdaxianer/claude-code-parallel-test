@@ -113,8 +113,15 @@ router.post('/upload', upload.any(), (req, res) => {
         return res.status(400).json({ error: '缺少文件夹名称' });
     }
 
+    // 防止目录穿越：folderName 只允许是简单的文件夹名
+    const safeFolderName = path.basename(folderName);
+    if (safeFolderName !== folderName || folderName.includes('..')) {
+        console.error(`[Upload] Blocked path traversal attempt: ${folderName}`);
+        return res.status(400).json({ error: '非法文件夹名称' });
+    }
+
     const uploadId = Date.now();
-    const targetBase = path.join(config.UPLOAD_DIR, `${uploadId}_${folderName}`);
+    const targetBase = path.join(config.UPLOAD_DIR, `${uploadId}_${safeFolderName}`);
     console.log(`[Upload] Starting process for folder: ${folderName} (ID: ${uploadId})`);
 
     try {
@@ -160,11 +167,17 @@ router.post('/upload', upload.any(), (req, res) => {
         console.log(`[Upload] Received ${fileCount} files, total size: ${sizeInMB} MB`);
 
         let processedCount = 0;
+        const resolvedTargetBase = path.resolve(targetBase);
         filesToProcess.forEach((file, index) => {
             try {
                 const relPath = filePaths[index] || file.originalname;
-                const parentDir = path.dirname(targetBase);
-                const fullPath = path.join(parentDir, `${uploadId}_${relPath}`);
+
+                // 防止目录穿越：确保文件路径不会跳出目标目录
+                const fullPath = path.resolve(targetBase, relPath);
+                if (!fullPath.startsWith(resolvedTargetBase + path.sep) && fullPath !== resolvedTargetBase) {
+                    throw new Error(`非法文件路径: ${relPath}`);
+                }
+
                 const dir = path.dirname(fullPath);
 
                 if (!fs.existsSync(dir)) {
@@ -228,8 +241,12 @@ router.post('/upload_zip', upload.single('file'), (req, res) => {
     }
 
     const file = req.file;
-    // Remove .zip extension for folder name
-    const originalName = file.originalname.replace(/\.zip$/i, '');
+    // Remove .zip extension for folder name, then取 basename 防止路径穿越
+    const originalName = path.basename(file.originalname.replace(/\.zip$/i, ''));
+    if (originalName.includes('..')) {
+        try { fs.unlinkSync(file.path); } catch (e) { }
+        return res.status(400).json({ error: '非法文件名' });
+    }
     const uploadId = Date.now();
 
     // We'll extract to UPLOAD_DIR/<timestamp>_<name>

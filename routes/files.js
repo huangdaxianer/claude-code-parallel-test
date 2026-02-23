@@ -210,9 +210,10 @@ router.get('/file_content', (req, res) => {
     const { folder, file } = req.query;
     if (!folder || !file) return res.status(400).json({ error: 'Missing folder or file' });
 
-    const targetPath = path.join(config.TASKS_DIR, folder, file);
+    const targetPath = path.resolve(config.TASKS_DIR, folder, file);
+    const resolvedTasksDir = path.resolve(config.TASKS_DIR);
 
-    if (!targetPath.startsWith(config.TASKS_DIR)) {
+    if (!targetPath.startsWith(resolvedTasksDir + path.sep)) {
         return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -231,9 +232,10 @@ router.get('/download_zip', (req, res) => {
 
     if (!folderName) return res.status(400).json({ error: 'Missing folderName' });
 
-    const folderPath = path.join(config.TASKS_DIR, folderName);
+    const folderPath = path.resolve(config.TASKS_DIR, folderName);
+    const resolvedTasksDir = path.resolve(config.TASKS_DIR);
 
-    if (!folderPath.startsWith(config.TASKS_DIR)) {
+    if (!folderPath.startsWith(resolvedTasksDir + path.sep)) {
         console.error(`[ZIP Error] Access denied for path: ${folderPath}`);
         return res.status(403).send('Access denied');
     }
