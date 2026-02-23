@@ -46,6 +46,8 @@ router.all('/:modelId/{*path}', (req, res) => {
     // Express 5 的 {*path} 返回数组，需拼接为路径字符串
     const remainingPath = Array.isArray(pathSegments) ? pathSegments.join('/') : pathSegments;
 
+    console.log(`[Proxy] ${req.method} model=${modelId} path=${remainingPath}`);
+
     // 查找模型的真实 API 配置
     let apiKey, apiBaseUrl;
 
@@ -73,14 +75,18 @@ router.all('/:modelId/{*path}', (req, res) => {
         return res.status(500).json({ error: 'API credentials not configured' });
     }
 
-    // 构建目标 URL
+    // 构建目标 URL — 必须保留 apiBaseUrl 中的路径前缀（如 /api/compatible）
+    // 注意：new URL('/v1/messages', 'https://host/api/compatible') 会丢掉 /api/compatible
     let targetUrl;
     try {
-        targetUrl = new URL(`/${remainingPath}`, apiBaseUrl);
+        const base = apiBaseUrl.replace(/\/+$/, ''); // 去掉尾部斜杠
+        targetUrl = new URL(`${base}/${remainingPath}`);
     } catch (e) {
         console.error(`[Proxy] Invalid URL: ${apiBaseUrl}/${remainingPath}`, e.message);
         return res.status(500).json({ error: 'Invalid upstream URL' });
     }
+
+    console.log(`[Proxy] Forwarding to: ${targetUrl.toString()}`);
 
     const isHttps = targetUrl.protocol === 'https:';
     const requestModule = isHttps ? https : http;
