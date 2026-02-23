@@ -14,6 +14,6 @@ fi
 
 # 执行部署
 sshpass -p "${PROD_SERVER_PASSWORD}" ssh -o StrictHostKeyChecking=no -p ${PROD_SERVER_PORT} ${PROD_SERVER_USER}@${PROD_SERVER_HOST} \
-  "cd ${PROD_SERVER_PROJECT_PATH} && git pull origin main && pm2 restart ${PROD_SERVER_PM2_APP_NAME} && pm2 list"
+  "cd ${PROD_SERVER_PROJECT_PATH} && git pull origin main && npm install --production && pm2 restart ${PROD_SERVER_PM2_APP_NAME} && pm2 list"
 
 echo "✅ 正式服务器部署完成！"
