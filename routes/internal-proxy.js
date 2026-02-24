@@ -175,13 +175,11 @@ router.all('/:modelId/{*path}', (req, res) => {
                 const body = JSON.parse(Buffer.concat(chunks).toString());
 
                 if (alwaysThinkingEnabled) {
-                    // 启用推理：注入 thinking enabled（保留已有的 budget_tokens 或使用默认值）
-                    if (!body.thinking || body.thinking.type !== 'enabled') {
-                        body.thinking = { type: 'enabled', budget_tokens: body.thinking?.budget_tokens || 10000 };
-                    }
+                    // 启用推理：强制注入 thinking enabled
+                    body.thinking = { type: 'enabled' };
                 } else {
-                    // 禁用推理：强制移除 thinking 或设置为 disabled
-                    delete body.thinking;
+                    // 禁用推理：强制设置为 disabled
+                    body.thinking = { type: 'disabled' };
                 }
 
                 const modified = Buffer.from(JSON.stringify(body));
