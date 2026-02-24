@@ -9,13 +9,9 @@
     App.api = {};
 
     /**
-     * 获取认证头
+     * 获取认证头（cookie 自动携带，无需额外 header）
      */
     App.api.getAuthHeaders = function () {
-        const username = App.state.currentUser?.username;
-        if (username) {
-            return { 'x-username': username };
-        }
         return {};
     };
 
@@ -294,6 +290,18 @@
         });
         if (!res.ok) throw new Error('Failed to delete user feedback');
         return await res.json();
+    };
+
+    /**
+     * 修改密码
+     */
+    App.api.changePassword = async function (oldPassword, newPassword) {
+        const res = await fetch('/api/change-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ oldPassword, newPassword })
+        });
+        return res.json();
     };
 
 })();

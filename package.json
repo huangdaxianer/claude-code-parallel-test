@@ -23,6 +23,7 @@
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.1.19",
     "archiver": "^7.0.1",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.0",
     "body-parser": "^2.2.2",
     "cookie-parser": "^1.4.7",

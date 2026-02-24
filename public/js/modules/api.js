@@ -3,10 +3,6 @@
  */
 
 export function getAuthHeaders() {
-    try {
-        const user = JSON.parse(localStorage.getItem('claude_user') || '{}');
-        if (user && user.username) return { 'x-username': user.username };
-    } catch (e) { }
     return {};
 }
 
@@ -255,6 +251,19 @@ export const TaskAPI = {
         const res = await fetch(`/api/admin/users/${userId}`, {
             method: 'DELETE',
             headers: getAuthHeaders()
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || '未知错误');
+        }
+        return await res.json();
+    },
+
+    async resetUserPassword(userId, password) {
+        const res = await fetch(`/api/admin/users/${userId}/password`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ password })
         });
         if (!res.ok) {
             const error = await res.json();

@@ -279,6 +279,10 @@ async function handleGlobalClick(e) {
                 deleteUser(id, actionBtn.dataset.name);
                 break;
 
+            case 'reset-password':
+                resetUserPassword(id, actionBtn.dataset.name);
+                break;
+
             case 'toggle-model-expand':
                 UI.toggleModelExpand(actionBtn.dataset.modelId);
                 break;
@@ -575,6 +579,21 @@ async function deleteUser(id, name) {
         UI.showToast('删除成功');
     } catch (e) {
         alert(e.message);
+    }
+}
+
+async function resetUserPassword(id, name) {
+    const newPassword = prompt(`请输入用户 "${name}" 的新密码（至少 6 位）：`);
+    if (newPassword === null) return; // 用户取消
+    if (!newPassword || newPassword.length < 6) {
+        alert('密码长度不能少于 6 位');
+        return;
+    }
+    try {
+        await TaskAPI.resetUserPassword(id, newPassword);
+        UI.showToast(`用户 "${name}" 的密码已重置`);
+    } catch (e) {
+        alert('重置密码失败: ' + e.message);
     }
 }
 

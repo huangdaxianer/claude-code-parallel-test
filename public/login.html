@@ -31,6 +31,10 @@
             max-width: 340px;
         }
 
+        .form-group {
+            margin-bottom: 0.75rem;
+        }
+
         .form-group input {
             width: 100%;
             padding: 0.875rem 1rem;
@@ -53,7 +57,7 @@
         .btn-login {
             width: 100%;
             padding: 0.875rem;
-            margin-top: 1rem;
+            margin-top: 0.5rem;
             background: #000;
             color: white;
             border: none;
@@ -114,11 +118,14 @@
 
         <form id="login-form">
             <div class="form-group">
-                <input type="text" id="username" name="username" placeholder="输入你的用户名" autocomplete="off" required>
+                <input type="text" id="username" name="username" placeholder="用户名" autocomplete="off" required>
+            </div>
+            <div class="form-group">
+                <input type="password" id="password" name="password" placeholder="密码" autocomplete="current-password" required>
             </div>
 
             <button type="submit" class="btn-login" id="login-btn">
-                开始
+                登录
             </button>
         </form>
     </div>
@@ -137,11 +144,18 @@
             e.preventDefault();
 
             const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
             const errorEl = document.getElementById('error-message');
             const btn = document.getElementById('login-btn');
 
             if (!username) {
                 errorEl.textContent = '请输入用户名';
+                errorEl.classList.add('show');
+                return;
+            }
+
+            if (!password) {
+                errorEl.textContent = '请输入密码';
                 errorEl.classList.add('show');
                 return;
             }
@@ -161,30 +175,46 @@
                 const res = await fetch('/api/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username })
+                    body: JSON.stringify({ username, password })
                 });
 
                 const data = await res.json();
-                console.log('[Login] Response:', data);
 
-                if (data.success && data.user && data.user.id) {
-                    // Store user info in localStorage (include role for permission checks)
-                    const userInfo = {
-                        id: data.user.id,
-                        username: data.user.username,
-                        role: data.user.role,
-                        group_id: data.user.group_id
-                    };
-                    console.log('[Login] Storing user info:', userInfo);
-                    localStorage.setItem('claude_user', JSON.stringify(userInfo));
+                if (data.needRegister) {
+                    // 用户不存在，弹窗确认是否注册
+                    btn.disabled = false;
+                    btn.textContent = '登录';
 
-                    // 设置 cookie，让 <img> 等浏览器原生请求也能带身份
-                    document.cookie = `username=${encodeURIComponent(userInfo.username)}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
+                    if (password.length < 6) {
+                        errorEl.textContent = '密码长度不能少于 6 位，请重新输入密码后注册';
+                        errorEl.classList.add('show');
+                        return;
+                    }
 
-                    // Redirect to original page (or task page by default)
-                    window.location.href = _redirectTo;
+                    if (!confirm(`用户名 "${username}" 不存在，是否注册新账号？`)) {
+                        return;
+                    }
+
+                    // 调用注册接口
+                    btn.disabled = true;
+                    btn.textContent = '注册中...';
+
+                    const regRes = await fetch('/api/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+                    const regData = await regRes.json();
+
+                    if (regData.success && regData.user) {
+                        handleLoginSuccess(regData.user);
+                    } else {
+                        errorEl.textContent = regData.error || '注册失败';
+                        errorEl.classList.add('show');
+                    }
+                } else if (data.success && data.user && data.user.id) {
+                    handleLoginSuccess(data.user);
                 } else {
-                    console.error('[Login] Invalid response:', data);
                     errorEl.textContent = data.error || '登录失败';
                     errorEl.classList.add('show');
                 }
@@ -194,9 +224,21 @@
                 errorEl.classList.add('show');
             } finally {
                 btn.disabled = false;
-                btn.textContent = '开始';
+                btn.textContent = '登录';
             }
         });
+
+        function handleLoginSuccess(user) {
+            const userInfo = {
+                id: user.id,
+                username: user.username,
+                role: user.role,
+                group_id: user.group_id
+            };
+            localStorage.setItem('claude_user', JSON.stringify(userInfo));
+            document.cookie = `username=${encodeURIComponent(userInfo.username)}; path=/; max-age=${60 * 60 * 24 * 30}; SameSite=Lax`;
+            window.location.href = _redirectTo;
+        }
     </script>
 </body>
 
