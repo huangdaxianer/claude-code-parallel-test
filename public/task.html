@@ -39,6 +39,7 @@
                 <div class="user-dropdown-username">
                     <span id="username-display"></span>
                 </div>
+                <button class="user-dropdown-item" onclick="openChangePasswordModal()" style="display:block; width:100%; padding:0.5rem 1rem; border:none; background:none; text-align:left; font-size:0.9rem; color:#334155; cursor:pointer; border-bottom:1px solid #e2e8f0;" onmouseover="this.style.backgroundColor='#f1f5f9'" onmouseout="this.style.backgroundColor='transparent'">修改密码</button>
                 <button class="user-dropdown-logout" onclick="logout()">退出登录</button>
             </div>
         </div>
@@ -553,6 +554,104 @@
                 if (el && tip) { tip.remove(); tip = null; }
             });
         })();
+    </script>
+
+    <!-- Change Password Modal -->
+    <div id="change-password-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:1rem; max-width:400px; width:90%; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+            <div style="padding:1.25rem 1.5rem; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="font-size:1.1rem; font-weight:600;">修改密码</h3>
+                <button onclick="closeChangePasswordModal()" style="background:none; border:none; font-size:1.5rem; color:#94a3b8; cursor:pointer;">&times;</button>
+            </div>
+            <div style="padding:1.5rem;">
+                <div id="cp-error" style="background:#fef2f2; color:#dc2626; padding:0.75rem; border-radius:0.5rem; font-size:0.875rem; margin-bottom:1rem; display:none;"></div>
+                <div id="cp-success" style="background:#f0fdf4; color:#16a34a; padding:0.75rem; border-radius:0.5rem; font-size:0.875rem; margin-bottom:1rem; display:none;"></div>
+                <form id="change-password-form">
+                    <div style="margin-bottom:1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500; font-size:0.9rem;">旧密码</label>
+                        <input type="password" id="cp-old-password" style="width:100%; padding:0.75rem; border:1px solid #e2e8f0; border-radius:0.5rem; font-size:0.9rem;" required>
+                    </div>
+                    <div style="margin-bottom:1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500; font-size:0.9rem;">新密码</label>
+                        <input type="password" id="cp-new-password" style="width:100%; padding:0.75rem; border:1px solid #e2e8f0; border-radius:0.5rem; font-size:0.9rem;" required minlength="6">
+                    </div>
+                    <div style="margin-bottom:1.5rem;">
+                        <label style="display:block; margin-bottom:0.5rem; font-weight:500; font-size:0.9rem;">确认新密码</label>
+                        <input type="password" id="cp-confirm-password" style="width:100%; padding:0.75rem; border:1px solid #e2e8f0; border-radius:0.5rem; font-size:0.9rem;" required minlength="6">
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:0.75rem;">
+                        <button type="button" onclick="closeChangePasswordModal()" style="padding:0.6rem 1.2rem; border:1px solid #e2e8f0; border-radius:0.5rem; background:white; cursor:pointer; font-size:0.9rem;">取消</button>
+                        <button type="submit" id="cp-submit-btn" style="padding:0.6rem 1.2rem; border:none; border-radius:0.5rem; background:#0f172a; color:white; cursor:pointer; font-size:0.9rem; font-weight:500;">确认修改</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openChangePasswordModal() {
+            const modal = document.getElementById('change-password-modal');
+            modal.style.display = 'flex';
+            document.getElementById('cp-old-password').value = '';
+            document.getElementById('cp-new-password').value = '';
+            document.getElementById('cp-confirm-password').value = '';
+            document.getElementById('cp-error').style.display = 'none';
+            document.getElementById('cp-success').style.display = 'none';
+        }
+
+        function closeChangePasswordModal() {
+            document.getElementById('change-password-modal').style.display = 'none';
+        }
+
+        document.getElementById('change-password-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeChangePasswordModal();
+        });
+
+        document.getElementById('change-password-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const errorEl = document.getElementById('cp-error');
+            const successEl = document.getElementById('cp-success');
+            const btn = document.getElementById('cp-submit-btn');
+            errorEl.style.display = 'none';
+            successEl.style.display = 'none';
+
+            const oldPassword = document.getElementById('cp-old-password').value;
+            const newPassword = document.getElementById('cp-new-password').value;
+            const confirmPassword = document.getElementById('cp-confirm-password').value;
+
+            if (newPassword.length < 6) {
+                errorEl.textContent = '新密码长度不能少于 6 位';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                errorEl.textContent = '两次输入的新密码不一致';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '提交中...';
+
+            try {
+                const data = await App.api.changePassword(oldPassword, newPassword);
+                if (data.success) {
+                    successEl.textContent = '密码修改成功';
+                    successEl.style.display = 'block';
+                    setTimeout(closeChangePasswordModal, 1500);
+                } else {
+                    errorEl.textContent = data.error || '修改失败';
+                    errorEl.style.display = 'block';
+                }
+            } catch (err) {
+                errorEl.textContent = '网络错误，请重试';
+                errorEl.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '确认修改';
+            }
+        });
     </script>
 </body>
 

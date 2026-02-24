@@ -7,7 +7,7 @@ const db = require('../db');
  * 从请求中提取当前用户信息
  */
 function getCurrentUser(req) {
-    const username = req.cookies?.username || req.headers['x-username'];
+    const username = req.cookies?.username;
     if (!username) return null;
     return db.prepare('SELECT id, username, role, group_id FROM users WHERE username = ?').get(username);
 }

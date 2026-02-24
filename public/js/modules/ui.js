@@ -864,6 +864,7 @@ export const UI = {
                                         <td>
                                             <div class="action-buttons">
                                                 <button class="action-btn action-btn-view" data-action="view-user-tasks" data-username="${escapeHtml(user.username)}">查看</button>
+                                                <button class="action-btn" data-action="reset-password" data-id="${user.id}" data-name="${escapeHtml(user.username)}" style="background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe;">重置密码</button>
                                                 <button class="action-btn action-btn-delete" data-action="delete-user" data-id="${user.id}" data-name="${escapeHtml(user.username)}">删除</button>
                                             </div>
                                         </td>
@@ -907,6 +908,7 @@ export const UI = {
                 <td>
                     <div class="action-buttons">
                         <button class="action-btn action-btn-view" data-action="view-user-tasks" data-username="${escapeHtml(user.username)}">查看</button>
+                        <button class="action-btn" data-action="reset-password" data-id="${user.id}" data-name="${escapeHtml(user.username)}" style="background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe;">重置密码</button>
                         <button class="action-btn action-btn-delete" data-action="delete-user" data-id="${user.id}" data-name="${escapeHtml(user.username)}">删除</button>
                     </div>
                 </td>

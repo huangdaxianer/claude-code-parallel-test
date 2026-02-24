@@ -406,5 +406,24 @@ try {
     console.error('[DB] Model group settings initialization error:', e.message);
 }
 
+// Migration: Add password_hash column to users
+try { db.exec("ALTER TABLE users ADD COLUMN password_hash TEXT"); } catch (e) { }
+
+// Migration: Set default password '111111' for existing users without password
+try {
+    const bcrypt = require('bcryptjs');
+    const usersWithoutPassword = db.prepare("SELECT id FROM users WHERE password_hash IS NULL").all();
+    if (usersWithoutPassword.length > 0) {
+        const defaultHash = bcrypt.hashSync('111111', 10);
+        const updateStmt = db.prepare("UPDATE users SET password_hash = ? WHERE id = ?");
+        for (const user of usersWithoutPassword) {
+            updateStmt.run(defaultHash, user.id);
+        }
+        console.log(`[DB] Set default password for ${usersWithoutPassword.length} existing users`);
+    }
+} catch (e) {
+    console.error('[DB] Password migration error:', e.message);
+}
+
 module.exports = db;
 module.exports.generateModelId = generateModelId;

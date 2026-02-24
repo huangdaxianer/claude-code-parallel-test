@@ -25,9 +25,6 @@
      * 获取认证头
      */
     GSB.getAuthHeaders = function () {
-        if (state.currentUser && state.currentUser.username) {
-            return { 'x-username': state.currentUser.username };
-        }
         return {};
     };
 

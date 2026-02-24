@@ -3,6 +3,7 @@
  */
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { generateModelId } = require('../db');
 const config = require('../config');
@@ -278,8 +279,9 @@ router.post('/users', (req, res) => {
         const created = [];
         const skipped = [];
 
+        const defaultPasswordHash = bcrypt.hashSync('111111', 10);
         const insertStmt = db.prepare(
-            "INSERT INTO users (username, role, group_id) VALUES (?, 'external', ?)"
+            "INSERT INTO users (username, role, group_id, password_hash) VALUES (?, 'external', ?, ?)"
         );
 
         for (const username of validUsernames) {
@@ -287,9 +289,9 @@ router.post('/users', (req, res) => {
             if (existing) {
                 skipped.push(username);
             } else {
-                insertStmt.run(username, groupId);
+                insertStmt.run(username, groupId, defaultPasswordHash);
                 created.push(username);
-                console.log(`[Admin] User created: ${username}`);
+                console.log(`[Admin] User created: ${username} (default password: 111111)`);
             }
         }
 
@@ -351,6 +353,32 @@ router.put('/users/:id/group', (req, res) => {
     } catch (e) {
         console.error('[API] Update user group error:', e);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// 重置用户密码 (Admin)
+router.put('/users/:id/password', (req, res) => {
+    try {
+        const { id } = req.params;
+        const { password } = req.body;
+
+        if (!password || password.length < 6) {
+            return res.status(400).json({ error: '密码长度不能少于 6 位' });
+        }
+
+        const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(id);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const passwordHash = bcrypt.hashSync(password, 10);
+        db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, id);
+
+        console.log(`[Admin] Password reset for user: ${user.username} (ID: ${id})`);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('[Admin] Reset password error:', e);
+        res.status(500).json({ error: '重置密码失败' });
     }
 });
 

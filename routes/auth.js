@@ -3,59 +3,146 @@
  */
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcryptjs');
 const db = require('../db');
 const config = require('../config');
+const { requireLogin } = require('../middleware/auth');
 
-// 登录 / 注册用户
+// 登录
 router.post('/login', (req, res) => {
-    const { username } = req.body;
+    const { username, password } = req.body;
 
     if (!username || typeof username !== 'string') {
-        return res.status(400).json({ error: 'Username is required' });
+        return res.status(400).json({ error: '请输入用户名' });
+    }
+
+    if (!password || typeof password !== 'string') {
+        return res.status(400).json({ error: '请输入密码' });
     }
 
     const trimmedUsername = username.trim();
 
     // 验证用户名格式
     if (!/^[a-zA-Z0-9_]+$/.test(trimmedUsername)) {
-        return res.status(400).json({ error: 'Username can only contain letters, numbers and underscores' });
+        return res.status(400).json({ error: '用户名只能包含字母、数字和下划线' });
     }
 
     if (trimmedUsername.length < 2 || trimmedUsername.length > 50) {
-        return res.status(400).json({ error: 'Username must be between 2 and 50 characters' });
+        return res.status(400).json({ error: '用户名长度需在 2-50 之间' });
     }
 
     try {
-        let user = db.prepare('SELECT id, username FROM users WHERE username = ?').get(trimmedUsername);
+        const user = db.prepare('SELECT id, username, role, group_id, password_hash FROM users WHERE username = ?').get(trimmedUsername);
 
         if (!user) {
-            // Check if new registration is allowed
+            // 用户不存在，检查是否允许注册
             const appConfig = config.getAppConfig();
             if (appConfig.allowNewRegistration === false) {
-                return res.status(403).json({ error: '当前用户不存在，请重试' });
+                return res.status(403).json({ error: '用户不存在，且当前不允许注册新用户' });
             }
-
-            // Get default group
-            const defaultGroup = db.prepare("SELECT id FROM user_groups WHERE is_default = 1").get();
-            const groupId = defaultGroup ? defaultGroup.id : null;
-
-            // Explicitly set role to 'external' to ensure default is correct regardless of DB schema default
-            const result = db.prepare("INSERT INTO users (username, role, group_id) VALUES (?, 'external', ?)").run(trimmedUsername, groupId);
-
-            // New users get default role (usually 'internal' or 'external' depending on schema default, let's query it back or assume default)
-            // It's safer to query it back to ensure we have the correct role
-            user = db.prepare('SELECT id, username, role, group_id FROM users WHERE id = ?').get(result.lastInsertRowid);
-            console.log(`[Auth] New user created: ${trimmedUsername} (ID: ${user.id}, Role: ${user.role}, Group: ${user.group_id})`);
-        } else {
-            // Ensure we fetch role for existing user too. The previous query only fetched id, username.
-            user = db.prepare('SELECT id, username, role, group_id FROM users WHERE username = ?').get(trimmedUsername);
-            console.log(`[Auth] User logged in: ${trimmedUsername} (ID: ${user.id}, Role: ${user.role}, Group: ${user.group_id})`);
+            // 通知前端弹窗确认注册
+            return res.json({ needRegister: true });
         }
+
+        // 用户存在，验证密码
+        if (!bcrypt.compareSync(password, user.password_hash)) {
+            return res.status(401).json({ error: '密码错误' });
+        }
+
+        console.log(`[Auth] User logged in: ${trimmedUsername} (ID: ${user.id}, Role: ${user.role})`);
+        return res.json({
+            success: true,
+            user: { id: user.id, username: user.username, role: user.role, group_id: user.group_id }
+        });
+    } catch (e) {
+        console.error('Login error:', e);
+        return res.status(500).json({ error: '登录失败' });
+    }
+});
+
+// 注册新用户
+router.post('/register', (req, res) => {
+    const { username, password } = req.body;
+
+    if (!username || typeof username !== 'string') {
+        return res.status(400).json({ error: '请输入用户名' });
+    }
+    if (!password || typeof password !== 'string') {
+        return res.status(400).json({ error: '请输入密码' });
+    }
+
+    const trimmedUsername = username.trim();
+
+    if (!/^[a-zA-Z0-9_]+$/.test(trimmedUsername)) {
+        return res.status(400).json({ error: '用户名只能包含字母、数字和下划线' });
+    }
+    if (trimmedUsername.length < 2 || trimmedUsername.length > 50) {
+        return res.status(400).json({ error: '用户名长度需在 2-50 之间' });
+    }
+    if (password.length < 6) {
+        return res.status(400).json({ error: '密码长度不能少于 6 位' });
+    }
+
+    // 检查是否允许注册
+    const appConfig = config.getAppConfig();
+    if (appConfig.allowNewRegistration === false) {
+        return res.status(403).json({ error: '当前不允许注册新用户' });
+    }
+
+    try {
+        // 检查用户是否已存在
+        const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(trimmedUsername);
+        if (existing) {
+            return res.status(400).json({ error: '用户名已存在' });
+        }
+
+        const passwordHash = bcrypt.hashSync(password, 10);
+        const defaultGroup = db.prepare("SELECT id FROM user_groups WHERE is_default = 1").get();
+        const groupId = defaultGroup ? defaultGroup.id : null;
+
+        const result = db.prepare(
+            "INSERT INTO users (username, role, group_id, password_hash) VALUES (?, 'external', ?, ?)"
+        ).run(trimmedUsername, groupId, passwordHash);
+
+        const user = db.prepare('SELECT id, username, role, group_id FROM users WHERE id = ?').get(result.lastInsertRowid);
+        console.log(`[Auth] New user registered: ${trimmedUsername} (ID: ${user.id})`);
 
         return res.json({ success: true, user });
     } catch (e) {
-        console.error('Login error:', e);
-        return res.status(500).json({ error: 'Login failed' });
+        console.error('Register error:', e);
+        return res.status(500).json({ error: '注册失败' });
+    }
+});
+
+// 修改密码（需要登录）
+router.post('/change-password', requireLogin, (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+        return res.status(400).json({ error: '请输入旧密码和新密码' });
+    }
+    if (newPassword.length < 6) {
+        return res.status(400).json({ error: '新密码长度不能少于 6 位' });
+    }
+
+    try {
+        const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
+        if (!user) {
+            return res.status(404).json({ error: '用户不存在' });
+        }
+
+        if (!bcrypt.compareSync(oldPassword, user.password_hash)) {
+            return res.status(401).json({ error: '旧密码错误' });
+        }
+
+        const newHash = bcrypt.hashSync(newPassword, 10);
+        db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, req.user.id);
+
+        console.log(`[Auth] Password changed for user: ${req.user.username} (ID: ${req.user.id})`);
+        return res.json({ success: true });
+    } catch (e) {
+        console.error('Change password error:', e);
+        return res.status(500).json({ error: '修改密码失败' });
     }
 });
 
