@@ -330,6 +330,18 @@
         document.getElementById('folder-input').addEventListener('change', App.modal.handleFolderUpload);
         document.getElementById('zip-input').addEventListener('change', App.modal.handleZipUpload);
 
+        // Cancel upload on click during uploading state
+        document.querySelector('.cancel-upload-text').addEventListener('click', (e) => {
+            e.stopPropagation();
+            App.modal.cancelUpload();
+        });
+
+        // Delete uploaded file on click
+        document.querySelector('.delete-text').addEventListener('click', (e) => {
+            e.stopPropagation();
+            App.modal.clearUploadedFile();
+        });
+
         // Dropdown options
         document.getElementById('trigger-zip-upload').addEventListener('click', (e) => {
             e.stopPropagation();

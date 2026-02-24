@@ -171,9 +171,16 @@ router.post('/upload', upload.any(), (req, res) => {
 
         let processedCount = 0;
         const resolvedTargetBase = path.resolve(targetBase);
+        const folderPrefix = safeFolderName + '/';
         filesToProcess.forEach((file, index) => {
             try {
-                const relPath = filePaths[index] || file.originalname;
+                let relPath = filePaths[index] || file.originalname;
+
+                // Strip top-level folder name to avoid double nesting
+                // webkitRelativePath returns "folderName/sub/file.txt", but targetBase already includes folderName
+                if (relPath.startsWith(folderPrefix)) {
+                    relPath = relPath.substring(folderPrefix.length);
+                }
 
                 // 防止目录穿越：确保文件路径不会跳出目标目录
                 const fullPath = path.resolve(targetBase, relPath);
@@ -291,6 +298,32 @@ router.post('/upload_zip', upload.single('file'), (req, res) => {
                     return res.status(500).json({ error: '解压失败: ' + stderr });
                 }
                 console.warn(`[Upload ZIP] Unzip finished with warnings (exit code ${exitCode}), continuing...`);
+            }
+
+            // Flatten single top-level directory to avoid double nesting
+            // e.g. data.zip containing data/ → uploads/123_data/data/ → flatten to uploads/123_data/
+            try {
+                const entries = fs.readdirSync(targetBase);
+                // Filter out hidden files like __MACOSX
+                const realEntries = entries.filter(e => !e.startsWith('__MACOSX') && !e.startsWith('.'));
+                if (realEntries.length === 1) {
+                    const singleDir = path.join(targetBase, realEntries[0]);
+                    if (fs.statSync(singleDir).isDirectory()) {
+                        const innerEntries = fs.readdirSync(singleDir);
+                        for (const item of innerEntries) {
+                            fs.renameSync(path.join(singleDir, item), path.join(targetBase, item));
+                        }
+                        fs.rmdirSync(singleDir);
+                        // Also clean up __MACOSX if present
+                        const macosxDir = path.join(targetBase, '__MACOSX');
+                        if (fs.existsSync(macosxDir)) {
+                            fs.rmSync(macosxDir, { recursive: true, force: true });
+                        }
+                        console.log(`[Upload ZIP] Flattened single top-level directory: ${realEntries[0]}`);
+                    }
+                }
+            } catch (flattenErr) {
+                console.warn('[Upload ZIP] Failed to flatten directory:', flattenErr.message);
             }
 
             // Count files

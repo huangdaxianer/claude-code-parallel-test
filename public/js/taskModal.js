@@ -107,6 +107,35 @@
     };
 
     /**
+     * 取消正在进行的上传
+     */
+    App.modal.cancelUpload = function () {
+        if (App.state._currentUploadXhr) {
+            App.state._currentUploadXhr.abort();
+        }
+    };
+
+    /**
+     * 删除已上传的文件
+     */
+    App.modal.clearUploadedFile = function () {
+        const browseBtn = document.getElementById('browse-folder-btn');
+        if (!browseBtn.classList.contains('has-file')) return;
+
+        App.state.selectedFolderPath = '';
+        App.state.incrementalSrcTaskId = null;
+        App.state.incrementalSrcModelName = null;
+        browseBtn.classList.remove('has-file');
+        browseBtn.querySelector('.folder-name').textContent = '';
+        browseBtn.querySelector('.upload-folder-icon').textContent = '📦';
+        document.getElementById('folder-input').value = '';
+        document.getElementById('zip-input').value = '';
+
+        const csvBtn = document.getElementById('browse-csv-btn');
+        if (csvBtn) csvBtn.style.display = 'flex';
+    };
+
+    /**
      * 触发 ZIP 文件选择 (Default action)
      */
     App.modal.triggerZipBrowse = function () {
@@ -141,24 +170,27 @@
         const browseBtn = document.getElementById('browse-folder-btn');
         const csvBtn = document.getElementById('browse-csv-btn');
         const iconSpan = browseBtn.querySelector('.upload-folder-icon');
+        const progressText = browseBtn.querySelector('.upload-progress-text');
 
-        const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
-        console.log(`[Upload] Starting ZIP upload: ${file.name}, ${sizeInMB} MB`);
+        const totalSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+        console.log(`[Upload] Starting ZIP upload: ${file.name}, ${totalSizeMB} MB`);
 
         if (file.size > 500 * 1024 * 1024) {
-            const confirmUpload = confirm(`文件大小为 ${sizeInMB} MB，上传可能需要较长时间。是否继续？`);
+            const confirmUpload = confirm(`文件大小为 ${totalSizeMB} MB，上传可能需要较长时间。是否继续？`);
             if (!confirmUpload) return;
         }
 
         try {
-            browseBtn.disabled = true;
+            browseBtn.disabled = false;
             browseBtn.classList.add('uploading');
             iconSpan.textContent = '⏳';
+            progressText.textContent = `上传中（0MB/${totalSizeMB}MB）`;
 
             const formData = new FormData();
             formData.append('file', file);
 
             const xhr = new XMLHttpRequest();
+            App.state._currentUploadXhr = xhr;
             const progressRing = document.getElementById('upload-progress-ring');
             const circle = progressRing.querySelector('.progress-ring__circle');
             const circumference = 10 * 2 * Math.PI;
@@ -173,6 +205,9 @@
                         const percent = event.loaded / event.total;
                         const offset = circumference - (percent * circumference);
                         circle.style.strokeDashoffset = offset;
+
+                        const loadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
+                        progressText.textContent = `上传中（${loadedMB}MB/${totalSizeMB}MB）`;
                     }
                 };
 
@@ -191,6 +226,7 @@
 
                 xhr.onerror = () => reject(new Error('Network error'));
                 xhr.ontimeout = () => reject(new Error('Timeout'));
+                xhr.onabort = () => reject(new Error('Upload cancelled'));
 
                 xhr.open('POST', '/api/tasks/upload_zip');
                 xhr.send(formData);
@@ -202,7 +238,7 @@
                 console.log(`[Upload] ZIP upload successful! Target path: ${data.path}`);
                 App.state.selectedFolderPath = data.path;
                 browseBtn.classList.add('has-file');
-                browseBtn.querySelector('.folder-name').textContent = file.name; // Show zip name
+                browseBtn.querySelector('.folder-name').textContent = file.name;
                 iconSpan.textContent = '📦';
 
                 if (csvBtn) csvBtn.style.display = 'none';
@@ -211,15 +247,22 @@
             }
 
         } catch (err) {
-            console.error('[Upload] ZIP upload error:', err);
-            alert('上传失败: ' + err.message);
+            if (err.message === 'Upload cancelled') {
+                console.log('[Upload] ZIP upload cancelled by user');
+            } else {
+                console.error('[Upload] ZIP upload error:', err);
+                alert('上传失败: ' + err.message);
+            }
         } finally {
+            App.state._currentUploadXhr = null;
             browseBtn.disabled = false;
             browseBtn.classList.remove('uploading');
+            progressText.textContent = '';
             if (!App.state.selectedFolderPath) {
                 iconSpan.textContent = '📦';
                 circle.style.strokeDashoffset = circumference;
             }
+            document.getElementById('zip-input').value = '';
         }
     };
 
@@ -254,15 +297,16 @@
         const browseBtn = document.getElementById('browse-folder-btn');
         const csvBtn = document.getElementById('browse-csv-btn');
         const iconSpan = browseBtn.querySelector('.upload-folder-icon');
+        const progressText = browseBtn.querySelector('.upload-progress-text');
 
         const totalFiles = files.length;
         let totalSize = 0;
         for (let i = 0; i < files.length; i++) {
             totalSize += files[i].size;
         }
-        const sizeInMB = (totalSize / (1024 * 1024)).toFixed(2);
+        const totalSizeMB = (totalSize / (1024 * 1024)).toFixed(1);
 
-        console.log(`[Upload] Starting folder upload: ${totalFiles} files, ${sizeInMB} MB`);
+        console.log(`[Upload] Starting folder upload: ${totalFiles} files, ${totalSizeMB} MB`);
 
         // Validate file count and size before upload
         if (totalFiles > 100000) {
@@ -271,14 +315,15 @@
         }
 
         if (totalSize > 500 * 1024 * 1024) {
-            const confirmUpload = confirm(`文件总大小为 ${sizeInMB} MB，上传可能需要较长时间。是否继续？`);
+            const confirmUpload = confirm(`文件总大小为 ${totalSizeMB} MB，上传可能需要较长时间。是否继续？`);
             if (!confirmUpload) return;
         }
 
         try {
-            browseBtn.disabled = true;
+            browseBtn.disabled = false;
             browseBtn.classList.add('uploading');
             iconSpan.textContent = '⏳';
+            progressText.textContent = `上传中（0MB/${totalSizeMB}MB）`;
 
             const formData = new FormData();
             const relativePath = files[0].webkitRelativePath;
@@ -302,6 +347,7 @@
             const startTime = Date.now();
 
             const xhr = new XMLHttpRequest();
+            App.state._currentUploadXhr = xhr;
             const progressRing = document.getElementById('upload-progress-ring');
             const circle = progressRing.querySelector('.progress-ring__circle');
             const circumference = 10 * 2 * Math.PI;
@@ -320,12 +366,14 @@
                         const offset = circumference - (percent * circumference);
                         circle.style.strokeDashoffset = offset;
 
+                        const loadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
+                        progressText.textContent = `上传中（${loadedMB}MB/${totalSizeMB}MB）`;
+
                         // Log progress every 2 seconds
                         const now = Date.now();
                         if (now - lastProgressUpdate > 2000) {
                             const percentStr = (percent * 100).toFixed(1);
-                            const uploadedMB = (event.loaded / (1024 * 1024)).toFixed(2);
-                            console.log(`[Upload] Progress: ${percentStr}% (${uploadedMB}/${sizeInMB} MB)`);
+                            console.log(`[Upload] Progress: ${percentStr}% (${loadedMB}/${totalSizeMB} MB)`);
                             lastProgressUpdate = now;
                         }
                     }
@@ -367,6 +415,8 @@
                     reject(new Error('Upload timeout - the folder may be too large. Try uploading a smaller folder.'));
                 };
 
+                xhr.onabort = () => reject(new Error('Upload cancelled'));
+
                 xhr.open('POST', '/api/tasks/upload');
                 console.log(`[Upload] XHR request opened, starting upload...`);
                 xhr.send(formData);
@@ -388,31 +438,37 @@
                 alert('上传失败: ' + errorMsg);
             }
         } catch (err) {
-            console.error(`[Upload] Catch block caught an error:`, err);
-            let errorMsg = err.message;
+            if (err.message === 'Upload cancelled') {
+                console.log('[Upload] Folder upload cancelled by user');
+            } else {
+                console.error(`[Upload] Catch block caught an error:`, err);
+                let errorMsg = err.message;
 
-            // Provide more specific error messages
-            if (err.message.includes('timeout')) {
-                errorMsg = '上传超时，文件夹可能过大。请尝试上传较小的文件夹或减少文件数量。';
-            } else if (err.message.includes('Network error')) {
-                errorMsg = '网络连接错误，请检查网络后重试。';
-            } else if (err.message.includes('413') || err.message.includes('too large')) {
-                errorMsg = '文件夹过大，请减小文件夹大小后重试。';
-            } else if (err.message.includes('400')) {
-                errorMsg = '请求格式错误，请重新选择文件夹。';
-            } else if (err.message.includes('500')) {
-                errorMsg = '服务器处理错误，请稍后重试。';
+                if (err.message.includes('timeout')) {
+                    errorMsg = '上传超时，文件夹可能过大。请尝试上传较小的文件夹或减少文件数量。';
+                } else if (err.message.includes('Network error')) {
+                    errorMsg = '网络连接错误，请检查网络后重试。';
+                } else if (err.message.includes('413') || err.message.includes('too large')) {
+                    errorMsg = '文件夹过大，请减小文件夹大小后重试。';
+                } else if (err.message.includes('400')) {
+                    errorMsg = '请求格式错误，请重新选择文件夹。';
+                } else if (err.message.includes('500')) {
+                    errorMsg = '服务器处理错误，请稍后重试。';
+                }
+
+                alert('上传错误: ' + errorMsg);
             }
-
-            alert('上传错误: ' + errorMsg);
         } finally {
+            App.state._currentUploadXhr = null;
             browseBtn.disabled = false;
             browseBtn.classList.remove('uploading');
+            progressText.textContent = '';
             if (!App.state.selectedFolderPath) {
                 iconSpan.textContent = '📁';
                 // Reset progress ring
                 circle.style.strokeDashoffset = circumference;
             }
+            document.getElementById('folder-input').value = '';
         }
     };
 

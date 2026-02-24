@@ -1541,6 +1541,45 @@
             display: none;
         }
 
+        .upload-folder-btn.uploading .upload-folder-text {
+            display: none;
+        }
+
+        .upload-folder-btn .upload-progress-text {
+            display: none;
+            flex: 1;
+            text-align: left;
+            font-size: 0.85rem;
+            color: #64748b;
+        }
+
+        .upload-folder-btn.uploading .upload-progress-text {
+            display: block;
+        }
+
+        .upload-folder-btn .cancel-upload-text {
+            display: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-left: auto;
+            padding-right: 0.5rem;
+            color: #ef4444;
+        }
+
+        .upload-folder-btn.uploading:hover .cancel-upload-text {
+            display: block;
+        }
+
+        .upload-folder-btn.uploading:hover {
+            background: #fef2f2;
+            border-color: #ef4444;
+            color: #b91c1c;
+        }
+
+        .upload-folder-btn.uploading:hover .upload-progress-text {
+            color: #b91c1c;
+        }
+
         /* 修复新建任务模态框的样式逻辑 */
         .task-modal-body {
             white-space: normal !important;
@@ -2403,6 +2442,12 @@
 
         .upload-btn-group:hover .upload-dropdown-menu {
             display: block;
+        }
+
+        /* Hide dropdown when uploading or has-file */
+        .upload-btn-group:has(.uploading):hover .upload-dropdown-menu,
+        .upload-btn-group:has(.has-file):hover .upload-dropdown-menu {
+            display: none;
         }
 
         .upload-dropdown-item {
