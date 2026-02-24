@@ -161,8 +161,8 @@
             }
 
             // Basic validation: alphanumeric and underscore only
-            if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-                errorEl.textContent = '用户名只能包含字母、数字和下划线';
+            if (!/^[a-zA-Z0-9_.]+$/.test(username)) {
+                errorEl.textContent = '用户名只能包含字母、数字、下划线和英文句点';
                 errorEl.classList.add('show');
                 return;
             }

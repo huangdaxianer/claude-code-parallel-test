@@ -263,8 +263,8 @@ router.post('/users', (req, res) => {
         const validUsernames = [];
 
         for (const username of usernameList) {
-            if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-                invalidUsernames.push({ username, reason: '只能包含字母、数字和下划线' });
+            if (!/^[a-zA-Z0-9_.]+$/.test(username)) {
+                invalidUsernames.push({ username, reason: '只能包含字母、数字、下划线和英文句点' });
             } else if (username.length < 2 || username.length > 50) {
                 invalidUsernames.push({ username, reason: '长度必须在2-50之间' });
             } else {

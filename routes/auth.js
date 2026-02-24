@@ -23,8 +23,8 @@ router.post('/login', (req, res) => {
     const trimmedUsername = username.trim();
 
     // 验证用户名格式
-    if (!/^[a-zA-Z0-9_]+$/.test(trimmedUsername)) {
-        return res.status(400).json({ error: '用户名只能包含字母、数字和下划线' });
+    if (!/^[a-zA-Z0-9_.]+$/.test(trimmedUsername)) {
+        return res.status(400).json({ error: '用户名只能包含字母、数字、下划线和英文句点' });
     }
 
     if (trimmedUsername.length < 2 || trimmedUsername.length > 50) {
@@ -73,8 +73,8 @@ router.post('/register', (req, res) => {
 
     const trimmedUsername = username.trim();
 
-    if (!/^[a-zA-Z0-9_]+$/.test(trimmedUsername)) {
-        return res.status(400).json({ error: '用户名只能包含字母、数字和下划线' });
+    if (!/^[a-zA-Z0-9_.]+$/.test(trimmedUsername)) {
+        return res.status(400).json({ error: '用户名只能包含字母、数字、下划线和英文句点' });
     }
     if (trimmedUsername.length < 2 || trimmedUsername.length > 50) {
         return res.status(400).json({ error: '用户名长度需在 2-50 之间' });
