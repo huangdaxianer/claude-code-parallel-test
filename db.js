@@ -298,6 +298,9 @@ try { db.exec("ALTER TABLE model_configs ADD COLUMN task_timeout_seconds INTEGER
 // Migration: Add is_preview_model flag (only one model should have this set to 1)
 try { db.exec("ALTER TABLE model_configs ADD COLUMN is_preview_model INTEGER DEFAULT 0"); } catch (e) { }
 
+// Migration: Add always_thinking_enabled flag (enables thinking/reasoning mode for the model)
+try { db.exec("ALTER TABLE model_configs ADD COLUMN always_thinking_enabled INTEGER DEFAULT 0"); } catch (e) { }
+
 // Migration: Add retry_count to model_runs (tracks how many times this run has been retried)
 try { db.exec("ALTER TABLE model_runs ADD COLUMN retry_count INTEGER DEFAULT 0"); } catch (e) { }
 

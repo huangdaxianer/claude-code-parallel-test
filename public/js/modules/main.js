@@ -677,6 +677,7 @@ async function handleModelSubmit(e) {
         description: document.getElementById('m-desc').value,
         is_default_checked: document.getElementById('m-default-checked').checked,
         is_preview_model: document.getElementById('m-preview-model').checked,
+        always_thinking_enabled: document.getElementById('m-always-thinking').checked,
         auto_retry_limit: parseInt(document.getElementById('m-auto-retry-limit').value) || 0,
         activity_timeout_seconds: activityTimeoutVal !== '' ? parseInt(activityTimeoutVal) : null,
         task_timeout_seconds: taskTimeoutVal !== '' ? parseInt(taskTimeoutVal) : null

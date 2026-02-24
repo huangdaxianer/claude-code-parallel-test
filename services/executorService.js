@@ -237,6 +237,9 @@ function executeModel(taskId, modelId, modelConfig) {
         console.log(`[Executor] Using firejail sandbox for ${subtaskKey}`);
 
         const envVars = buildSafeEnv(modelId);
+        if (modelConfig.alwaysThinkingEnabled) {
+            envVars.alwaysThinkingEnabled = 'true';
+        }
         if (executorConfig.useIsolation) {
             // 隔离用户模式
             child = spawn('sudo', [
@@ -245,6 +248,7 @@ function executeModel(taskId, modelId, modelConfig) {
                 `ANTHROPIC_AUTH_TOKEN=${envVars.ANTHROPIC_AUTH_TOKEN}`,
                 `ANTHROPIC_BASE_URL=${envVars.ANTHROPIC_BASE_URL}`,
                 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${envVars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC}`,
+                ...(envVars.alwaysThinkingEnabled ? [`alwaysThinkingEnabled=${envVars.alwaysThinkingEnabled}`] : []),
                 'firejail', ...fullArgs
             ], {
                 cwd: folderPath,
@@ -264,6 +268,9 @@ function executeModel(taskId, modelId, modelConfig) {
         // 无沙箱模式
         console.log(`[Executor] Running without sandbox for ${subtaskKey}`);
         const envVars = buildSafeEnv(modelId);
+        if (modelConfig.alwaysThinkingEnabled) {
+            envVars.alwaysThinkingEnabled = 'true';
+        }
 
         if (executorConfig.useIsolation) {
             child = spawn('sudo', [
@@ -272,6 +279,7 @@ function executeModel(taskId, modelId, modelConfig) {
                 `ANTHROPIC_AUTH_TOKEN=${envVars.ANTHROPIC_AUTH_TOKEN}`,
                 `ANTHROPIC_BASE_URL=${envVars.ANTHROPIC_BASE_URL}`,
                 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${envVars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC}`,
+                ...(envVars.alwaysThinkingEnabled ? [`alwaysThinkingEnabled=${envVars.alwaysThinkingEnabled}`] : []),
                 executorConfig.claudeBin, ...claudeArgs
             ], {
                 cwd: folderPath,

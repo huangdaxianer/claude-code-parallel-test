@@ -67,7 +67,7 @@ router.all('/:modelId/{*path}', (req, res) => {
     console.log(`[Proxy] ${req.method} model=${modelId} path=${remainingPath}`);
 
     // 查找模型的真实 API 配置
-    let apiKey, apiBaseUrl;
+    let apiKey, apiBaseUrl, alwaysThinkingEnabled = false;
 
     if (modelId === '__default__') {
         // 默认配置（preview 等场景）
@@ -75,7 +75,7 @@ router.all('/:modelId/{*path}', (req, res) => {
         apiBaseUrl = process.env.ANTHROPIC_BASE_URL;
     } else {
         const modelConfig = db.prepare(
-            'SELECT api_key, api_base_url FROM model_configs WHERE model_id = ?'
+            'SELECT api_key, api_base_url, always_thinking_enabled FROM model_configs WHERE model_id = ?'
         ).get(modelId);
 
         if (!modelConfig) {
@@ -86,6 +86,7 @@ router.all('/:modelId/{*path}', (req, res) => {
         // 模型独立配置优先，null 时 fallback 到全局默认
         apiKey = modelConfig.api_key || process.env.ANTHROPIC_AUTH_TOKEN;
         apiBaseUrl = modelConfig.api_base_url || process.env.ANTHROPIC_BASE_URL;
+        alwaysThinkingEnabled = !!modelConfig.always_thinking_enabled;
     }
 
     if (!apiKey || !apiBaseUrl) {
@@ -125,30 +126,77 @@ router.all('/:modelId/{*path}', (req, res) => {
 
     // 发起代理请求（如果环境配置了 HTTP 代理，则通过代理转发）
     const agent = isHttps ? httpsProxyAgent : httpProxyAgent;
-    const requestOptions = {
-        method: req.method,
-        headers: forwardHeaders,
-    };
-    if (agent) {
-        requestOptions.agent = agent;
+
+    /**
+     * 发送请求到上游
+     * @param {Buffer|null} bodyBuffer - 修改后的请求体，null 表示用 pipe 透传
+     */
+    function sendUpstream(bodyBuffer) {
+        const requestOptions = {
+            method: req.method,
+            headers: { ...forwardHeaders },
+        };
+        if (agent) {
+            requestOptions.agent = agent;
+        }
+
+        // 如果有修改后的 body，更新 content-length
+        if (bodyBuffer !== null) {
+            requestOptions.headers['content-length'] = Buffer.byteLength(bodyBuffer);
+        }
+
+        const proxyReq = requestModule.request(targetUrl, requestOptions, (proxyRes) => {
+            // 转发响应状态码和 headers
+            res.writeHead(proxyRes.statusCode, proxyRes.headers);
+            // 管道转发响应体（天然支持 SSE 流式传输）
+            proxyRes.pipe(res);
+        });
+
+        proxyReq.on('error', (err) => {
+            console.error(`[Proxy] Upstream error for model ${modelId}:`, err.message);
+            if (!res.headersSent) {
+                res.status(502).json({ error: 'Proxy upstream error', detail: err.message });
+            }
+        });
+
+        if (bodyBuffer !== null) {
+            proxyReq.end(bodyBuffer);
+        } else {
+            req.pipe(proxyReq);
+        }
     }
 
-    const proxyReq = requestModule.request(targetUrl, requestOptions, (proxyRes) => {
-        // 转发响应状态码和 headers
-        res.writeHead(proxyRes.statusCode, proxyRes.headers);
-        // 管道转发响应体（天然支持 SSE 流式传输）
-        proxyRes.pipe(res);
-    });
+    // 对 POST 请求注入/覆盖 thinking 配置
+    if (req.method === 'POST') {
+        const chunks = [];
+        req.on('data', chunk => chunks.push(chunk));
+        req.on('end', () => {
+            try {
+                const body = JSON.parse(Buffer.concat(chunks).toString());
 
-    proxyReq.on('error', (err) => {
-        console.error(`[Proxy] Upstream error for model ${modelId}:`, err.message);
-        if (!res.headersSent) {
-            res.status(502).json({ error: 'Proxy upstream error', detail: err.message });
-        }
-    });
+                if (alwaysThinkingEnabled) {
+                    // 启用推理：注入 thinking enabled（保留已有的 budget_tokens 或使用默认值）
+                    if (!body.thinking || body.thinking.type !== 'enabled') {
+                        body.thinking = { type: 'enabled', budget_tokens: body.thinking?.budget_tokens || 10000 };
+                    }
+                } else {
+                    // 禁用推理：强制移除 thinking 或设置为 disabled
+                    delete body.thinking;
+                }
 
-    // 管道转发请求体到上游（处理 POST body 和流式传输）
-    req.pipe(proxyReq);
+                const modified = Buffer.from(JSON.stringify(body));
+                console.log(`[Proxy] Thinking ${alwaysThinkingEnabled ? 'enabled' : 'disabled'} for model ${modelId}`);
+                sendUpstream(modified);
+            } catch (e) {
+                // JSON 解析失败，透传原始请求体
+                console.warn(`[Proxy] Failed to parse request body for thinking injection: ${e.message}`);
+                sendUpstream(Buffer.concat(chunks));
+            }
+        });
+    } else {
+        // 非 POST 请求直接 pipe 透传
+        sendUpstream(null);
+    }
 });
 
 module.exports = router;
