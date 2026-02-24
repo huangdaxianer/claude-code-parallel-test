@@ -16,6 +16,24 @@ const https = require('https');
 const { URL } = require('url');
 const db = require('../db');
 
+// HTTP 代理支持：当环境中配置了 HTTPS_PROXY / HTTP_PROXY 时，
+// 通过 https-proxy-agent 让 Node.js 原生 http/https 请求走代理
+let httpsProxyAgent = null;
+let httpProxyAgent = null;
+try {
+    const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy
+        || process.env.HTTP_PROXY || process.env.http_proxy;
+    if (proxyUrl) {
+        const { HttpsProxyAgent } = require('https-proxy-agent');
+        const { HttpProxyAgent } = require('http-proxy-agent');
+        httpsProxyAgent = new HttpsProxyAgent(proxyUrl);
+        httpProxyAgent = new HttpProxyAgent(proxyUrl);
+        console.log('[Proxy] Using HTTP proxy for upstream requests:', proxyUrl.replace(/:[^:@]+@/, ':***@'));
+    }
+} catch (e) {
+    console.warn('[Proxy] Failed to initialize proxy agent:', e.message);
+}
+
 const router = express.Router();
 
 /**
@@ -105,11 +123,17 @@ router.all('/:modelId/{*path}', (req, res) => {
     forwardHeaders['authorization'] = `Bearer ${apiKey}`;
     forwardHeaders['host'] = targetUrl.host;
 
-    // 发起代理请求
-    const proxyReq = requestModule.request(targetUrl, {
+    // 发起代理请求（如果环境配置了 HTTP 代理，则通过代理转发）
+    const agent = isHttps ? httpsProxyAgent : httpProxyAgent;
+    const requestOptions = {
         method: req.method,
         headers: forwardHeaders,
-    }, (proxyRes) => {
+    };
+    if (agent) {
+        requestOptions.agent = agent;
+    }
+
+    const proxyReq = requestModule.request(targetUrl, requestOptions, (proxyRes) => {
         // 转发响应状态码和 headers
         res.writeHead(proxyRes.statusCode, proxyRes.headers);
         // 管道转发响应体（天然支持 SSE 流式传输）

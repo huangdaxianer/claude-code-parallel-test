@@ -22,6 +22,10 @@ const ENV_WHITELIST = [
     'TMPDIR', 'TEMP', 'TMP',
     // Node.js
     'NODE_PATH', 'NODE_ENV',
+    // 网络代理（沙箱/企业内网环境需要通过代理访问外部网络）
+    'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+    'NO_PROXY', 'no_proxy',
+    'GLOBAL_AGENT_HTTP_PROXY', 'GLOBAL_AGENT_HTTPS_PROXY', 'GLOBAL_AGENT_NO_PROXY',
     // Claude CLI 模型默认值（非敏感，只是模型名称）
     'ANTHROPIC_MODEL',
     'ANTHROPIC_DEFAULT_HAIKU_MODEL',
