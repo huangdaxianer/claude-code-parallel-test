@@ -131,8 +131,9 @@ router.all('/:modelId/{*path}', (req, res) => {
     /**
      * 发送请求到上游
      * @param {Buffer|null} bodyBuffer - 修改后的请求体，null 表示用 pipe 透传
+     * @param {string|null} responseModelOverride - 如果非空，将响应 SSE 中的 model 字段改写为此值
      */
-    function sendUpstream(bodyBuffer) {
+    function sendUpstream(bodyBuffer, responseModelOverride) {
         const requestOptions = {
             method: req.method,
             headers: { ...forwardHeaders },
@@ -147,10 +148,28 @@ router.all('/:modelId/{*path}', (req, res) => {
         }
 
         const proxyReq = requestModule.request(targetUrl, requestOptions, (proxyRes) => {
-            // 转发响应状态码和 headers
             res.writeHead(proxyRes.statusCode, proxyRes.headers);
-            // 管道转发响应体（天然支持 SSE 流式传输）
-            proxyRes.pipe(res);
+
+            if (responseModelOverride) {
+                // SSE 流式响应：改写 model 字段，让 Claude Code 认为是 Claude 模型
+                // model 字段仅出现在 message_start 事件的 JSON 中，正则替换安全
+                // （助手文本内容中的引号会被 JSON 转义为 \"，不会被匹配）
+                const modelPattern = /"model"\s*:\s*"[^"]+"/g;
+                const modelReplacement = `"model":"${responseModelOverride}"`;
+
+                proxyRes.on('data', (chunk) => {
+                    const data = chunk.toString().replace(modelPattern, modelReplacement);
+                    res.write(data);
+                });
+                proxyRes.on('end', () => res.end());
+                proxyRes.on('error', (err) => {
+                    console.error(`[Proxy] Response stream error:`, err.message);
+                    res.end();
+                });
+            } else {
+                // 无需改写，直接管道转发（天然支持 SSE 流式传输）
+                proxyRes.pipe(res);
+            }
         });
 
         proxyReq.on('error', (err) => {
@@ -167,7 +186,7 @@ router.all('/:modelId/{*path}', (req, res) => {
         }
     }
 
-    // 对 POST 请求注入/覆盖 thinking 配置
+    // 对 POST 请求注入/覆盖 thinking 配置 & model 改写
     if (req.method === 'POST') {
         const chunks = [];
         req.on('data', chunk => chunks.push(chunk));
@@ -175,10 +194,15 @@ router.all('/:modelId/{*path}', (req, res) => {
             try {
                 const body = JSON.parse(Buffer.concat(chunks).toString());
 
+                // 记录 Claude Code 发来的原始 model 名（改写前），用于响应回写
+                const originalRequestModel = body.model || null;
+
                 // 强制改写 model 字段为实际的上游模型名（解决 subagent/teammate 使用 claude-opus-4-6 的问题）
+                let modelRewritten = false;
                 if (actualModelName && body.model && body.model !== actualModelName) {
                     console.log(`[Proxy] Rewriting model: ${body.model} → ${actualModelName}`);
                     body.model = actualModelName;
+                    modelRewritten = true;
                 }
 
                 if (alwaysThinkingEnabled) {
@@ -191,16 +215,19 @@ router.all('/:modelId/{*path}', (req, res) => {
 
                 const modified = Buffer.from(JSON.stringify(body));
                 console.log(`[Proxy] Thinking ${alwaysThinkingEnabled ? 'enabled' : 'disabled'} for model ${modelId}`);
-                sendUpstream(modified);
+
+                // 如果 model 被改写了，响应中也需要改写回来（让 Claude Code 以为是 Claude 模型）
+                const responseModelOverride = modelRewritten ? originalRequestModel : null;
+                sendUpstream(modified, responseModelOverride);
             } catch (e) {
                 // JSON 解析失败，透传原始请求体
                 console.warn(`[Proxy] Failed to parse request body for thinking injection: ${e.message}`);
-                sendUpstream(Buffer.concat(chunks));
+                sendUpstream(Buffer.concat(chunks), null);
             }
         });
     } else {
         // 非 POST 请求直接 pipe 透传
-        sendUpstream(null);
+        sendUpstream(null, null);
     }
 });
 

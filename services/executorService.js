@@ -212,9 +212,17 @@ function executeModel(taskId, modelId, modelConfig) {
     // 获取 prompt
     const prompt = getPrompt(taskId);
 
-    // 构建 Claude CLI 参数（使用 modelName 作为 --model 值）
+    // 构建 Claude CLI 参数
+    // Agent Teams 模式下，如果模型不是 Claude 系列，伪装为 claude-sonnet-4-6
+    // 这样 Claude Code 内部的 inbox polling 等特性才会生效
+    // proxy 会负责将请求中的 model 改写为实际上游模型名，并将响应中的 model 改写回来
+    let cliModelName = actualModelName;
+    if (modelConfig.enableAgentTeams && !actualModelName.match(/^(claude-|anthropic\/claude)/i)) {
+        console.log(`[Executor] Agent Teams: masquerading model ${actualModelName} as claude-sonnet-4-6`);
+        cliModelName = 'claude-sonnet-4-6';
+    }
     const claudeArgs = [
-        '--model', actualModelName,
+        '--model', cliModelName,
         '--allowedTools', 'Read(./**),Edit(./**),Bash(.**/*)',
         '--disallowedTools', 'EnterPlanMode,ExitPlanMode',
         '--dangerously-skip-permissions',
