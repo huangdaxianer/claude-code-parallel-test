@@ -105,7 +105,7 @@
                                 summary.className = 'json-summary';
                                 const safePreview = event.preview_text.length > 200 ? event.preview_text.slice(0, 200) + '...' : event.preview_text;
 
-                                const standardTypes = ['TXT', 'USER', 'ERROR', 'SUBAGENT', 'SUBAGENT_RESULT', 'Bash', 'Write', 'Edit', 'Read', 'ExitPlanMode', 'EnterPlanMode', 'AskUserQuestion', 'TodoWrite'];
+                                const standardTypes = ['TXT', 'USER', 'ERROR', 'SUBAGENT', 'SUBAGENT_RESULT', 'Bash', 'Write', 'Edit', 'Read', 'ExitPlanMode', 'EnterPlanMode', 'AskUserQuestion', 'TodoWrite', 'SendMessage', 'TeamCreate', 'TeamDelete', 'TaskCreate', 'TaskUpdate', 'TaskList'];
                                 const isStandard = standardTypes.includes(event.type);
                                 const displayType = isStandard ? event.type : 'ERROR';
                                 const displayClass = isStandard ? (event.status_class || 'type-tool') : 'type-error';

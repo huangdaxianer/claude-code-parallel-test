@@ -313,6 +313,21 @@ class IngestHandler {
             if (idx !== -1) previewText = `(${idx + 1}/${todos.length}) ${todos[idx].content}`;
             else if (todos.every(t => t.status === 'completed')) previewText = 'completed';
             else previewText = `Assigned: ${todos.length} todos`;
+        } else if (toolName === 'SendMessage') {
+            // Agent Teams: 消息发送
+            const recipient = input.recipient || input.target || 'broadcast';
+            const msgContent = input.content || '';
+            previewText = `→ ${recipient}: ${msgContent.slice(0, 80)}`;
+        } else if (toolName === 'TeamCreate') {
+            previewText = input.team_name || input.description || '';
+        } else if (toolName === 'TeamDelete') {
+            previewText = input.team_name || 'delete team';
+        } else if (toolName === 'TaskCreate') {
+            previewText = input.description || input.title || '';
+        } else if (toolName === 'TaskUpdate') {
+            previewText = input.status ? `#${input.task_id || ''} → ${input.status}` : JSON.stringify(input);
+        } else if (toolName === 'TaskList') {
+            previewText = input.team_name || 'list tasks';
         } else {
             previewText = JSON.stringify(input);
         }
@@ -335,7 +350,7 @@ class IngestHandler {
 
         // 某些工具强制绿色
         const targetTool = db.prepare('SELECT tool_name FROM log_entries WHERE run_id = ? AND tool_use_id = ?').get(this.runId, block.tool_use_id);
-        if (targetTool && ['EnterPlanMode', 'ExitPlanMode', 'Read'].includes(targetTool.tool_name)) {
+        if (targetTool && ['EnterPlanMode', 'ExitPlanMode', 'Read', 'SendMessage', 'TeamCreate', 'TeamDelete', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TodoWrite'].includes(targetTool.tool_name)) {
             resultClass = 'type-success';
         }
 
