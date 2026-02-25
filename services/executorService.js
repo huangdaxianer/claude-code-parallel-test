@@ -230,6 +230,32 @@ function executeModel(taskId, modelId, modelConfig) {
         '--verbose'
     ];
 
+    // Agent Teams: 追加 system prompt，要求模型在关键节点主动检查 inbox
+    // 由于 headless 模式下 inbox 自动轮询存在已知 bug（GitHub #23415），
+    // 需要通过 system prompt 引导模型手动 Read inbox 文件来获取子 agent 的消息
+    if (modelConfig.enableAgentTeams) {
+        const inboxCheckPrompt = [
+            '## Agent Teams Inbox Check Instructions',
+            '',
+            'You are running in Agent Teams mode. Due to a known limitation in headless mode,',
+            'inbox messages from sub-agents may NOT be automatically delivered to you.',
+            'You MUST proactively check your inbox by reading the inbox file at these critical moments:',
+            '',
+            '1. **After advancing a todo item** — When you complete a task or move to the next todo, check inbox for any messages from teammates.',
+            '2. **Before finishing your work** — Before you consider your job done, check inbox to ensure no teammate has sent important messages or results.',
+            '3. **When expecting a sub-agent reply** — After you send a message to a sub-agent (via SendMessage) or assign them a task, periodically check inbox while waiting.',
+            '',
+            'How to check inbox:',
+            '- Read the team config file at `~/.claude/teams/*/config.json` to find your team name and your agent name.',
+            '- Then read your inbox file at `~/.claude/teams/{team-name}/inboxes/{your-agent-name}.json`.',
+            '- Process any unread messages (where `read` is false) and act on them.',
+            '',
+            'IMPORTANT: Do NOT rely on automatic message delivery. Always manually check your inbox at the moments described above.'
+        ].join('\n');
+        claudeArgs.push('--append-system-prompt', inboxCheckPrompt);
+        console.log(`[Executor] Agent Teams: appended inbox check system prompt for ${subtaskKey}`);
+    }
+
     // 日志文件
     const logFile = path.join(logsDir, `${modelId}.txt`);
     const logStream = fs.createWriteStream(logFile, { flags: 'a' });
