@@ -73,6 +73,12 @@
             console.error('Failed to load models:', e);
             container.innerHTML = '<div style="color: #dc2626; font-size: 0.9rem;">加载模型失败</div>';
         }
+
+        // 仅管理员可见 Agent Teams 选项
+        const agentTeamsOption = document.getElementById('agent-teams-option');
+        if (agentTeamsOption && App.state.currentUser && App.state.currentUser.role === 'admin') {
+            agentTeamsOption.style.display = '';
+        }
     };
 
     /**
@@ -748,7 +754,8 @@
                         models: selectedModels,
                         srcTaskId: App.state.incrementalSrcTaskId,
                         srcModelName: App.state.incrementalSrcModelName,
-                        userId: App.state.currentUser.id
+                        userId: App.state.currentUser.id,
+                        enableAgentTeams: document.getElementById('enable-agent-teams')?.checked || false
                     };
 
                     const data = await App.api.createTask(newTask);
@@ -796,7 +803,8 @@
                 models: selectedModels,
                 srcTaskId: App.state.incrementalSrcTaskId,
                 srcModelName: App.state.incrementalSrcModelName,
-                userId: App.state.currentUser.id
+                userId: App.state.currentUser.id,
+                enableAgentTeams: document.getElementById('enable-agent-teams')?.checked || false
             };
 
             console.log('[StartTask] Creating task with:', newTask);

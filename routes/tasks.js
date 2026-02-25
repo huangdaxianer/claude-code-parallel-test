@@ -418,11 +418,13 @@ router.post('/', (req, res) => {
 
     // 写入数据库记录 — 强制使用当前登录用户的 ID，不信任前端传来的 userId
     const currentUserId = req.user.id;
-    console.log(`[Task Create] taskId=${task.taskId}, userId=${currentUserId} (from session)`);
+    // 仅管理员可启用 Agent Teams
+    const enableAgentTeams = (req.user.role === 'admin' && task.enableAgentTeams) ? 1 : 0;
+    console.log(`[Task Create] taskId=${task.taskId}, userId=${currentUserId} (from session), enableAgentTeams=${enableAgentTeams}`);
     console.log(`[Task Create] Models received: ${JSON.stringify(task.models)}`);
     try {
-        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir, user_id) VALUES (?, ?, ?, ?, ?)');
-        insertTask.run(task.taskId, task.title, task.prompt, task.baseDir, currentUserId);
+        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir, user_id, enable_agent_teams) VALUES (?, ?, ?, ?, ?, ?)');
+        insertTask.run(task.taskId, task.title, task.prompt, task.baseDir, currentUserId, enableAgentTeams);
 
         const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_id, status) VALUES (?, ?, ?)');
         const models = Array.isArray(task.models) ? task.models : [];

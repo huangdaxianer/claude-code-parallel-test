@@ -33,7 +33,8 @@ async function processQueue() {
             SELECT mr.id, mr.task_id, mr.model_id, t.title,
                    mc.endpoint_name, mc.api_base_url, mc.api_key, mc.model_name,
                    mc.activity_timeout_seconds, mc.task_timeout_seconds,
-                   mc.always_thinking_enabled
+                   mc.always_thinking_enabled,
+                   t.enable_agent_teams
             FROM model_runs mr
             JOIN tasks t ON mr.task_id = t.task_id
             JOIN task_queue tq ON mr.task_id = tq.task_id
@@ -62,7 +63,8 @@ async function processQueue() {
                 modelName: subtask.model_name || null,
                 activityTimeoutSeconds: subtask.activity_timeout_seconds ?? null,
                 taskTimeoutSeconds: subtask.task_timeout_seconds ?? null,
-                alwaysThinkingEnabled: !!subtask.always_thinking_enabled
+                alwaysThinkingEnabled: !!subtask.always_thinking_enabled,
+                enableAgentTeams: !!subtask.enable_agent_teams
             });
         }
     } catch (e) {

@@ -321,6 +321,9 @@ try { db.exec("ALTER TABLE gsb_jobs ADD COLUMN model_b_id TEXT"); } catch (e) { 
 // Migration: Add swapped column to gsb_tasks (1 = model A/B positions are swapped for this task)
 try { db.exec("ALTER TABLE gsb_tasks ADD COLUMN swapped INTEGER DEFAULT 0"); } catch (e) { }
 
+// Migration: Add enable_agent_teams to tasks (per-task flag, admin only)
+try { db.exec("ALTER TABLE tasks ADD COLUMN enable_agent_teams INTEGER DEFAULT 0"); } catch (e) { }
+
 // Helper function to generate 5-character model ID
 function generateModelId() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

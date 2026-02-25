@@ -240,6 +240,9 @@ function executeModel(taskId, modelId, modelConfig) {
         if (modelConfig.alwaysThinkingEnabled) {
             envVars.alwaysThinkingEnabled = 'true';
         }
+        if (modelConfig.enableAgentTeams) {
+            envVars.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
+        }
         if (executorConfig.useIsolation) {
             // 隔离用户模式
             child = spawn('sudo', [
@@ -249,6 +252,7 @@ function executeModel(taskId, modelId, modelConfig) {
                 `ANTHROPIC_BASE_URL=${envVars.ANTHROPIC_BASE_URL}`,
                 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${envVars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC}`,
                 ...(envVars.alwaysThinkingEnabled ? [`alwaysThinkingEnabled=${envVars.alwaysThinkingEnabled}`] : []),
+                ...(envVars.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS ? [`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=${envVars.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS}`] : []),
                 'firejail', ...fullArgs
             ], {
                 cwd: folderPath,
@@ -271,6 +275,9 @@ function executeModel(taskId, modelId, modelConfig) {
         if (modelConfig.alwaysThinkingEnabled) {
             envVars.alwaysThinkingEnabled = 'true';
         }
+        if (modelConfig.enableAgentTeams) {
+            envVars.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
+        }
 
         if (executorConfig.useIsolation) {
             child = spawn('sudo', [
@@ -280,6 +287,7 @@ function executeModel(taskId, modelId, modelConfig) {
                 `ANTHROPIC_BASE_URL=${envVars.ANTHROPIC_BASE_URL}`,
                 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${envVars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC}`,
                 ...(envVars.alwaysThinkingEnabled ? [`alwaysThinkingEnabled=${envVars.alwaysThinkingEnabled}`] : []),
+                ...(envVars.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS ? [`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=${envVars.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS}`] : []),
                 executorConfig.claudeBin, ...claudeArgs
             ], {
                 cwd: folderPath,
