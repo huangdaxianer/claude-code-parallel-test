@@ -67,7 +67,7 @@ router.all('/:modelId/{*path}', (req, res) => {
     console.log(`[Proxy] ${req.method} model=${modelId} path=${remainingPath}`);
 
     // 查找模型的真实 API 配置
-    let apiKey, apiBaseUrl, alwaysThinkingEnabled = false;
+    let apiKey, apiBaseUrl, alwaysThinkingEnabled = false, actualModelName = null;
 
     if (modelId === '__default__') {
         // 默认配置（preview 等场景）
@@ -75,7 +75,7 @@ router.all('/:modelId/{*path}', (req, res) => {
         apiBaseUrl = process.env.ANTHROPIC_BASE_URL;
     } else {
         const modelConfig = db.prepare(
-            'SELECT api_key, api_base_url, always_thinking_enabled FROM model_configs WHERE model_id = ?'
+            'SELECT api_key, api_base_url, always_thinking_enabled, model_name FROM model_configs WHERE model_id = ?'
         ).get(modelId);
 
         if (!modelConfig) {
@@ -87,6 +87,7 @@ router.all('/:modelId/{*path}', (req, res) => {
         apiKey = modelConfig.api_key || process.env.ANTHROPIC_AUTH_TOKEN;
         apiBaseUrl = modelConfig.api_base_url || process.env.ANTHROPIC_BASE_URL;
         alwaysThinkingEnabled = !!modelConfig.always_thinking_enabled;
+        actualModelName = modelConfig.model_name || null;
     }
 
     if (!apiKey || !apiBaseUrl) {
@@ -173,6 +174,12 @@ router.all('/:modelId/{*path}', (req, res) => {
         req.on('end', () => {
             try {
                 const body = JSON.parse(Buffer.concat(chunks).toString());
+
+                // 强制改写 model 字段为实际的上游模型名（解决 subagent/teammate 使用 claude-opus-4-6 的问题）
+                if (actualModelName && body.model && body.model !== actualModelName) {
+                    console.log(`[Proxy] Rewriting model: ${body.model} → ${actualModelName}`);
+                    body.model = actualModelName;
+                }
 
                 if (alwaysThinkingEnabled) {
                     // 启用推理：强制注入 thinking enabled
