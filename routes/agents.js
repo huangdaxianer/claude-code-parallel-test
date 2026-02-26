@@ -22,10 +22,15 @@ function safeReadFile(filePath) {
         return fs.readFileSync(filePath, 'utf8');
     } catch (e) { /* ignore */ }
 
-    // 再尝试 sudo 读取
+    // 再尝试 sudo 读取（增大 maxBuffer 以支持大文件）
     try {
-        return execSync(`sudo -n cat "${filePath}" 2>/dev/null`, { encoding: 'utf8' });
-    } catch (e) { /* ignore */ }
+        return execSync(`sudo -n cat "${filePath}" 2>/dev/null`, {
+            encoding: 'utf8',
+            maxBuffer: 10 * 1024 * 1024 // 10MB
+        });
+    } catch (e) {
+        console.error(`[Agents] Failed to read file ${filePath}:`, e.message?.slice(0, 100));
+    }
 
     return null;
 }
@@ -642,7 +647,8 @@ router.get('/:taskId/models/:modelId/agents/trajectories', (req, res) => {
             }
         }
 
-        const trajectories = [];
+        // 解析每个文件并识别成员名
+        const fileResults = [];
 
         for (const { file, dir, sessionId } of agentFiles) {
             const agentIdMatch = file.match(/^agent-(.+)\.jsonl$/);
@@ -655,23 +661,39 @@ router.get('/:taskId/models/:modelId/agents/trajectories', (req, res) => {
             const events = [];
             let memberName = '';
             let firstMsgText = '';
+            let senderName = '';
 
             for (const line of lines) {
                 const evts = extractEventSummaries(line);
                 events.push(...evts);
 
-                // 提取第一条消息的文本内容用于匹配成员
-                if (!firstMsgText && events.length <= 3) {
-                    try {
-                        const obj = JSON.parse(line);
-                        const c = obj.message?.content;
+                try {
+                    const obj = JSON.parse(line);
+                    const c = obj.message?.content;
+
+                    // 提取第一条消息的文本内容用于 prompt 匹配
+                    if (!firstMsgText && events.length <= 3) {
                         firstMsgText = typeof c === 'string' ? c :
                             (Array.isArray(c) ? c.map(b => b.text || '').join(' ') : '');
-                    } catch (e) { /* ignore */ }
-                }
+                    }
+
+                    // 从 SendMessage tool_result 中提取 sender 名称作为成员标识
+                    if (!senderName && Array.isArray(c)) {
+                        for (const block of c) {
+                            if (block.type === 'tool_result' && block.content) {
+                                const resultText = typeof block.content === 'string' ? block.content :
+                                    (Array.isArray(block.content) ? block.content.map(b => b.text || '').join('') : '');
+                                const senderMatch = resultText.match(/"sender"\s*:\s*"([^"]+)"/);
+                                if (senderMatch) {
+                                    senderName = senderMatch[1];
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { /* ignore */ }
             }
 
-            // 通过首条消息内容匹配成员 prompt
+            // 成员匹配优先级：1. prompt匹配  2. SendMessage sender  3. agentId截断
             if (firstMsgText && teamMembers.length > 0) {
                 for (const m of teamMembers) {
                     if (m.prompt && firstMsgText.includes(m.prompt.slice(0, 50))) {
@@ -680,14 +702,56 @@ router.get('/:taskId/models/:modelId/agents/trajectories', (req, res) => {
                     }
                 }
             }
+            if (!memberName && senderName) {
+                // 验证 sender 是否是已知团队成员
+                const match = teamMembers.find(m => m.name === senderName);
+                if (match) memberName = senderName;
+                else memberName = senderName; // 即使不在 members 列表，也用 sender 名
+            }
 
-            trajectories.push({
+            fileResults.push({
                 agentId,
                 memberName: memberName || agentId.slice(0, 8),
                 sessionId,
                 lines: lines.length,
-                events
+                events,
+                // 用第一个事件的时间戳排序
+                firstTimestamp: events.length > 0 ? events[0].timestamp || '' : ''
             });
+        }
+
+        // 将同一成员的多个文件合并为单条轨迹
+        const memberMap = new Map(); // memberName → merged trajectory
+        for (const fr of fileResults) {
+            const key = fr.memberName;
+            if (!memberMap.has(key)) {
+                memberMap.set(key, {
+                    agentId: fr.agentId,
+                    memberName: key,
+                    sessionId: fr.sessionId,
+                    lines: fr.lines,
+                    events: [...fr.events],
+                    firstTimestamp: fr.firstTimestamp
+                });
+            } else {
+                const existing = memberMap.get(key);
+                existing.lines += fr.lines;
+                existing.events.push(...fr.events);
+                // 保留最早的 sessionId 和 agentId
+                if (fr.firstTimestamp && (!existing.firstTimestamp || fr.firstTimestamp < existing.firstTimestamp)) {
+                    existing.firstTimestamp = fr.firstTimestamp;
+                    existing.agentId = fr.agentId;
+                    existing.sessionId = fr.sessionId;
+                }
+            }
+        }
+
+        // 对每个合并后的轨迹，按时间戳排序事件
+        const trajectories = [];
+        for (const traj of memberMap.values()) {
+            traj.events.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+            delete traj.firstTimestamp;
+            trajectories.push(traj);
         }
 
         return res.json({ trajectories });
