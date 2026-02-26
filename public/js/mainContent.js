@@ -289,11 +289,12 @@
             // 检查当前任务是否启用了 Agent Teams
             // 使用 API 探测：如果返回 404 则隐藏 tab，否则显示
             // 缓存探测结果避免重复请求
-            const cacheKey = `sa_${App.state.currentTaskId}_${App.state.activeFolder}`;
+            const saModelId = activeRun.modelId || (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
+            const cacheKey = `sa_${App.state.currentTaskId}_${saModelId}`;
             if (App.state._subagentCache !== cacheKey) {
                 App.state._subagentCache = cacheKey;
                 App.state._hasAgentTeams = false; // 默认隐藏
-                fetch(`/api/tasks/${App.state.currentTaskId}/models/${App.state.activeFolder}/agents`, {
+                fetch(`/api/tasks/${App.state.currentTaskId}/models/${saModelId}/agents`, {
                     headers: App.api.getAuthHeaders()
                 }).then(resp => {
                     App.state._hasAgentTeams = resp.ok;

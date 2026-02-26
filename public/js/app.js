@@ -130,7 +130,7 @@
         }
 
         // Set initial page/tab
-        if (initialPage && ['trajectory', 'files', 'preview'].includes(initialPage)) {
+        if (initialPage && ['trajectory', 'files', 'preview', 'subagent'].includes(initialPage)) {
             App.state.activeTab = initialPage;
         } else {
             App.state.activeTab = 'trajectory'; // Default

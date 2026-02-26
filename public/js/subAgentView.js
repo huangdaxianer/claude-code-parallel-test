@@ -50,8 +50,9 @@
      */
     async function fetchAgentData() {
         const taskId = App.state.currentTaskId;
-        const modelId = App.state.activeFolder;
-        if (!taskId || !modelId) return;
+        const folder = App.state.activeFolder;
+        if (!taskId || !folder) return;
+        const modelId = folder.includes('/') ? folder.split('/').pop() : folder;
 
         try {
             const resp = await fetch(`/api/tasks/${taskId}/models/${modelId}/agents`, {
