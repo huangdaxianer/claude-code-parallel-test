@@ -191,6 +191,8 @@
                             <button class="tab" data-tab="files" onclick="switchTab('files')">生成产物</button>
                             <button class="tab" data-tab="preview" onclick="switchTab('preview')"
                                 style="display: none;">在线预览</button>
+                            <button class="tab" data-tab="subagent" onclick="switchTab('subagent')"
+                                style="display: none;">子Agent</button>
                         </div>
                         <div style="display: flex; gap: 0.5rem;">
                             <button class="action-btn" onclick="downloadFiles()" title="下载当前产物">
@@ -271,6 +273,15 @@
                             style="width:100%; height:calc(100% - 37px); border:none; background:#fff;"
                             allow="accelerometer; camera; encrypted-media; display-capture; geolocation; gyroscope; microphone; midi; clipboard-read; clipboard-write; web-share; serial; xr-spatial-tracking"
                             allowfullscreen allowpaymentrequest></iframe>
+                    </div>
+
+                    <!-- Sub-Agent Tab Content -->
+                    <div id="tab-content-subagent" class="tab-content">
+                        <div id="subagent-container" class="subagent-container">
+                            <div class="empty-state">
+                                <p style="margin-top: 1rem; font-size: 0.9rem;">暂无子Agent数据</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -528,6 +539,7 @@
     <script src="js/views/statsView.js"></script>
     <script src="js/views/compareView.js"></script>
     <script src="js/mainContent.js"></script>
+    <script src="js/subAgentView.js"></script>
     <script src="js/preview.js"></script>
     <script src="js/feedback.js"></script>
     <script src="js/comments.js"></script>
