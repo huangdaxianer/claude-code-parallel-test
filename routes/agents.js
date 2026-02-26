@@ -87,6 +87,41 @@ function findAllCaseVariantDirs(baseDir, name) {
 }
 
 /**
+ * 修复 Claude SDK 大小写分裂目录问题
+ * 当同一团队的数据分散在不同大小写的目录中时（如 config.json 在小写目录，inboxes 在大写目录），
+ * Claude CLI 代理只能找到其中一个目录的内容。通过创建 symlink 让两个目录互相引用缺失内容。
+ */
+function syncCaseVariantDirs(dirs) {
+    if (dirs.length < 2) return;
+
+    // 收集每个目录中存在的文件和子目录
+    const dirContents = {};
+    for (const dir of dirs) {
+        dirContents[dir] = new Set(safeListDir(dir));
+    }
+
+    // 对于每个目录中存在的项，检查其他目录是否缺失，若缺失则创建 symlink
+    for (const srcDir of dirs) {
+        for (const item of dirContents[srcDir]) {
+            const srcPath = path.join(srcDir, item);
+            for (const dstDir of dirs) {
+                if (dstDir === srcDir) continue;
+                if (dirContents[dstDir].has(item)) continue;
+
+                const dstPath = path.join(dstDir, item);
+                try {
+                    // 用 sudo 创建 symlink（因为目录属于 claude-user）
+                    execSync(`sudo -n ln -sf "${srcPath}" "${dstPath}" 2>/dev/null`);
+                    console.log(`[Agents] Symlinked ${dstPath} → ${srcPath}`);
+                } catch (e) {
+                    // 忽略错误（可能已存在或权限问题）
+                }
+            }
+        }
+    }
+}
+
+/**
  * 从实时路径读取团队数据
  * 处理 Claude SDK 可能用不同大小写创建 teams/tasks 目录的情况
  */
@@ -97,6 +132,10 @@ function readTeamDataFromLive(teamName) {
     // 查找所有大小写变体目录
     const teamsDirs = findAllCaseVariantDirs(teamsBase, teamName);
     const tasksDirs = findAllCaseVariantDirs(tasksBase, teamName);
+
+    // 自动修复：同步大小写变体目录，确保 Claude CLI 能从任一路径访问所有内容
+    syncCaseVariantDirs(teamsDirs);
+    syncCaseVariantDirs(tasksDirs);
 
     if (teamsDirs.length === 0) return null;
 
