@@ -55,5 +55,6 @@ router.use('/comments', requireLogin, require('./comments'));   // 评论接口�
 router.use('/', requireLogin, filesRoutes);                     // 文件接口，需要登录
 router.use('/users', requireLogin, usersRoutes);                // 用户接口，需要登录
 router.use('/gsb', requireLogin, require('./gsb'));              // GSB接口，需要登录
+router.use('/tasks', requireLogin, require('./agents'));         // 子Agent状态接口，需要登录
 
 module.exports = router;

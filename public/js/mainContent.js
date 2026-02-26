@@ -25,10 +25,12 @@
         const trajectoryContent = document.getElementById('tab-content-trajectory');
         const filesContent = document.getElementById('tab-content-files');
         const previewContent = document.getElementById('tab-content-preview');
+        const subagentContent = document.getElementById('tab-content-subagent');
 
         if (trajectoryContent) trajectoryContent.classList.toggle('active', tabName === 'trajectory');
         if (filesContent) filesContent.classList.toggle('active', tabName === 'files');
         if (previewContent) previewContent.classList.toggle('active', tabName === 'preview');
+        if (subagentContent) subagentContent.classList.toggle('active', tabName === 'subagent');
     };
 
     /**
@@ -279,6 +281,43 @@
                     App.main.updateTabUI('trajectory');
                 }
             }
+        }
+
+        // 子Agent tab 显示/隐藏控制
+        const subagentTabBtn = document.querySelector('.tab[data-tab="subagent"]');
+        if (subagentTabBtn) {
+            // 检查当前任务是否启用了 Agent Teams
+            // 使用 API 探测：如果返回 404 则隐藏 tab，否则显示
+            // 缓存探测结果避免重复请求
+            const cacheKey = `sa_${App.state.currentTaskId}_${App.state.activeFolder}`;
+            if (App.state._subagentCache !== cacheKey) {
+                App.state._subagentCache = cacheKey;
+                App.state._hasAgentTeams = false; // 默认隐藏
+                fetch(`/api/tasks/${App.state.currentTaskId}/models/${App.state.activeFolder}/agents`, {
+                    headers: App.api.getAuthHeaders()
+                }).then(resp => {
+                    App.state._hasAgentTeams = resp.ok;
+                    subagentTabBtn.style.display = resp.ok ? 'block' : 'none';
+                    if (!resp.ok && App.state.activeTab === 'subagent') {
+                        App.state.activeTab = 'trajectory';
+                        App.updateUrl(App.state.currentTaskId, App.state.activeFolder, 'trajectory');
+                        App.main.updateTabUI('trajectory');
+                    }
+                    // 触发渲染
+                    if (resp.ok && App.state.activeTab === 'subagent' && App.subAgent) {
+                        App.subAgent.render();
+                    }
+                }).catch(() => {
+                    subagentTabBtn.style.display = 'none';
+                });
+            } else {
+                subagentTabBtn.style.display = App.state._hasAgentTeams ? 'block' : 'none';
+            }
+        }
+
+        // 触发子Agent面板渲染
+        if (App.state.activeTab === 'subagent' && App.subAgent && App.state._hasAgentTeams) {
+            App.subAgent.render();
         }
 
         // 3. 更新预览 iframe
