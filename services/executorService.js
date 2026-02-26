@@ -234,6 +234,7 @@ function executeModel(taskId, modelId, modelConfig) {
     // 由于 headless 模式下 inbox 自动轮询存在已知 bug（GitHub #23415），
     // 需要通过 system prompt 引导模型手动 Read inbox 文件来获取子 agent 的消息
     if (modelConfig.enableAgentTeams) {
+        const teamName = (taskId + '-' + modelId).toLowerCase();
         const inboxCheckPrompt = [
             '## Agent Teams Inbox Check Instructions',
             '',
@@ -246,16 +247,25 @@ function executeModel(taskId, modelId, modelConfig) {
             '3. **When expecting a sub-agent reply** — After you send a message to a sub-agent (via SendMessage) or assign them a task, periodically check inbox while waiting.',
             '',
             'How to check inbox:',
-            '- Read the team config file at `~/.claude/teams/*/config.json` to find your team name and your agent name.',
-            '- Then read your inbox file at `~/.claude/teams/{team-name}/inboxes/{your-agent-name}.json`.',
+            '- Read the team config file at `~/.claude/teams/' + teamName + '/config.json` to find your agent name.',
+            '- Then read your inbox file at `~/.claude/teams/' + teamName + '/inboxes/{your-agent-name}.json`.',
             '- Process any unread messages (where `read` is false) and act on them.',
+            '',
+            '### Efficient Inbox Reading',
+            '',
+            'The inbox file can grow large over time. To read it efficiently:',
+            '- Track the line count from your last read (e.g., you last read 120 lines).',
+            '- On subsequent reads, use the `offset` parameter to skip already-read lines, and set `limit` to a reasonable number (e.g., 50–100 lines) to fetch only new content.',
+            '- Example: if you last read 120 lines, use `offset: 120, limit: 50` to read lines 121–170.',
+            '- This avoids re-reading the entire file every time and is much more efficient.',
             '',
             'IMPORTANT: Do NOT rely on automatic message delivery. Always manually check your inbox at the moments described above.',
             '',
-            '## Team Naming Convention',
+            '## Team Naming Convention (CRITICAL)',
             '',
-            'When creating a team with TeamCreate, you MUST use the exact string "' + taskId + '-' + modelId + '" as the team_name.',
-            'Do NOT invent your own team name. This naming convention is required for the platform to track your sub-agents.',
+            'When creating a team with TeamCreate, you MUST use the exact string "' + teamName + '" as the team_name.',
+            'The team_name MUST be ALL LOWERCASE. Do NOT use uppercase letters in team names.',
+            'Do NOT invent your own team name. This exact lowercase naming convention is required for the platform to track your sub-agents.',
             '',
             '## Cleanup Policy',
             '',
