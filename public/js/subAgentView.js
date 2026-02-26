@@ -12,6 +12,9 @@
     let lastDataHash = null;
     let trajectoryData = null;
     let selectedMember = null;
+    let currentModelId = null;   // 追踪当前模型，仅在切换模型时重置状态
+    let isFetching = false;      // 防止并发请求
+    let lastTrajectoryHash = null; // 轨迹去重
 
     // 颜色映射
     const COLOR_MAP = {
@@ -31,12 +34,21 @@
 
     /**
      * 渲染子Agent面板（入口）
+     * 仅在模型切换时重置状态，避免重新进入 tab 时丢失选中状态
      */
     App.subAgent.render = function () {
-        // 切换模型时重置所有缓存状态
-        lastDataHash = null;
-        trajectoryData = null;
-        selectedMember = null;
+        const folder = App.state.activeFolder;
+        const modelId = folder && folder.includes('/') ? folder.split('/').pop() : folder;
+
+        // 仅在模型切换时重置缓存状态
+        if (modelId !== currentModelId) {
+            currentModelId = modelId;
+            lastDataHash = null;
+            trajectoryData = null;
+            selectedMember = null;
+            lastTrajectoryHash = null;
+        }
+
         fetchAgentData();
         startPolling();
     };
@@ -52,12 +64,15 @@
     };
 
     /**
-     * 获取子Agent数据
+     * 获取子Agent数据（含轨迹刷新）
      */
     async function fetchAgentData() {
+        if (isFetching) return;
+        isFetching = true;
+
         const taskId = App.state.currentTaskId;
         const folder = App.state.activeFolder;
-        if (!taskId || !folder) return;
+        if (!taskId || !folder) { isFetching = false; return; }
         const modelId = folder.includes('/') ? folder.split('/').pop() : folder;
 
         try {
@@ -72,12 +87,27 @@
             }
             const data = await resp.json();
             const hash = JSON.stringify(data);
-            if (hash !== lastDataHash) {
+            const panelChanged = hash !== lastDataHash;
+            if (panelChanged) {
                 lastDataHash = hash;
+            }
+
+            // 如果有选中成员，每次轮询都刷新轨迹数据（实时更新新事件）
+            if (selectedMember) {
+                await fetchTrajectories();
+            }
+
+            // 面板数据变化时重新渲染（轨迹直接嵌入，不会闪烁）
+            if (panelChanged) {
                 renderPanel(data);
+            } else if (selectedMember && trajectoryData) {
+                // 面板未变化，但轨迹可能更新了，只更新轨迹区域
+                showTrajectoryForMember(selectedMember);
             }
         } catch (e) {
             console.error('[SubAgent] Fetch error:', e);
+        } finally {
+            isFetching = false;
         }
     }
 
@@ -85,12 +115,7 @@
         App.subAgent.stop();
         pollTimer = setInterval(() => {
             if (App.state.activeTab !== 'subagent') return;
-            // 检查任务是否还在运行
-            const runs = App.state.currentRuns || [];
-            const activeRun = runs.find(r => r.folderName === App.state.activeFolder);
-            if (activeRun && activeRun.status === 'running') {
-                fetchAgentData();
-            }
+            fetchAgentData();
         }, 5000);
     }
 
@@ -109,8 +134,18 @@
         // 团队成员区块（点击可查看轨迹）
         html += renderMembers(data.members, data.teamName);
 
-        // 轨迹详情区块（选中成员时显示）
-        html += '<div id="sa-trajectory-detail"></div>';
+        // 轨迹详情区块 — 直接嵌入已缓存的轨迹 HTML，避免 innerHTML 替换导致闪烁
+        html += '<div id="sa-trajectory-detail">';
+        if (selectedMember && trajectoryData) {
+            const traj = trajectoryData.find(t =>
+                t.memberName === selectedMember ||
+                t.memberName.toLowerCase() === selectedMember.toLowerCase()
+            );
+            if (traj) {
+                html += renderTrajectoryTimeline(traj, selectedMember);
+            }
+        }
+        html += '</div>';
 
         // 任务看板区块
         if (data.tasks && data.tasks.length > 0) {
@@ -123,11 +158,6 @@
         }
 
         container.innerHTML = html;
-
-        // 如果之前有选中的成员，恢复轨迹显示
-        if (selectedMember && trajectoryData) {
-            showTrajectoryForMember(selectedMember);
-        }
     }
 
     function renderMembers(members, teamName) {
@@ -146,9 +176,12 @@
             const model = member.model || '';
             const modelShort = model.replace(/^claude-/, '').replace(/^anthropic\/claude-/, '');
             const isSelected = selectedMember === member.name;
+            // 安全转义 member name 用于 onclick 和 data 属性
+            const safeName = member.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
             html += `<div class="sa-member-card${isSelected ? ' sa-member-selected' : ''}" `;
-            html += `onclick="App.subAgent.selectMember('${escapeHtml(member.name)}')" `;
+            html += `data-member="${escapeHtml(member.name)}" `;
+            html += `onclick="App.subAgent.selectMember('${safeName}')" `;
             html += `title="点击查看执行轨迹 — ${escapeHtml(member.prompt || '')}" style="cursor:pointer;">`;
             html += `<div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">`;
             html += `<span class="sa-member-color" style="background:${color};"></span>`;
@@ -249,18 +282,24 @@
             selectedMember = null;
             const detail = document.getElementById('sa-trajectory-detail');
             if (detail) detail.innerHTML = '';
-            // 移除选中样式
             document.querySelectorAll('.sa-member-card').forEach(c => c.classList.remove('sa-member-selected'));
             return;
         }
         selectedMember = memberName;
-        // 更新选中样式
-        document.querySelectorAll('.sa-member-card').forEach(c => c.classList.remove('sa-member-selected'));
-        event.currentTarget?.classList.add('sa-member-selected');
+
+        // 用 data-member 属性更新选中样式（不依赖 event.currentTarget）
+        document.querySelectorAll('.sa-member-card').forEach(c => {
+            c.classList.toggle('sa-member-selected', c.getAttribute('data-member') === memberName);
+        });
 
         if (trajectoryData) {
             showTrajectoryForMember(memberName);
+            // 同时后台刷新最新轨迹
+            fetchTrajectories().then(() => showTrajectoryForMember(memberName));
         } else {
+            // 首次点击：显示 loading，然后获取
+            const detail = document.getElementById('sa-trajectory-detail');
+            if (detail) detail.innerHTML = '<div style="padding:12px; color:#94a3b8; font-size:0.85rem;">加载执行轨迹中...</div>';
             fetchTrajectories().then(() => showTrajectoryForMember(memberName));
         }
     };
@@ -287,13 +326,15 @@
     function showTrajectoryForMember(memberName) {
         const detail = document.getElementById('sa-trajectory-detail');
         if (!detail) return;
+        // 如果当前选中的成员已变化，不更新（防止异步回调更新错误的成员）
+        if (selectedMember !== memberName) return;
 
         if (!trajectoryData || trajectoryData.length === 0) {
             detail.innerHTML = '<div style="padding:12px; color:#94a3b8; font-size:0.85rem;">暂无执行轨迹数据</div>';
             return;
         }
 
-        // 匹配成员：按 memberName 或 from 字段匹配
+        // 匹配成员：按 memberName 匹配
         const traj = trajectoryData.find(t =>
             t.memberName === memberName ||
             t.memberName.toLowerCase() === memberName.toLowerCase()
@@ -303,6 +344,12 @@
             detail.innerHTML = `<div style="padding:12px; color:#94a3b8; font-size:0.85rem;">未找到 ${escapeHtml(memberName)} 的执行轨迹</div>`;
             return;
         }
+
+        // 仅在轨迹内容变化时更新 DOM（减少不必要的重绘）
+        const trajHash = traj.events.length + ':' + (traj.events.length > 0 ? traj.events[traj.events.length - 1].timestamp : '');
+        const currentHash = memberName + ':' + trajHash;
+        if (detail.getAttribute('data-traj-hash') === currentHash) return;
+        detail.setAttribute('data-traj-hash', currentHash);
 
         detail.innerHTML = renderTrajectoryTimeline(traj, memberName);
     }
