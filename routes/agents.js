@@ -476,61 +476,77 @@ router.get('/:taskId/models/:modelId/agents/trajectories', (req, res) => {
             } catch (e) { /* ignore */ }
         }
 
-        // 扫描 {projectDir}/*/subagents/agent-*.jsonl
-        const sessionDirs = safeListDir(projectDir);
+        // 收集所有 agent-*.jsonl 文件路径
+        // 两种布局：
+        //   旧格式: {projectDir}/agent-*.jsonl (直接在项目根目录)
+        //   新格式: {projectDir}/{sessionId}/subagents/agent-*.jsonl
+        const agentFiles = [];
+        const entries = safeListDir(projectDir);
+
+        for (const entry of entries) {
+            // 旧格式：直接在根目录的 agent-*.jsonl
+            if (entry.match(/^agent-.+\.jsonl$/)) {
+                agentFiles.push({ file: entry, dir: projectDir, sessionId: '' });
+                continue;
+            }
+            // 新格式：检查 {entry}/subagents/ 子目录
+            const subagentsDir = path.join(projectDir, entry, 'subagents');
+            const jsonlFiles = safeListDir(subagentsDir, '.jsonl');
+            for (const file of jsonlFiles) {
+                if (file.match(/^agent-.+\.jsonl$/)) {
+                    agentFiles.push({ file, dir: subagentsDir, sessionId: entry });
+                }
+            }
+        }
+
         const trajectories = [];
 
-        for (const sessionDir of sessionDirs) {
-            const subagentsDir = path.join(projectDir, sessionDir, 'subagents');
-            const jsonlFiles = safeListDir(subagentsDir, '.jsonl');
+        for (const { file, dir, sessionId } of agentFiles) {
+            const agentIdMatch = file.match(/^agent-(.+)\.jsonl$/);
+            if (!agentIdMatch) continue;
 
-            for (const file of jsonlFiles) {
-                const agentIdMatch = file.match(/^agent-(.+)\.jsonl$/);
-                if (!agentIdMatch) continue;
+            const agentId = agentIdMatch[1];
+            const filePath = path.join(dir, file);
+            const lines = safeReadLines(filePath);
 
-                const agentId = agentIdMatch[1];
-                const filePath = path.join(subagentsDir, file);
-                const lines = safeReadLines(filePath);
+            const events = [];
+            let memberName = '';
+            let firstMsgText = '';
 
-                const events = [];
-                let memberName = '';
-                let firstMsgText = '';
-
-                for (const line of lines) {
-                    const event = extractEventSummary(line);
-                    if (event) {
-                        events.push(event);
-                    }
-
-                    // 提取第一条消息的文本内容用于匹配成员
-                    if (!firstMsgText && events.length <= 2) {
-                        try {
-                            const obj = JSON.parse(line);
-                            const c = obj.message?.content;
-                            firstMsgText = typeof c === 'string' ? c :
-                                (Array.isArray(c) ? c.map(b => b.text || '').join(' ') : '');
-                        } catch (e) { /* ignore */ }
-                    }
+            for (const line of lines) {
+                const event = extractEventSummary(line);
+                if (event) {
+                    events.push(event);
                 }
 
-                // 通过首条消息内容匹配成员 prompt
-                if (firstMsgText && teamMembers.length > 0) {
-                    for (const m of teamMembers) {
-                        if (m.prompt && firstMsgText.includes(m.prompt.slice(0, 50))) {
-                            memberName = m.name;
-                            break;
-                        }
-                    }
+                // 提取第一条消息的文本内容用于匹配成员
+                if (!firstMsgText && events.length <= 2) {
+                    try {
+                        const obj = JSON.parse(line);
+                        const c = obj.message?.content;
+                        firstMsgText = typeof c === 'string' ? c :
+                            (Array.isArray(c) ? c.map(b => b.text || '').join(' ') : '');
+                    } catch (e) { /* ignore */ }
                 }
-
-                trajectories.push({
-                    agentId,
-                    memberName: memberName || agentId.slice(0, 8),
-                    sessionId: sessionDir,
-                    lines: lines.length,
-                    events
-                });
             }
+
+            // 通过首条消息内容匹配成员 prompt
+            if (firstMsgText && teamMembers.length > 0) {
+                for (const m of teamMembers) {
+                    if (m.prompt && firstMsgText.includes(m.prompt.slice(0, 50))) {
+                        memberName = m.name;
+                        break;
+                    }
+                }
+            }
+
+            trajectories.push({
+                agentId,
+                memberName: memberName || agentId.slice(0, 8),
+                sessionId,
+                lines: lines.length,
+                events
+            });
         }
 
         return res.json({ trajectories });
