@@ -2527,9 +2527,15 @@
     border: 1px solid #e2e8f0;
     border-radius: 8px;
     padding: 0.75rem;
-    cursor: default;
+    cursor: pointer;
     transition: all 0.2s;
     background: white;
+}
+
+.sa-member-selected {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
 .sa-member-card:hover {
@@ -2665,4 +2671,80 @@
 .sa-msg-system {
     opacity: 0.5;
     font-style: italic;
+}
+
+/* 执行轨迹时间线 */
+.sa-trajectory-timeline {
+    max-height: 500px;
+    overflow-y: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fafbfc;
+    font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+    font-size: 0.75rem;
+}
+
+.sa-traj-item {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.3rem 0.75rem;
+    border-bottom: 1px solid #f1f5f9;
+    align-items: baseline;
+    line-height: 1.4;
+}
+
+.sa-traj-item:last-child {
+    border-bottom: none;
+}
+
+.sa-traj-item:hover {
+    background: #f0f7ff;
+}
+
+.sa-traj-time {
+    color: #94a3b8;
+    white-space: nowrap;
+    min-width: 55px;
+    flex-shrink: 0;
+}
+
+.sa-traj-type {
+    white-space: nowrap;
+    min-width: 36px;
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-align: center;
+    padding: 0 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.sa-evt-user {
+    color: #2563eb;
+    background: #eff6ff;
+}
+
+.sa-evt-assistant {
+    color: #059669;
+    background: #ecfdf5;
+}
+
+.sa-evt-tool {
+    color: #d97706;
+    background: #fffbeb;
+}
+
+.sa-evt-result {
+    color: #64748b;
+    background: #f1f5f9;
+}
+
+.sa-traj-text {
+    color: #334155;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 0.8rem;
 }

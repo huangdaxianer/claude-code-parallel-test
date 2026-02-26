@@ -10,6 +10,8 @@
 
     let pollTimer = null;
     let lastDataHash = null;
+    let trajectoryData = null;
+    let selectedMember = null;
 
     // 颜色映射
     const COLOR_MAP = {
@@ -100,8 +102,11 @@
 
         let html = '';
 
-        // 团队成员区块
+        // 团队成员区块（点击可查看轨迹）
         html += renderMembers(data.members, data.teamName);
+
+        // 轨迹详情区块（选中成员时显示）
+        html += '<div id="sa-trajectory-detail"></div>';
 
         // 任务看板区块
         if (data.tasks && data.tasks.length > 0) {
@@ -114,6 +119,11 @@
         }
 
         container.innerHTML = html;
+
+        // 如果之前有选中的成员，恢复轨迹显示
+        if (selectedMember && trajectoryData) {
+            showTrajectoryForMember(selectedMember);
+        }
     }
 
     function renderMembers(members, teamName) {
@@ -131,8 +141,11 @@
             const displayType = member.agentType || 'agent';
             const model = member.model || '';
             const modelShort = model.replace(/^claude-/, '').replace(/^anthropic\/claude-/, '');
+            const isSelected = selectedMember === member.name;
 
-            html += `<div class="sa-member-card" title="${escapeHtml(member.prompt || '')}">`;
+            html += `<div class="sa-member-card${isSelected ? ' sa-member-selected' : ''}" `;
+            html += `onclick="App.subAgent.selectMember('${escapeHtml(member.name)}')" `;
+            html += `title="点击查看执行轨迹 — ${escapeHtml(member.prompt || '')}" style="cursor:pointer;">`;
             html += `<div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">`;
             html += `<span class="sa-member-color" style="background:${color};"></span>`;
             html += `<span class="sa-member-name">${escapeHtml(member.name)}</span>`;
@@ -219,6 +232,120 @@
 
         html += '</div></div>';
         return html;
+    }
+
+    // ---- Trajectory functions ----
+
+    /**
+     * 点击成员卡片，获取并展示该成员的执行轨迹
+     */
+    App.subAgent.selectMember = function (memberName) {
+        if (selectedMember === memberName) {
+            // 再次点击取消选中
+            selectedMember = null;
+            const detail = document.getElementById('sa-trajectory-detail');
+            if (detail) detail.innerHTML = '';
+            // 移除选中样式
+            document.querySelectorAll('.sa-member-card').forEach(c => c.classList.remove('sa-member-selected'));
+            return;
+        }
+        selectedMember = memberName;
+        // 更新选中样式
+        document.querySelectorAll('.sa-member-card').forEach(c => c.classList.remove('sa-member-selected'));
+        event.currentTarget?.classList.add('sa-member-selected');
+
+        if (trajectoryData) {
+            showTrajectoryForMember(memberName);
+        } else {
+            fetchTrajectories().then(() => showTrajectoryForMember(memberName));
+        }
+    };
+
+    async function fetchTrajectories() {
+        const taskId = App.state.currentTaskId;
+        const folder = App.state.activeFolder;
+        if (!taskId || !folder) return;
+        const modelId = folder.includes('/') ? folder.split('/').pop() : folder;
+
+        try {
+            const resp = await fetch(`/api/tasks/${taskId}/models/${modelId}/agents/trajectories`, {
+                headers: App.api.getAuthHeaders()
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                trajectoryData = data.trajectories || [];
+            }
+        } catch (e) {
+            console.error('[SubAgent] Trajectory fetch error:', e);
+        }
+    }
+
+    function showTrajectoryForMember(memberName) {
+        const detail = document.getElementById('sa-trajectory-detail');
+        if (!detail) return;
+
+        if (!trajectoryData || trajectoryData.length === 0) {
+            detail.innerHTML = '<div style="padding:12px; color:#94a3b8; font-size:0.85rem;">暂无执行轨迹数据</div>';
+            return;
+        }
+
+        // 匹配成员：按 memberName 或 from 字段匹配
+        const traj = trajectoryData.find(t =>
+            t.memberName === memberName ||
+            t.memberName.toLowerCase() === memberName.toLowerCase()
+        );
+
+        if (!traj) {
+            detail.innerHTML = `<div style="padding:12px; color:#94a3b8; font-size:0.85rem;">未找到 ${escapeHtml(memberName)} 的执行轨迹</div>`;
+            return;
+        }
+
+        detail.innerHTML = renderTrajectoryTimeline(traj, memberName);
+    }
+
+    function renderTrajectoryTimeline(traj, memberName) {
+        let html = '<div class="sa-section">';
+        html += '<div class="sa-section-header">';
+        html += `<span>${escapeHtml(memberName)} 的执行轨迹</span>`;
+        html += `<span style="font-size:0.75rem; color:#94a3b8; font-weight:400;">${traj.events.length} events</span>`;
+        html += '</div>';
+        html += '<div class="sa-trajectory-timeline">';
+
+        for (const evt of traj.events) {
+            const time = formatTime(evt.timestamp);
+            const typeClass = getEventTypeClass(evt.type);
+            const typeLabel = getEventTypeLabel(evt.type);
+            const text = evt.text || '';
+
+            html += '<div class="sa-traj-item">';
+            html += `<span class="sa-traj-time">${escapeHtml(time)}</span>`;
+            html += `<span class="sa-traj-type ${typeClass}">${typeLabel}</span>`;
+            html += `<span class="sa-traj-text">${escapeHtml(text)}</span>`;
+            html += '</div>';
+        }
+
+        html += '</div></div>';
+        return html;
+    }
+
+    function getEventTypeClass(type) {
+        switch (type) {
+            case 'user': return 'sa-evt-user';
+            case 'assistant': return 'sa-evt-assistant';
+            case 'tool_use': return 'sa-evt-tool';
+            case 'tool_result': return 'sa-evt-result';
+            default: return '';
+        }
+    }
+
+    function getEventTypeLabel(type) {
+        switch (type) {
+            case 'user': return 'USR';
+            case 'assistant': return 'AST';
+            case 'tool_use': return 'TOOL';
+            case 'tool_result': return 'RES';
+            default: return type;
+        }
     }
 
     // ---- Utility functions ----

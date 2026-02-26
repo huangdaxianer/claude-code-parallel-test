@@ -65,13 +65,29 @@ function safeDirExists(dirPath) {
 }
 
 /**
+ * 在 baseDir 中查找 name 的大小写变体目录
+ * Claude SDK 有时会用不同大小写创建目录（如 s0hdxp-nofmw 和 S0HDXP-NOFMW）
+ */
+function findCaseVariantDir(baseDir, name) {
+    const directPath = path.join(baseDir, name);
+    if (safeDirExists(directPath)) return directPath;
+    // 遍历目录找大小写变体
+    const entries = safeListDir(baseDir);
+    const match = entries.find(e => e.toLowerCase() === name.toLowerCase() && e !== name);
+    return match ? path.join(baseDir, match) : null;
+}
+
+/**
  * 从实时路径读取团队数据
+ * 处理 Claude SDK 可能用不同大小写创建 teams/tasks 目录的情况
  */
 function readTeamDataFromLive(teamName) {
-    const teamsDir = path.join(CLAUDE_USER_HOME, '.claude/teams', teamName);
-    const tasksDir = path.join(CLAUDE_USER_HOME, '.claude/tasks', teamName);
+    const teamsBase = path.join(CLAUDE_USER_HOME, '.claude/teams');
+    const tasksBase = path.join(CLAUDE_USER_HOME, '.claude/tasks');
 
-    if (!safeDirExists(teamsDir)) return null;
+    // 查找 config.json 所在的 teams 目录（可能是不同大小写）
+    const teamsDir = findCaseVariantDir(teamsBase, teamName);
+    if (!teamsDir) return null;
 
     const configContent = safeReadFile(path.join(teamsDir, 'config.json'));
     if (!configContent) return null;
@@ -91,57 +107,70 @@ function readTeamDataFromLive(teamName) {
         joinedAt: m.joinedAt || 0
     }));
 
-    // 读取任务文件
+    // 查找 tasks 目录（可能在不同大小写的目录中）
+    const tasksDir = findCaseVariantDir(tasksBase, teamName);
     const tasks = [];
-    const taskFiles = safeListDir(tasksDir, '.json');
-    for (const file of taskFiles) {
-        if (file === '.lock') continue;
-        const content = safeReadFile(path.join(tasksDir, file));
-        if (!content) continue;
-        try {
-            const task = JSON.parse(content);
-            tasks.push({
-                id: task.id || file.replace('.json', ''),
-                owner: task.subject || '',
-                description: task.description || '',
-                status: task.status || 'pending'
-            });
-        } catch (e) { /* ignore */ }
+    if (tasksDir) {
+        const taskFiles = safeListDir(tasksDir, '.json');
+        for (const file of taskFiles) {
+            if (file === '.lock') continue;
+            const content = safeReadFile(path.join(tasksDir, file));
+            if (!content) continue;
+            try {
+                const task = JSON.parse(content);
+                tasks.push({
+                    id: task.id || file.replace('.json', ''),
+                    owner: task.subject || '',
+                    description: task.description || '',
+                    status: task.status || 'pending'
+                });
+            } catch (e) { /* ignore */ }
+        }
     }
 
     // 读取并合并所有 inbox 消息
+    // inboxes 可能在当前 teamsDir 中，也可能在大小写变体的 teamsDir 中
     const messages = [];
-    const inboxesDir = path.join(teamsDir, 'inboxes');
-    const inboxFiles = safeListDir(inboxesDir, '.json');
-    for (const file of inboxFiles) {
-        const recipientName = file.replace('.json', '');
-        const content = safeReadFile(path.join(inboxesDir, file));
-        if (!content) continue;
-        try {
-            const inboxMessages = JSON.parse(content);
-            if (!Array.isArray(inboxMessages)) continue;
-            for (const msg of inboxMessages) {
-                // 过滤系统消息（idle_notification）
-                let isSystem = false;
-                let text = msg.text || '';
-                try {
-                    const parsed = JSON.parse(text);
-                    if (parsed && parsed.type === 'idle_notification') {
-                        isSystem = true;
-                    }
-                } catch (e) { /* not JSON, that's fine */ }
+    const inboxCandidates = [path.join(teamsDir, 'inboxes')];
+    // 也搜索大小写变体 teams 目录的 inboxes
+    const allTeamEntries = safeListDir(teamsBase);
+    for (const entry of allTeamEntries) {
+        if (entry.toLowerCase() === teamName.toLowerCase() && path.join(teamsBase, entry) !== teamsDir) {
+            inboxCandidates.push(path.join(teamsBase, entry, 'inboxes'));
+        }
+    }
 
-                messages.push({
-                    from: msg.from || '',
-                    to: recipientName,
-                    text: text,
-                    summary: msg.summary || '',
-                    timestamp: msg.timestamp || '',
-                    read: !!msg.read,
-                    isSystem: isSystem
-                });
-            }
-        } catch (e) { /* ignore */ }
+    for (const inboxesDir of inboxCandidates) {
+        const inboxFiles = safeListDir(inboxesDir, '.json');
+        for (const file of inboxFiles) {
+            const recipientName = file.replace('.json', '');
+            const content = safeReadFile(path.join(inboxesDir, file));
+            if (!content) continue;
+            try {
+                const inboxMessages = JSON.parse(content);
+                if (!Array.isArray(inboxMessages)) continue;
+                for (const msg of inboxMessages) {
+                    let isSystem = false;
+                    let text = msg.text || '';
+                    try {
+                        const parsed = JSON.parse(text);
+                        if (parsed && parsed.type === 'idle_notification') {
+                            isSystem = true;
+                        }
+                    } catch (e) { /* not JSON, that's fine */ }
+
+                    messages.push({
+                        from: msg.from || '',
+                        to: recipientName,
+                        text: text,
+                        summary: msg.summary || '',
+                        timestamp: msg.timestamp || '',
+                        read: !!msg.read,
+                        isSystem: isSystem
+                    });
+                }
+            } catch (e) { /* ignore */ }
+        }
     }
 
     // 按时间排序
@@ -329,6 +358,153 @@ router.get('/:taskId/models/:modelId/agents', (req, res) => {
         return res.status(404).json({ error: 'No agent team data found' });
     } catch (e) {
         console.error(`[Agents API] Error for ${taskId}/${modelId}:`, e);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * 安全读取文件的每一行（支持大文件逐行读取）
+ */
+function safeReadLines(filePath) {
+    const content = safeReadFile(filePath);
+    if (!content) return [];
+    return content.split('\n').filter(Boolean);
+}
+
+/**
+ * 从 jsonl 行中提取事件摘要
+ */
+function extractEventSummary(line) {
+    let obj;
+    try {
+        obj = JSON.parse(line);
+    } catch (e) { return null; }
+
+    const type = obj.type || obj.message?.role || '';
+    const timestamp = obj.timestamp || '';
+    const content = obj.message?.content || '';
+
+    if (type === 'user' || obj.message?.role === 'user') {
+        // 用户消息：可能是 teammate-message 或 tool_result
+        if (typeof content === 'string') {
+            if (content.includes('<teammate-message>')) {
+                // 提取 summary
+                const summaryMatch = content.match(/summary="([^"]+)"/);
+                return { type: 'user', timestamp, text: summaryMatch ? summaryMatch[1] : '(teammate message)' };
+            }
+            if (content.includes('tool_result') || content.includes('<tool-result>')) {
+                return { type: 'tool_result', timestamp, text: '(tool result)' };
+            }
+            const short = content.slice(0, 120);
+            return { type: 'user', timestamp, text: short };
+        }
+        if (Array.isArray(content)) {
+            for (const block of content) {
+                if (block.type === 'tool_result') {
+                    return { type: 'tool_result', timestamp, text: '(tool result)' };
+                }
+                if (block.type === 'text' && block.text) {
+                    if (block.text.includes('<teammate-message>')) {
+                        const summaryMatch = block.text.match(/summary="([^"]+)"/);
+                        return { type: 'user', timestamp, text: summaryMatch ? summaryMatch[1] : '(teammate message)' };
+                    }
+                    return { type: 'user', timestamp, text: block.text.slice(0, 120) };
+                }
+            }
+            return { type: 'user', timestamp, text: '(user message)' };
+        }
+        return null;
+    }
+
+    if (type === 'assistant' || obj.message?.role === 'assistant') {
+        if (typeof content === 'string') {
+            return { type: 'assistant', timestamp, text: content.slice(0, 120) };
+        }
+        if (Array.isArray(content)) {
+            const toolUses = content.filter(b => b.type === 'tool_use');
+            if (toolUses.length > 0) {
+                const names = toolUses.map(t => t.name).join(', ');
+                return { type: 'tool_use', timestamp, text: names };
+            }
+            const textBlock = content.find(b => b.type === 'text' && b.text);
+            if (textBlock) {
+                return { type: 'assistant', timestamp, text: textBlock.text.slice(0, 120) };
+            }
+            return { type: 'assistant', timestamp, text: '(assistant response)' };
+        }
+        return null;
+    }
+
+    return null;
+}
+
+/**
+ * GET /:taskId/models/:modelId/agents/trajectories
+ * 返回子 agent 的执行轨迹
+ */
+router.get('/:taskId/models/:modelId/agents/trajectories', (req, res) => {
+    const { taskId, modelId } = req.params;
+
+    try {
+        // 推导 cwdSlug：/root/project/tasks/{taskId}/{modelId} → -root-project-tasks-{taskId}-{modelId}
+        const taskCwd = path.join('/root/project/tasks', taskId, modelId);
+        const cwdSlug = taskCwd.replace(/\//g, '-');
+        const projectDir = path.join(CLAUDE_USER_HOME, '.claude/projects', cwdSlug);
+
+        // 扫描 {projectDir}/*/subagents/agent-*.jsonl
+        const sessionDirs = safeListDir(projectDir);
+        const trajectories = [];
+
+        for (const sessionDir of sessionDirs) {
+            const subagentsDir = path.join(projectDir, sessionDir, 'subagents');
+            const jsonlFiles = safeListDir(subagentsDir, '.jsonl');
+
+            for (const file of jsonlFiles) {
+                const agentIdMatch = file.match(/^agent-(.+)\.jsonl$/);
+                if (!agentIdMatch) continue;
+
+                const agentId = agentIdMatch[1];
+                const filePath = path.join(subagentsDir, file);
+                const lines = safeReadLines(filePath);
+
+                const events = [];
+                let memberName = '';
+
+                for (const line of lines) {
+                    const event = extractEventSummary(line);
+                    if (event) {
+                        events.push(event);
+                    }
+
+                    // 尝试从第一行的 teammate-message 中匹配成员名
+                    if (!memberName && events.length <= 2) {
+                        try {
+                            const obj = JSON.parse(line);
+                            const c = obj.message?.content;
+                            const textToSearch = typeof c === 'string' ? c :
+                                (Array.isArray(c) ? c.map(b => b.text || '').join(' ') : '');
+                            // 查找 from="xxx" 格式
+                            const fromMatch = textToSearch.match(/from="([^"]+)"/);
+                            if (fromMatch) {
+                                memberName = fromMatch[1];
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+
+                trajectories.push({
+                    agentId,
+                    memberName: memberName || agentId.slice(0, 8),
+                    sessionId: sessionDir,
+                    lines: lines.length,
+                    events
+                });
+            }
+        }
+
+        return res.json({ trajectories });
+    } catch (e) {
+        console.error(`[Agents API] Trajectory error for ${taskId}/${modelId}:`, e);
         return res.status(500).json({ error: 'Internal server error' });
     }
 });
