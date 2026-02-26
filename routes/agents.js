@@ -288,21 +288,44 @@ router.get('/:taskId/models/:modelId/agents', (req, res) => {
             return res.json(data);
         }
 
-        // 2. Fallback: 扫描实时 teams 目录
+        // 2. Fallback: 从 log_entries 中查找 TeamCreate 事件获取 team name
+        const run = db.prepare('SELECT id FROM model_runs WHERE task_id = ? AND model_id = ?').get(taskId, modelId);
+        if (run) {
+            const teamCreateLog = db.prepare(
+                "SELECT content FROM log_entries WHERE run_id = ? AND type = 'TeamCreate' LIMIT 1"
+            ).get(run.id);
+            if (teamCreateLog && teamCreateLog.content) {
+                try {
+                    const parsed = JSON.parse(teamCreateLog.content);
+                    // content 是 stream-json 的原始内容，tool_use 的 input 中包含 team_name
+                    const input = parsed?.input || parsed?.content?.input || {};
+                    const dbTeamName = input.team_name;
+                    if (dbTeamName) {
+                        data = readTeamDataFromLive(dbTeamName);
+                        if (data) return res.json(data);
+                    }
+                } catch (e) { /* ignore parse error */ }
+            }
+        }
+
+        // 3. Fallback: 扫描实时 teams 目录（匹配 cwd 包含 taskId）
         const scannedTeamName = scanForTeam(taskId);
         if (scannedTeamName) {
             data = readTeamDataFromLive(scannedTeamName);
             if (data) return res.json(data);
         }
 
-        // 3. Fallback: 快照路径
+        // 4. Fallback: 快照路径
         const snapshotDir = path.join(config.TASKS_DIR, taskId, modelId, '.agent-snapshot');
         data = readTeamDataFromSnapshot(snapshotDir);
         if (data) {
             return res.json(data);
         }
 
-        // 4. 没有找到任何数据
+        // 5. Fallback: 从 DB 获取的 team name 尝试快照路径
+        // （如果 team name 是旧格式，快照可能用原始 team name 存储）
+
+        // 6. 没有找到任何数据
         return res.status(404).json({ error: 'No agent team data found' });
     } catch (e) {
         console.error(`[Agents API] Error for ${taskId}/${modelId}:`, e);
