@@ -456,45 +456,59 @@ function snapshotAgentTeamFiles(taskId, modelId, folderPath) {
     const teamName = `${taskId}-${modelId}`;
     const snapshotDir = path.join(folderPath, '.agent-snapshot');
     const claudeUserHome = '/home/claude-user';
+    const teamsBase = path.join(claudeUserHome, '.claude/teams');
+    const tasksBase = path.join(claudeUserHome, '.claude/tasks');
 
-    // 源路径
-    const teamsDir = path.join(claudeUserHome, '.claude/teams', teamName);
-    const tasksDir = path.join(claudeUserHome, '.claude/tasks', teamName);
-
-    // 检查 team 目录是否存在（先用约定名称，再 fallback 扫描）
-    let actualTeamName = teamName;
-    let actualTeamsDir = teamsDir;
-    let actualTasksDir = tasksDir;
-
+    // 查找所有大小写变体目录（Claude SDK 会用不同大小写创建目录）
+    let allTeamDirs = [];
+    let allTaskDirs = [];
     try {
-        const teamExists = execSync(`sudo -n test -d "${teamsDir}" && echo yes || echo no`, { encoding: 'utf8' }).trim();
-        if (teamExists !== 'yes') {
-            // Fallback: 扫描所有 teams 目录，匹配 cwd 包含 taskId 的团队
-            console.log(`[Snapshot] Team dir ${teamsDir} not found, scanning...`);
-            try {
-                const allTeams = execSync(`sudo -n ls /home/claude-user/.claude/teams/ 2>/dev/null || echo ""`, { encoding: 'utf8' }).trim();
-                if (allTeams) {
-                    const teamDirs = allTeams.split('\n').filter(Boolean);
-                    for (const dir of teamDirs) {
-                        try {
-                            const configContent = execSync(`sudo -n cat "/home/claude-user/.claude/teams/${dir}/config.json" 2>/dev/null || echo ""`, { encoding: 'utf8' }).trim();
-                            if (configContent && configContent.includes(taskId)) {
-                                actualTeamName = dir;
-                                actualTeamsDir = path.join(claudeUserHome, '.claude/teams', dir);
-                                actualTasksDir = path.join(claudeUserHome, '.claude/tasks', dir);
-                                console.log(`[Snapshot] Found matching team: ${dir}`);
-                                break;
-                            }
-                        } catch (e) { /* ignore individual read errors */ }
-                    }
+        const allTeams = execSync(`sudo -n ls "${teamsBase}/" 2>/dev/null || echo ""`, { encoding: 'utf8' }).trim();
+        if (allTeams) {
+            const lowerName = teamName.toLowerCase();
+            for (const dir of allTeams.split('\n').filter(Boolean)) {
+                if (dir.toLowerCase() === lowerName) {
+                    allTeamDirs.push(path.join(teamsBase, dir));
                 }
-            } catch (e) {
-                console.log(`[Snapshot] Scan failed:`, e.message);
-                return;
             }
         }
-    } catch (e) {
-        console.log(`[Snapshot] Cannot check team dir:`, e.message);
+    } catch (e) { /* ignore */ }
+
+    try {
+        const allTasks = execSync(`sudo -n ls "${tasksBase}/" 2>/dev/null || echo ""`, { encoding: 'utf8' }).trim();
+        if (allTasks) {
+            const lowerName = teamName.toLowerCase();
+            for (const dir of allTasks.split('\n').filter(Boolean)) {
+                if (dir.toLowerCase() === lowerName) {
+                    allTaskDirs.push(path.join(tasksBase, dir));
+                }
+            }
+        }
+    } catch (e) { /* ignore */ }
+
+    // Fallback: 扫描匹配 cwd 包含 taskId 的团队
+    if (allTeamDirs.length === 0) {
+        console.log(`[Snapshot] No case-variant team dirs found for ${teamName}, scanning by taskId...`);
+        try {
+            const allTeams = execSync(`sudo -n ls "${teamsBase}/" 2>/dev/null || echo ""`, { encoding: 'utf8' }).trim();
+            if (allTeams) {
+                for (const dir of allTeams.split('\n').filter(Boolean)) {
+                    try {
+                        const configContent = execSync(`sudo -n cat "${teamsBase}/${dir}/config.json" 2>/dev/null || echo ""`, { encoding: 'utf8' }).trim();
+                        if (configContent && configContent.includes(taskId)) {
+                            allTeamDirs.push(path.join(teamsBase, dir));
+                            allTaskDirs.push(path.join(tasksBase, dir));
+                            console.log(`[Snapshot] Found matching team by scan: ${dir}`);
+                            break;
+                        }
+                    } catch (e) { /* ignore */ }
+                }
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    if (allTeamDirs.length === 0) {
+        console.log(`[Snapshot] No team dirs found for ${teamName}`);
         return;
     }
 
@@ -509,43 +523,55 @@ function snapshotAgentTeamFiles(taskId, modelId, folderPath) {
         return;
     }
 
-    // 复制 config.json
-    try {
-        execSync(`sudo -n cp "${actualTeamsDir}/config.json" "${snapshotDir}/config.json" 2>/dev/null`, { stdio: 'ignore' });
-        console.log(`[Snapshot] Copied config.json`);
-    } catch (e) { console.log(`[Snapshot] No config.json to copy`); }
+    // 从所有 teams 目录变体复制 config.json 和 inboxes
+    for (const teamDir of allTeamDirs) {
+        try {
+            execSync(`sudo -n cp -n "${teamDir}/config.json" "${snapshotDir}/config.json" 2>/dev/null`, { stdio: 'ignore' });
+        } catch (e) { /* ignore */ }
+        try {
+            execSync(`sudo -n cp -n "${teamDir}/inboxes/"*.json "${snapshotDir}/inboxes/" 2>/dev/null`, { stdio: 'ignore' });
+        } catch (e) { /* ignore */ }
+    }
+    console.log(`[Snapshot] Copied config.json and inboxes from ${allTeamDirs.length} team dir(s)`);
 
-    // 复制 inboxes/
-    try {
-        execSync(`sudo -n cp "${actualTeamsDir}/inboxes/"*.json "${snapshotDir}/inboxes/" 2>/dev/null`, { stdio: 'ignore' });
-        console.log(`[Snapshot] Copied inboxes`);
-    } catch (e) { console.log(`[Snapshot] No inboxes to copy`); }
+    // 从所有 tasks 目录变体复制 tasks
+    for (const taskDir of allTaskDirs) {
+        try {
+            execSync(`sudo -n cp -n "${taskDir}/"*.json "${snapshotDir}/tasks/" 2>/dev/null`, { stdio: 'ignore' });
+        } catch (e) { /* ignore */ }
+    }
+    console.log(`[Snapshot] Copied tasks from ${allTaskDirs.length} task dir(s)`);
 
-    // 复制 tasks/
+    // 复制 subagents/ — 两种布局：
+    //   新格式: projects/{cwdSlug}/{sessionId}/subagents/agent-*.jsonl
+    //   旧格式: projects/{cwdSlug}/agent-*.jsonl
     try {
-        execSync(`sudo -n cp "${actualTasksDir}/"*.json "${snapshotDir}/tasks/" 2>/dev/null`, { stdio: 'ignore' });
-        console.log(`[Snapshot] Copied tasks`);
-    } catch (e) { console.log(`[Snapshot] No tasks to copy`); }
+        const cwdSlug = folderPath.replace(/\//g, '-');
+        const projectDir = path.join(claudeUserHome, '.claude/projects', cwdSlug);
 
-    // 复制 subagents/ — 需要从 config.json 获取 leadSessionId 来定位 subagents 目录
-    try {
-        const configContent = execSync(`sudo -n cat "${snapshotDir}/config.json" 2>/dev/null || echo ""`, { encoding: 'utf8' }).trim();
-        if (configContent) {
-            const teamConfig = JSON.parse(configContent);
-            const sessionId = teamConfig.leadSessionId;
-            const cwdPath = teamConfig.members?.[0]?.cwd || folderPath;
-            // cwdSlug: 替换 / 为 -，去掉开头的 -
-            const cwdSlug = cwdPath.replace(/\//g, '-').replace(/^-/, '');
-            const subagentsDir = path.join(claudeUserHome, `.claude/projects/${cwdSlug}/${sessionId}/subagents`);
+        // 旧格式：直接在项目目录下
+        try {
+            execSync(`sudo -n cp "${projectDir}/"agent-*.jsonl "${snapshotDir}/subagents/" 2>/dev/null`, { stdio: 'ignore' });
+        } catch (e) { /* ignore */ }
 
-            try {
-                const saExists = execSync(`sudo -n test -d "${subagentsDir}" && echo yes || echo no`, { encoding: 'utf8' }).trim();
-                if (saExists === 'yes') {
-                    execSync(`sudo -n cp "${subagentsDir}/"*.jsonl "${snapshotDir}/subagents/" 2>/dev/null`, { stdio: 'ignore' });
-                    console.log(`[Snapshot] Copied subagents from ${subagentsDir}`);
+        // 新格式：通过 config 的 leadSessionId 定位
+        try {
+            const configContent = execSync(`sudo -n cat "${snapshotDir}/config.json" 2>/dev/null || echo ""`, { encoding: 'utf8' }).trim();
+            if (configContent) {
+                const teamConfig = JSON.parse(configContent);
+                const sessionId = teamConfig.leadSessionId;
+                if (sessionId) {
+                    const subagentsDir = path.join(projectDir, sessionId, 'subagents');
+                    try {
+                        const saExists = execSync(`sudo -n test -d "${subagentsDir}" && echo yes || echo no`, { encoding: 'utf8' }).trim();
+                        if (saExists === 'yes') {
+                            execSync(`sudo -n cp "${subagentsDir}/"*.jsonl "${snapshotDir}/subagents/" 2>/dev/null`, { stdio: 'ignore' });
+                            console.log(`[Snapshot] Copied subagents from ${subagentsDir}`);
+                        }
+                    } catch (e) { /* ignore */ }
                 }
-            } catch (e) { console.log(`[Snapshot] No subagents to copy`); }
-        }
+            }
+        } catch (e) { /* ignore */ }
     } catch (e) { console.log(`[Snapshot] Failed to process subagents:`, e.message); }
 
     // 修复权限，确保服务进程可读
