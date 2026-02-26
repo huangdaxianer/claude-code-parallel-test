@@ -206,8 +206,11 @@ router.all('/:modelId/{*path}', (req, res) => {
                 }
 
                 if (alwaysThinkingEnabled) {
-                    // 启用推理：强制注入 thinking enabled
-                    body.thinking = { type: 'enabled' };
+                    // 启用推理：强制注入 thinking enabled + budget_tokens
+                    // Claude API 要求 thinking.budget_tokens 为必填数值，且 < max_tokens
+                    const maxTokens = body.max_tokens || 16384;
+                    const budgetTokens = Math.min(10240, Math.floor(maxTokens * 0.8));
+                    body.thinking = { type: 'enabled', budget_tokens: budgetTokens };
                 } else {
                     // 禁用推理：强制设置为 disabled
                     body.thinking = { type: 'disabled' };
