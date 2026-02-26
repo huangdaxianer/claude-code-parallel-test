@@ -33,6 +33,10 @@
      * 渲染子Agent面板（入口）
      */
     App.subAgent.render = function () {
+        // 切换模型时重置所有缓存状态
+        lastDataHash = null;
+        trajectoryData = null;
+        selectedMember = null;
         fetchAgentData();
         startPolling();
     };
