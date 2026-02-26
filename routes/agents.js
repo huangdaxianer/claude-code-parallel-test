@@ -395,7 +395,7 @@ function extractEventSummary(line) {
     if (type === 'user' || obj.message?.role === 'user') {
         // 用户消息：可能是 teammate-message 或 tool_result
         if (typeof content === 'string') {
-            if (content.includes('<teammate-message>')) {
+            if (content.includes('<teammate-message')) {
                 // 提取 summary
                 const summaryMatch = content.match(/summary="([^"]+)"/);
                 return { type: 'user', timestamp, text: summaryMatch ? summaryMatch[1] : '(teammate message)' };
@@ -412,7 +412,7 @@ function extractEventSummary(line) {
                     return { type: 'tool_result', timestamp, text: '(tool result)' };
                 }
                 if (block.type === 'text' && block.text) {
-                    if (block.text.includes('<teammate-message>')) {
+                    if (block.text.includes('<teammate-message')) {
                         const summaryMatch = block.text.match(/summary="([^"]+)"/);
                         return { type: 'user', timestamp, text: summaryMatch ? summaryMatch[1] : '(teammate message)' };
                     }
@@ -459,6 +459,23 @@ router.get('/:taskId/models/:modelId/agents/trajectories', (req, res) => {
         const cwdSlug = taskCwd.replace(/\//g, '-');
         const projectDir = path.join(CLAUDE_USER_HOME, '.claude/projects', cwdSlug);
 
+        // 读取团队配置以获取成员 prompt 信息用于匹配
+        const teamsBase = path.join(CLAUDE_USER_HOME, '.claude/teams');
+        const teamName = `${taskId}-${modelId}`;
+        const teamsDirs = findAllCaseVariantDirs(teamsBase, teamName);
+        let teamMembers = [];
+        for (const dir of teamsDirs) {
+            const cfgContent = safeReadFile(path.join(dir, 'config.json'));
+            if (!cfgContent) continue;
+            try {
+                const cfg = JSON.parse(cfgContent);
+                if (cfg.members && cfg.members.length > 0) {
+                    teamMembers = cfg.members;
+                    break;
+                }
+            } catch (e) { /* ignore */ }
+        }
+
         // 扫描 {projectDir}/*/subagents/agent-*.jsonl
         const sessionDirs = safeListDir(projectDir);
         const trajectories = [];
@@ -477,6 +494,7 @@ router.get('/:taskId/models/:modelId/agents/trajectories', (req, res) => {
 
                 const events = [];
                 let memberName = '';
+                let firstMsgText = '';
 
                 for (const line of lines) {
                     const event = extractEventSummary(line);
@@ -484,19 +502,24 @@ router.get('/:taskId/models/:modelId/agents/trajectories', (req, res) => {
                         events.push(event);
                     }
 
-                    // 尝试从第一行的 teammate-message 中匹配成员名
-                    if (!memberName && events.length <= 2) {
+                    // 提取第一条消息的文本内容用于匹配成员
+                    if (!firstMsgText && events.length <= 2) {
                         try {
                             const obj = JSON.parse(line);
                             const c = obj.message?.content;
-                            const textToSearch = typeof c === 'string' ? c :
+                            firstMsgText = typeof c === 'string' ? c :
                                 (Array.isArray(c) ? c.map(b => b.text || '').join(' ') : '');
-                            // 查找 from="xxx" 格式
-                            const fromMatch = textToSearch.match(/from="([^"]+)"/);
-                            if (fromMatch) {
-                                memberName = fromMatch[1];
-                            }
                         } catch (e) { /* ignore */ }
+                    }
+                }
+
+                // 通过首条消息内容匹配成员 prompt
+                if (firstMsgText && teamMembers.length > 0) {
+                    for (const m of teamMembers) {
+                        if (m.prompt && firstMsgText.includes(m.prompt.slice(0, 50))) {
+                            memberName = m.name;
+                            break;
+                        }
                     }
                 }
 
