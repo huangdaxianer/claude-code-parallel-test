@@ -380,70 +380,174 @@ function safeReadLines(filePath) {
 }
 
 /**
- * 从 jsonl 行中提取事件摘要
+ * 从 jsonl 行中提取事件摘要（返回数组，一个 tool_use 对应一条事件）
  */
-function extractEventSummary(line) {
+function extractEventSummaries(line) {
     let obj;
     try {
         obj = JSON.parse(line);
-    } catch (e) { return null; }
+    } catch (e) { return []; }
 
     const type = obj.type || obj.message?.role || '';
     const timestamp = obj.timestamp || '';
     const content = obj.message?.content || '';
+    const results = [];
 
     if (type === 'user' || obj.message?.role === 'user') {
-        // 用户消息：可能是 teammate-message 或 tool_result
         if (typeof content === 'string') {
             if (content.includes('<teammate-message')) {
-                // 提取 summary
                 const summaryMatch = content.match(/summary="([^"]+)"/);
-                return { type: 'user', timestamp, text: summaryMatch ? summaryMatch[1] : '(teammate message)' };
+                const fromMatch = content.match(/teammate_id="([^"]+)"/);
+                const from = fromMatch ? fromMatch[1] : '';
+                results.push({ type: 'user', timestamp, text: (from ? `[来自 ${from}] ` : '') + (summaryMatch ? summaryMatch[1] : '(teammate message)') });
+            } else {
+                results.push({ type: 'user', timestamp, text: content.slice(0, 200) });
             }
-            if (content.includes('tool_result') || content.includes('<tool-result>')) {
-                return { type: 'tool_result', timestamp, text: '(tool result)' };
-            }
-            const short = content.slice(0, 120);
-            return { type: 'user', timestamp, text: short };
         }
         if (Array.isArray(content)) {
             for (const block of content) {
                 if (block.type === 'tool_result') {
-                    return { type: 'tool_result', timestamp, text: '(tool result)' };
-                }
-                if (block.type === 'text' && block.text) {
+                    const resultText = extractToolResultText(block);
+                    results.push({ type: 'tool_result', timestamp, text: resultText });
+                } else if (block.type === 'text' && block.text) {
                     if (block.text.includes('<teammate-message')) {
                         const summaryMatch = block.text.match(/summary="([^"]+)"/);
-                        return { type: 'user', timestamp, text: summaryMatch ? summaryMatch[1] : '(teammate message)' };
+                        const fromMatch = block.text.match(/teammate_id="([^"]+)"/);
+                        const from = fromMatch ? fromMatch[1] : '';
+                        results.push({ type: 'user', timestamp, text: (from ? `[来自 ${from}] ` : '') + (summaryMatch ? summaryMatch[1] : '(teammate message)') });
+                    } else {
+                        results.push({ type: 'user', timestamp, text: block.text.slice(0, 200) });
                     }
-                    return { type: 'user', timestamp, text: block.text.slice(0, 120) };
                 }
             }
-            return { type: 'user', timestamp, text: '(user message)' };
         }
-        return null;
+        return results;
     }
 
     if (type === 'assistant' || obj.message?.role === 'assistant') {
-        if (typeof content === 'string') {
-            return { type: 'assistant', timestamp, text: content.slice(0, 120) };
+        if (typeof content === 'string' && content.trim()) {
+            results.push({ type: 'assistant', timestamp, text: content.slice(0, 200) });
         }
         if (Array.isArray(content)) {
-            const toolUses = content.filter(b => b.type === 'tool_use');
-            if (toolUses.length > 0) {
-                const names = toolUses.map(t => t.name).join(', ');
-                return { type: 'tool_use', timestamp, text: names };
+            for (const block of content) {
+                if (block.type === 'tool_use') {
+                    const detail = summarizeToolUse(block.name, block.input);
+                    results.push({ type: 'tool_use', timestamp, text: detail });
+                } else if (block.type === 'text' && block.text && block.text.trim()) {
+                    results.push({ type: 'assistant', timestamp, text: block.text.slice(0, 200) });
+                }
             }
-            const textBlock = content.find(b => b.type === 'text' && b.text);
-            if (textBlock) {
-                return { type: 'assistant', timestamp, text: textBlock.text.slice(0, 120) };
-            }
-            return { type: 'assistant', timestamp, text: '(assistant response)' };
         }
-        return null;
+        return results;
     }
 
-    return null;
+    return results;
+}
+
+/**
+ * 根据工具名称和输入参数，生成可读的工具调用摘要
+ */
+function summarizeToolUse(name, input) {
+    if (!input) return name;
+
+    try {
+        switch (name) {
+            case 'SendMessage': {
+                const recipient = input.recipient || input.target_agent_id || '';
+                const msgType = input.type || 'message';
+                const summary = input.summary || '';
+                const content = input.content || '';
+                const brief = summary || (content.length > 100 ? content.slice(0, 100) + '...' : content);
+                if (msgType === 'shutdown_request') return `SendMessage → ${recipient} [shutdown_request]`;
+                if (msgType === 'broadcast') return `SendMessage [broadcast]: ${brief}`;
+                return `SendMessage → ${recipient}: ${brief}`;
+            }
+            case 'Bash': {
+                const cmd = input.command || '';
+                const desc = input.description || '';
+                return `Bash: ${desc || cmd.slice(0, 150)}`;
+            }
+            case 'Read': {
+                const fp = input.file_path || '';
+                const short = fp.length > 80 ? '...' + fp.slice(-77) : fp;
+                return `Read: ${short}`;
+            }
+            case 'Write': {
+                const fp = input.file_path || '';
+                const short = fp.length > 80 ? '...' + fp.slice(-77) : fp;
+                return `Write: ${short}`;
+            }
+            case 'Edit': {
+                const fp = input.file_path || '';
+                const short = fp.length > 80 ? '...' + fp.slice(-77) : fp;
+                return `Edit: ${short}`;
+            }
+            case 'Glob':
+                return `Glob: ${input.pattern || ''}`;
+            case 'Grep':
+                return `Grep: ${input.pattern || ''}${input.path ? ' in ' + input.path : ''}`;
+            case 'TodoWrite': {
+                const todos = input.todos || [];
+                const summary = todos.map(t => `[${(t.status || '').slice(0, 4)}] ${t.content || ''}`).join('; ');
+                return `TodoWrite(${todos.length}): ${summary.slice(0, 180)}`;
+            }
+            case 'TaskCreate': {
+                const desc = input.description || input.title || '';
+                return `TaskCreate: ${desc.slice(0, 150)}`;
+            }
+            case 'TaskUpdate': {
+                const parts = [];
+                if (input.task_id) parts.push(`#${input.task_id}`);
+                if (input.status) parts.push(input.status);
+                if (input.owner) parts.push(`→ ${input.owner}`);
+                return `TaskUpdate: ${parts.join(' ')}`;
+            }
+            case 'TaskList':
+                return 'TaskList';
+            case 'TeamCreate':
+                return `TeamCreate: ${input.team_name || ''}`;
+            case 'Task': {
+                const desc = input.description || '';
+                const type = input.subagent_type || '';
+                const prompt = input.prompt || '';
+                const brief = desc || (prompt.length > 80 ? prompt.slice(0, 80) + '...' : prompt);
+                return `Task(${type}): ${brief}`;
+            }
+            case 'WebSearch':
+                return `WebSearch: ${input.query || ''}`;
+            case 'WebFetch':
+                return `WebFetch: ${input.url || ''}`;
+            default: {
+                // 通用：显示前几个有意义的参数
+                const pairs = Object.entries(input)
+                    .filter(([k, v]) => typeof v === 'string' || typeof v === 'number')
+                    .slice(0, 3)
+                    .map(([k, v]) => `${k}=${String(v).slice(0, 60)}`);
+                return `${name}${pairs.length > 0 ? ': ' + pairs.join(', ') : ''}`;
+            }
+        }
+    } catch (e) {
+        return name;
+    }
+}
+
+/**
+ * 从 tool_result block 中提取可读文本
+ */
+function extractToolResultText(block) {
+    const content = block.content;
+    if (!content) return '(empty result)';
+    if (typeof content === 'string') {
+        return content.length > 150 ? content.slice(0, 150) + '...' : content;
+    }
+    if (Array.isArray(content)) {
+        for (const item of content) {
+            if (item.type === 'text' && item.text) {
+                return item.text.length > 150 ? item.text.slice(0, 150) + '...' : item.text;
+            }
+        }
+    }
+    return '(tool result)';
 }
 
 /**
@@ -514,13 +618,11 @@ router.get('/:taskId/models/:modelId/agents/trajectories', (req, res) => {
             let firstMsgText = '';
 
             for (const line of lines) {
-                const event = extractEventSummary(line);
-                if (event) {
-                    events.push(event);
-                }
+                const evts = extractEventSummaries(line);
+                events.push(...evts);
 
                 // 提取第一条消息的文本内容用于匹配成员
-                if (!firstMsgText && events.length <= 2) {
+                if (!firstMsgText && events.length <= 3) {
                     try {
                         const obj = JSON.parse(line);
                         const c = obj.message?.content;

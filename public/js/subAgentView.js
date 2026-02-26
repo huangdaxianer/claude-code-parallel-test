@@ -371,12 +371,54 @@
             html += '<div class="sa-traj-item">';
             html += `<span class="sa-traj-time">${escapeHtml(time)}</span>`;
             html += `<span class="sa-traj-type ${typeClass}">${typeLabel}</span>`;
-            html += `<span class="sa-traj-text">${escapeHtml(text)}</span>`;
+            html += `<span class="sa-traj-text">${formatEventText(evt.type, text)}</span>`;
             html += '</div>';
         }
 
         html += '</div></div>';
         return html;
+    }
+
+    /**
+     * 格式化事件文本，为工具调用添加结构化高亮
+     */
+    function formatEventText(type, text) {
+        if (!text) return '';
+
+        if (type === 'tool_use') {
+            // 解析工具名称和详情: "ToolName: details" 或 "ToolName → target: details"
+            const colonIdx = text.indexOf(':');
+            const arrowIdx = text.indexOf('→');
+
+            if (arrowIdx > 0 && (colonIdx < 0 || arrowIdx < colonIdx)) {
+                // "SendMessage → target: content" 格式
+                const toolName = escapeHtml(text.slice(0, arrowIdx).trim());
+                const rest = text.slice(arrowIdx + 1).trim();
+                const restColonIdx = rest.indexOf(':');
+                if (restColonIdx > 0) {
+                    const target = escapeHtml(rest.slice(0, restColonIdx).trim());
+                    const detail = escapeHtml(rest.slice(restColonIdx + 1).trim());
+                    return `<span class="sa-tool-name">${toolName}</span> → <span class="sa-tool-target">${target}</span>: <span class="sa-tool-detail">${detail}</span>`;
+                }
+                return `<span class="sa-tool-name">${toolName}</span> → <span class="sa-tool-target">${escapeHtml(rest)}</span>`;
+            }
+
+            if (colonIdx > 0 && colonIdx < 30) {
+                // "ToolName: detail" 格式
+                const toolName = escapeHtml(text.slice(0, colonIdx).trim());
+                const detail = escapeHtml(text.slice(colonIdx + 1).trim());
+                return `<span class="sa-tool-name">${toolName}</span>: ${detail}`;
+            }
+
+            // 纯工具名称
+            return `<span class="sa-tool-name">${escapeHtml(text)}</span>`;
+        }
+
+        if (type === 'tool_result') {
+            return `<span class="sa-tool-detail">${escapeHtml(text)}</span>`;
+        }
+
+        return escapeHtml(text);
     }
 
     function getEventTypeClass(type) {
