@@ -63,11 +63,18 @@
         // 为每个成员创建 pill
         members.forEach(function (member) {
             const pill = document.createElement('span');
-            const isActive = App.state.selectedTrajectoryMember === member.name;
+            const isTeamLead = member.name === 'team-lead';
+            // team-lead 对应 null（主轨迹），选中态：null 时 team-lead 高亮
+            const isActive = isTeamLead
+                ? (App.state.selectedTrajectoryMember === null)
+                : (App.state.selectedTrajectoryMember === member.name);
             pill.className = 'traj-member-pill' + (isActive ? ' active' : '');
             pill.textContent = member.name;
             pill.onclick = function () {
-                if (App.state.selectedTrajectoryMember === member.name) {
+                if (isTeamLead) {
+                    // team-lead 始终用主轨迹渲染
+                    App.state.selectedTrajectoryMember = null;
+                } else if (App.state.selectedTrajectoryMember === member.name) {
                     // 再次点击取消选中，回到主轨迹
                     App.state.selectedTrajectoryMember = null;
                 } else {
