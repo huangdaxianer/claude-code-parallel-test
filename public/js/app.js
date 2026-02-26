@@ -29,7 +29,9 @@
         feedbackDebounceTimer: null,
         expandedPaths: new Set(),
         targetUser: null, // The user whose tasks we are viewing (if different from currentUser)
-        modelDisplayNames: {} // Cached model display names (name -> displayName mapping)
+        modelDisplayNames: {}, // Cached model display names (name -> displayName mapping)
+        selectedTrajectoryMember: null, // null = team-lead/主轨迹, string = 子agent名
+        agentTeamMembers: [] // 缓存的团队成员列表
     };
 
     // DOM 元素引用

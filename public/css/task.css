@@ -2763,3 +2763,64 @@
 .sa-traj-text .sa-tool-detail {
     color: #64748b;
 }
+
+/* === 执行轨迹 Tab 内的成员选择器 === */
+.trajectory-member-selector {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.6rem 2rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #fafbfc;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.traj-member-pill {
+    padding: 0.3rem 0.7rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #475569;
+    cursor: pointer;
+    background: white;
+    transition: all 0.15s;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.traj-member-pill:hover {
+    border-color: #3b82f6;
+    color: #2563eb;
+    background: #f0f7ff;
+}
+
+.traj-member-pill.active {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 600;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+/* 子Agent轨迹中的用户消息样式 */
+.user-prompt-entry {
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: #eff6ff;
+    border-left: 3px solid #3b82f6;
+    border-radius: 0 0.5rem 0.5rem 0;
+    font-size: 0.85rem;
+    color: #1e40af;
+    line-height: 1.6;
+    word-break: break-word;
+}
+
+.user-prompt-entry .user-prompt-label {
+    font-weight: 700;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: #3b82f6;
+    margin-bottom: 0.25rem;
+}

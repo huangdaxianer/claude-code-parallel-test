@@ -167,6 +167,10 @@
                 App.state.isStatsMode = false;
                 App.state.activeFolder = run.folderName;
 
+                // 切换模型时重置子Agent相关状态
+                App.state.selectedTrajectoryMember = null;
+                App.state.agentTeamMembers = [];
+
                 // Reset to trajectory view when switching subtasks
                 // Usage switchTab to handle UI updates, URL updates, and content rendering
                 App.main.switchTab('trajectory');
