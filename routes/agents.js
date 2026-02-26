@@ -65,16 +65,25 @@ function safeDirExists(dirPath) {
 }
 
 /**
- * 在 baseDir 中查找 name 的大小写变体目录
+ * 在 baseDir 中查找 name 的所有大小写变体目录
  * Claude SDK 有时会用不同大小写创建目录（如 s0hdxp-nofmw 和 S0HDXP-NOFMW）
+ * 返回所有匹配的路径数组
  */
-function findCaseVariantDir(baseDir, name) {
-    const directPath = path.join(baseDir, name);
-    if (safeDirExists(directPath)) return directPath;
-    // 遍历目录找大小写变体
+function findAllCaseVariantDirs(baseDir, name) {
+    const results = [];
     const entries = safeListDir(baseDir);
-    const match = entries.find(e => e.toLowerCase() === name.toLowerCase() && e !== name);
-    return match ? path.join(baseDir, match) : null;
+    const lowerName = name.toLowerCase();
+    for (const entry of entries) {
+        if (entry.toLowerCase() === lowerName) {
+            results.push(path.join(baseDir, entry));
+        }
+    }
+    // 如果没有找到任何匹配，直接检查精确路径
+    if (results.length === 0) {
+        const directPath = path.join(baseDir, name);
+        if (safeDirExists(directPath)) results.push(directPath);
+    }
+    return results;
 }
 
 /**
@@ -85,17 +94,23 @@ function readTeamDataFromLive(teamName) {
     const teamsBase = path.join(CLAUDE_USER_HOME, '.claude/teams');
     const tasksBase = path.join(CLAUDE_USER_HOME, '.claude/tasks');
 
-    // 查找 config.json 所在的 teams 目录（可能是不同大小写）
-    const teamsDir = findCaseVariantDir(teamsBase, teamName);
-    if (!teamsDir) return null;
+    // 查找所有大小写变体目录
+    const teamsDirs = findAllCaseVariantDirs(teamsBase, teamName);
+    const tasksDirs = findAllCaseVariantDirs(tasksBase, teamName);
 
-    const configContent = safeReadFile(path.join(teamsDir, 'config.json'));
-    if (!configContent) return null;
+    if (teamsDirs.length === 0) return null;
 
-    let teamConfig;
-    try {
-        teamConfig = JSON.parse(configContent);
-    } catch (e) { return null; }
+    // 从任一 teams 目录中读取 config.json
+    let teamConfig = null;
+    for (const dir of teamsDirs) {
+        const configContent = safeReadFile(path.join(dir, 'config.json'));
+        if (!configContent) continue;
+        try {
+            teamConfig = JSON.parse(configContent);
+            break;
+        } catch (e) { /* ignore */ }
+    }
+    if (!teamConfig) return null;
 
     // 读取成员列表
     const members = (teamConfig.members || []).map(m => ({
@@ -107,13 +122,15 @@ function readTeamDataFromLive(teamName) {
         joinedAt: m.joinedAt || 0
     }));
 
-    // 查找 tasks 目录（可能在不同大小写的目录中）
-    const tasksDir = findCaseVariantDir(tasksBase, teamName);
+    // 从所有 tasks 目录变体中合并任务
     const tasks = [];
-    if (tasksDir) {
+    const seenTaskIds = new Set();
+    for (const tasksDir of tasksDirs) {
         const taskFiles = safeListDir(tasksDir, '.json');
         for (const file of taskFiles) {
             if (file === '.lock') continue;
+            if (seenTaskIds.has(file)) continue;
+            seenTaskIds.add(file);
             const content = safeReadFile(path.join(tasksDir, file));
             if (!content) continue;
             try {
@@ -128,19 +145,10 @@ function readTeamDataFromLive(teamName) {
         }
     }
 
-    // 读取并合并所有 inbox 消息
-    // inboxes 可能在当前 teamsDir 中，也可能在大小写变体的 teamsDir 中
+    // 从所有 teams 目录变体中合并 inbox 消息
     const messages = [];
-    const inboxCandidates = [path.join(teamsDir, 'inboxes')];
-    // 也搜索大小写变体 teams 目录的 inboxes
-    const allTeamEntries = safeListDir(teamsBase);
-    for (const entry of allTeamEntries) {
-        if (entry.toLowerCase() === teamName.toLowerCase() && path.join(teamsBase, entry) !== teamsDir) {
-            inboxCandidates.push(path.join(teamsBase, entry, 'inboxes'));
-        }
-    }
-
-    for (const inboxesDir of inboxCandidates) {
+    for (const teamsDir of teamsDirs) {
+        const inboxesDir = path.join(teamsDir, 'inboxes');
         const inboxFiles = safeListDir(inboxesDir, '.json');
         for (const file of inboxFiles) {
             const recipientName = file.replace('.json', '');
