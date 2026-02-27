@@ -476,7 +476,7 @@ function extractEventSummaries(line) {
             for (const block of content) {
                 if (block.type === 'tool_use') {
                     const detail = summarizeToolUse(block.name, block.input);
-                    results.push({ type: 'tool_use', timestamp, text: detail });
+                    results.push({ type: 'tool_use', timestamp, text: detail, toolName: block.name, input: block.input });
                 } else if (block.type === 'text' && block.text && block.text.trim()) {
                     results.push({ type: 'assistant', timestamp, text: block.text.slice(0, 200) });
                 }

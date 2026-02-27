@@ -366,25 +366,39 @@
             var body = document.createElement('div');
             body.className = 'json-body';
 
-            // Tool Call
+            // Tool Call — 优先展示原始 input JSON，fallback 到摘要文本
             var callHeader = document.createElement('div');
             callHeader.style.cssText = 'font-size:0.75rem; font-weight:bold; opacity:0.6; margin-bottom:0.25rem; text-transform:uppercase;';
-            callHeader.textContent = 'Tool Call';
+            callHeader.textContent = 'TOOL CALL';
             body.appendChild(callHeader);
             var callPre = document.createElement('pre');
-            callPre.textContent = toolText;
             callPre.style.whiteSpace = 'pre-wrap';
+            if (group.toolUse.input && typeof group.toolUse.input === 'object') {
+                try {
+                    callPre.innerHTML = App.utils.syntaxHighlight(group.toolUse.input);
+                } catch (e) {
+                    callPre.textContent = JSON.stringify(group.toolUse.input, null, 2);
+                }
+            } else {
+                callPre.textContent = toolText;
+            }
             body.appendChild(callPre);
 
             // Tool Result (if paired)
             if (group.type === 'tool_pair') {
                 var resultHeader = document.createElement('div');
                 resultHeader.style.cssText = 'font-size:0.75rem; font-weight:bold; opacity:0.6; margin-top:1rem; margin-bottom:0.25rem; text-transform:uppercase;';
-                resultHeader.textContent = 'Tool Result';
+                resultHeader.textContent = 'TOOL RESULT';
                 body.appendChild(resultHeader);
                 var resultPre = document.createElement('pre');
-                resultPre.textContent = group.toolResult.text || '';
                 resultPre.style.whiteSpace = 'pre-wrap';
+                var resultText = group.toolResult.text || '';
+                try {
+                    var resultObj = JSON.parse(resultText);
+                    resultPre.innerHTML = App.utils.syntaxHighlight(resultObj);
+                } catch (e) {
+                    resultPre.textContent = resultText;
+                }
                 body.appendChild(resultPre);
             }
 
