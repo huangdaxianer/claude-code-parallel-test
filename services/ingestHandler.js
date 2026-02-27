@@ -314,10 +314,10 @@ class IngestHandler {
             else if (todos.every(t => t.status === 'completed')) previewText = 'completed';
             else previewText = `Assigned: ${todos.length} todos`;
         } else if (toolName === 'SendMessage') {
-            // Agent Teams: 消息发送
+            // Agent Teams: 消息发送，优先展示 summary
             const recipient = input.recipient || input.target || 'broadcast';
-            const msgContent = input.content || '';
-            previewText = `→ ${recipient}: ${msgContent.slice(0, 80)}`;
+            const brief = input.summary || (input.content ? input.content.slice(0, 80) : '');
+            previewText = `→ ${recipient}: ${brief}`;
         } else if (toolName === 'TeamCreate') {
             previewText = input.team_name || input.description || '';
         } else if (toolName === 'TeamDelete') {

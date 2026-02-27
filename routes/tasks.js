@@ -549,6 +549,52 @@ router.post('/:taskId/stop', async (req, res) => {
     res.json({ success: true });
 });
 
+/**
+ * 清理 claude-user 主目录下的 Agent Teams 残留数据
+ * 包括: .claude/projects/{cwdSlug}/, .claude/teams/{teamName}/, .claude/tasks/{teamName}/
+ */
+function cleanupAgentTeamsData(taskId, modelId) {
+    const CLAUDE_USER_HOME = '/home/claude-user';
+    const teamName = `${taskId}-${modelId}`;
+    const taskCwd = path.join(config.TASKS_DIR, taskId, modelId);
+    const cwdSlug = path.resolve(taskCwd).replace(/\//g, '-');
+
+    // 1. 清理 .claude/projects/{cwdSlug}/ 下的子 agent JSONL 文件
+    const projectDir = path.join(CLAUDE_USER_HOME, '.claude/projects', cwdSlug);
+    try {
+        execSync(`sudo -n rm -rf "${projectDir}" 2>/dev/null`, { timeout: 10000 });
+        console.log(`[Control] Cleaned agent projects dir: ${projectDir}`);
+    } catch (e) { /* ignore */ }
+
+    // 2. 清理 .claude/teams/{teamName}/ (大小写变体)
+    const teamsBase = path.join(CLAUDE_USER_HOME, '.claude/teams');
+    try {
+        const entries = fs.readdirSync(teamsBase);
+        const lowerName = teamName.toLowerCase();
+        for (const entry of entries) {
+            if (entry.toLowerCase() === lowerName) {
+                const dirPath = path.join(teamsBase, entry);
+                execSync(`sudo -n rm -rf "${dirPath}" 2>/dev/null`, { timeout: 10000 });
+                console.log(`[Control] Cleaned agent teams dir: ${dirPath}`);
+            }
+        }
+    } catch (e) { /* ignore - dir may not exist */ }
+
+    // 3. 清理 .claude/tasks/{teamName}/ (大小写变体)
+    const tasksBase = path.join(CLAUDE_USER_HOME, '.claude/tasks');
+    try {
+        const entries = fs.readdirSync(tasksBase);
+        const lowerName = teamName.toLowerCase();
+        for (const entry of entries) {
+            if (entry.toLowerCase() === lowerName) {
+                const dirPath = path.join(tasksBase, entry);
+                execSync(`sudo -n rm -rf "${dirPath}" 2>/dev/null`, { timeout: 10000 });
+                console.log(`[Control] Cleaned agent tasks dir: ${dirPath}`);
+            }
+        }
+    } catch (e) { /* ignore - dir may not exist */ }
+}
+
 // 启动任务 (重试/恢复)
 router.post('/:taskId/start', (req, res) => {
     const { taskId } = req.params;
@@ -616,6 +662,9 @@ router.post('/:taskId/start', (req, res) => {
             } else {
                 console.log(`[Control] Log file does not exist: ${logFile}`);
             }
+
+            // 清理 Agent Teams 残留数据
+            cleanupAgentTeamsData(taskId, modelId);
         } else {
             const runningSubtasks = db.prepare("SELECT COUNT(*) as count FROM model_runs WHERE task_id = ? AND status = 'running'").get(taskId);
             if (runningSubtasks.count > 0) {
@@ -639,6 +688,9 @@ router.post('/:taskId/start', (req, res) => {
                 if (fs.existsSync(logFile)) {
                     fs.unlinkSync(logFile);
                 }
+
+                // 清理 Agent Teams 残留数据
+                cleanupAgentTeamsData(taskId, run.model_id);
             }
 
             // 重置所有非完成状态的 model_runs
