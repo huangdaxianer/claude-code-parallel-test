@@ -582,12 +582,12 @@ function extractToolResultText(block) {
     const content = block.content;
     if (!content) return '(empty result)';
     if (typeof content === 'string') {
-        return content.length > 150 ? content.slice(0, 150) + '...' : content;
+        return content;
     }
     if (Array.isArray(content)) {
         for (const item of content) {
             if (item.type === 'text' && item.text) {
-                return item.text.length > 150 ? item.text.slice(0, 150) + '...' : item.text;
+                return item.text;
             }
         }
     }
