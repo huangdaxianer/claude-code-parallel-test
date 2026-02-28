@@ -539,6 +539,7 @@ export const UI = {
             document.getElementById('m-default-checked').checked = !!model.is_default_checked;
             document.getElementById('m-preview-model').checked = !!model.is_preview_model;
             document.getElementById('m-always-thinking').checked = !!model.always_thinking_enabled;
+            document.getElementById('m-provider').value = model.provider || '';
         } else {
             title.textContent = '新增模型';
             document.getElementById('m-default-checked').checked = true;
@@ -547,6 +548,7 @@ export const UI = {
             document.getElementById('m-auto-retry-limit').value = 0;
             document.getElementById('m-activity-timeout').value = '';
             document.getElementById('m-task-timeout').value = '';
+            document.getElementById('m-provider').value = '';
             document.getElementById('m-api-key').placeholder = '留空使用默认 (.env)';
         }
 

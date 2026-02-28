@@ -680,7 +680,8 @@ async function handleModelSubmit(e) {
         always_thinking_enabled: document.getElementById('m-always-thinking').checked,
         auto_retry_limit: parseInt(document.getElementById('m-auto-retry-limit').value) || 0,
         activity_timeout_seconds: activityTimeoutVal !== '' ? parseInt(activityTimeoutVal) : null,
-        task_timeout_seconds: taskTimeoutVal !== '' ? parseInt(taskTimeoutVal) : null
+        task_timeout_seconds: taskTimeoutVal !== '' ? parseInt(taskTimeoutVal) : null,
+        provider: document.getElementById('m-provider').value.trim() || null
     };
     // Only send api_key if the user typed a new value
     if (apiKeyVal) {

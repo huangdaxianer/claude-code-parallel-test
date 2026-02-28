@@ -103,7 +103,7 @@ router.all('/:modelId/{*path}', (req, res) => {
     console.log(`[Proxy] ${req.method} model=${modelId} path=${remainingPath}`);
 
     // 查找模型的真实 API 配置
-    let apiKey, apiBaseUrl, alwaysThinkingEnabled = false, actualModelName = null;
+    let apiKey, apiBaseUrl, alwaysThinkingEnabled = false, actualModelName = null, providerConfig = null;
 
     if (modelId === '__default__') {
         // 默认配置（preview 等场景）
@@ -111,7 +111,7 @@ router.all('/:modelId/{*path}', (req, res) => {
         apiBaseUrl = process.env.ANTHROPIC_BASE_URL;
     } else {
         const modelConfig = db.prepare(
-            'SELECT api_key, api_base_url, always_thinking_enabled, model_name FROM model_configs WHERE model_id = ?'
+            'SELECT api_key, api_base_url, always_thinking_enabled, model_name, provider FROM model_configs WHERE model_id = ?'
         ).get(modelId);
 
         if (!modelConfig) {
@@ -124,6 +124,7 @@ router.all('/:modelId/{*path}', (req, res) => {
         apiBaseUrl = modelConfig.api_base_url || process.env.ANTHROPIC_BASE_URL;
         alwaysThinkingEnabled = !!modelConfig.always_thinking_enabled;
         actualModelName = modelConfig.model_name || null;
+        providerConfig = modelConfig.provider || null;
     }
 
     if (!apiKey || !apiBaseUrl) {
@@ -287,6 +288,15 @@ router.all('/:modelId/{*path}', (req, res) => {
                 } else {
                     // 禁用推理：强制设置为 disabled
                     body.thinking = { type: 'disabled' };
+                }
+
+                // 注入 provider.only（如果配置了 provider）
+                if (providerConfig) {
+                    const providers = providerConfig.split(';').map(s => s.trim()).filter(Boolean);
+                    if (providers.length > 0) {
+                        body.provider = { only: providers };
+                        console.log(`[Proxy] Injecting provider.only: [${providers.join(', ')}] for model ${modelId}`);
+                    }
                 }
 
                 const modified = Buffer.from(JSON.stringify(body));
