@@ -207,6 +207,18 @@ db.exec(`
         FOREIGN KEY(job_id) REFERENCES gsb_jobs(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS reports (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        report_type TEXT NOT NULL,
+        selected_models TEXT NOT NULL,
+        selected_tasks TEXT NOT NULL,
+        report_data TEXT NOT NULL,
+        created_by INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(created_by) REFERENCES users(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_gsb_jobs_user_id ON gsb_jobs(user_id);
     CREATE INDEX IF NOT EXISTS idx_gsb_tasks_job_id ON gsb_tasks(job_id);
     CREATE INDEX IF NOT EXISTS idx_model_runs_status ON model_runs(status);
@@ -433,6 +445,18 @@ try {
 } catch (e) {
     console.error('[DB] Password migration error:', e.message);
 }
+
+// Migration: Add user_id to feedback_responses to track who actually submitted the score
+try {
+    db.exec("ALTER TABLE feedback_responses ADD COLUMN user_id INTEGER REFERENCES users(id)");
+    // Backfill: set user_id from the task owner for existing rows
+    db.exec(`
+        UPDATE feedback_responses SET user_id = (
+            SELECT t.user_id FROM tasks t WHERE t.task_id = feedback_responses.task_id
+        ) WHERE user_id IS NULL
+    `);
+    console.log('[DB] Added user_id column to feedback_responses and backfilled existing data');
+} catch (e) { }
 
 module.exports = db;
 module.exports.generateModelId = generateModelId;

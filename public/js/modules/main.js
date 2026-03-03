@@ -5,6 +5,7 @@
 import { AppState } from './state.js';
 import { TaskAPI, getAuthHeaders } from './api.js';
 import { UI } from './ui.js';
+import { escapeHtml, formatDateTime } from './utils.js';
 
 // Constants
 const REFRESH_INTERVAL = 3000;
@@ -74,7 +75,7 @@ function initTabFromURL() {
     const tabParam = urlParams.get('tab');
 
     // Valid tab names
-    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'users'];
+    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'reports', 'users'];
 
     // Default to 'tasks' if no valid tab parameter
     const tabId = validTabs.includes(tabParam) ? tabParam : 'tasks';
@@ -89,7 +90,7 @@ function initTabFromURL() {
 function handlePopState(e) {
     const urlParams = new URLSearchParams(window.location.search);
     const tabParam = urlParams.get('tab');
-    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'users'];
+    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'reports', 'users'];
     const tabId = validTabs.includes(tabParam) ? tabParam : 'tasks';
 
     activateTab(tabId, false);
@@ -108,7 +109,7 @@ function setupEventListeners() {
     });
 
     // Modal Outside Clicks
-    const modalIds = ['prompt-modal', 'config-modal', 'question-modal', 'model-modal', 'group-modal', 'create-user-modal'];
+    const modalIds = ['prompt-modal', 'config-modal', 'question-modal', 'model-modal', 'group-modal', 'create-user-modal', 'report-modal'];
     modalIds.forEach(id => {
         document.getElementById(id)?.addEventListener('click', (e) => {
             if (e.target.id === id) UI.closeModal(id);
@@ -250,6 +251,30 @@ async function handleGlobalClick(e) {
 
             case 'refresh-feedback-stats':
                 fetchFeedbackStats();
+                break;
+
+            case 'refresh-reports':
+                fetchReportList();
+                break;
+
+            case 'open-create-report':
+                openCreateReportModal();
+                break;
+
+            case 'report-next-step':
+                handleReportNextStep(parseInt(actionBtn.dataset.current));
+                break;
+
+            case 'report-prev-step':
+                handleReportPrevStep(parseInt(actionBtn.dataset.current));
+                break;
+
+            case 'report-create':
+                handleReportCreate();
+                break;
+
+            case 'delete-report':
+                handleDeleteReport(id);
                 break;
 
             case 'refresh-users-management':
@@ -855,6 +880,7 @@ function activateTab(tabId, updateURL = true) {
     if (tabId === 'feedback-stats') fetchFeedbackStats();
     if (tabId === 'users') fetchUserManagementData();
     if (tabId === 'models') fetchModels();
+    if (tabId === 'reports') initReportTab();
 }
 
 window.openConfigModal = function () {
@@ -990,3 +1016,209 @@ function downloadFeedbackStatsCSV() {
     link.download = `feedback_stats_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
 }
+
+// ============ Report Functions ============
+
+let reportState = {
+    currentStep: 1,
+    reportType: 'trace_only',
+    models: [],
+    selectedModelIds: [],
+    availableTasks: [],
+    selectedTaskIds: [],
+    reportsList: []
+};
+
+async function initReportTab() {
+    fetchReportList();
+}
+
+async function openCreateReportModal() {
+    reportState.currentStep = 1;
+    updateReportStepUI(1);
+    document.getElementById('report-modal')?.classList.add('show');
+    try {
+        reportState.models = await TaskAPI.fetchReportModels();
+        renderReportModels();
+    } catch (e) {
+        console.error('[Report] Error loading models:', e);
+    }
+}
+
+function renderReportModels() {
+    const container = document.getElementById('report-models-list');
+    if (!reportState.models.length) {
+        container.innerHTML = '<p style="color: #94a3b8;">暂无可用模型</p>';
+        return;
+    }
+    container.innerHTML = reportState.models.map(m => `
+        <label class="report-model-item">
+            <input type="checkbox" value="${m.id}" class="report-model-checkbox">
+            <span class="report-item-label">${escapeHtml(m.name)}</span>
+            ${m.description ? `<span class="report-item-meta">${escapeHtml(m.description)}</span>` : ''}
+        </label>
+    `).join('');
+}
+
+function renderReportTasks() {
+    const container = document.getElementById('report-tasks-list');
+    const tasks = reportState.availableTasks;
+    if (!tasks.length) {
+        container.innerHTML = '<p style="color: #94a3b8;">没有符合条件的任务</p>';
+        return;
+    }
+    container.innerHTML = tasks.map(t => `
+        <label class="report-task-item">
+            <input type="checkbox" value="${t.task_id}" class="report-task-checkbox">
+            <span class="report-item-label">${escapeHtml(t.title || 'Untitled')}</span>
+            <span class="report-item-meta">${escapeHtml(t.username)} · ${t.task_id}</span>
+        </label>
+    `).join('');
+
+    const selectAll = document.getElementById('report-select-all-tasks');
+    if (selectAll) {
+        selectAll.checked = false;
+        selectAll.onchange = () => {
+            document.querySelectorAll('.report-task-checkbox').forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+        };
+    }
+}
+
+function updateReportStepUI(step) {
+    reportState.currentStep = step;
+    document.querySelectorAll('.report-step-content').forEach(el => el.classList.remove('active'));
+    const stepEl = document.getElementById(`report-step-${step}`);
+    if (stepEl) stepEl.classList.add('active');
+
+    document.querySelectorAll('#report-step-indicator .report-step').forEach(el => {
+        const s = parseInt(el.dataset.step);
+        el.classList.remove('active', 'completed');
+        if (s === step) el.classList.add('active');
+        else if (s < step) el.classList.add('completed');
+    });
+}
+
+async function handleReportNextStep(current) {
+    if (current === 1) {
+        const typeRadio = document.querySelector('input[name="report-type"]:checked');
+        reportState.reportType = typeRadio ? typeRadio.value : 'trace_only';
+        updateReportStepUI(2);
+    } else if (current === 2) {
+        const checkedModels = Array.from(document.querySelectorAll('.report-model-checkbox:checked')).map(cb => cb.value);
+        if (checkedModels.length === 0) {
+            alert('请至少选择一个模型');
+            return;
+        }
+        reportState.selectedModelIds = checkedModels;
+
+        const hint = document.getElementById('report-task-hint');
+        if (reportState.reportType === 'trace_only') {
+            hint.textContent = `仅展示所选 ${checkedModels.length} 个模型的子任务全部为「已完成」或「已反馈」的任务`;
+        } else {
+            hint.textContent = `仅展示所选 ${checkedModels.length} 个模型的子任务全部为「已反馈」的任务`;
+        }
+
+        const tasksContainer = document.getElementById('report-tasks-list');
+        tasksContainer.innerHTML = '<p style="color: #94a3b8;">加载中...</p>';
+        updateReportStepUI(3);
+
+        try {
+            reportState.availableTasks = await TaskAPI.fetchAvailableTasks(reportState.reportType, reportState.selectedModelIds);
+            renderReportTasks();
+        } catch (e) {
+            tasksContainer.innerHTML = '<p style="color: #ef4444;">加载失败，请重试</p>';
+            console.error('[Report] Error loading tasks:', e);
+        }
+    }
+}
+
+function handleReportPrevStep(current) {
+    if (current > 1) updateReportStepUI(current - 1);
+}
+
+async function handleReportCreate() {
+    const checkedTasks = Array.from(document.querySelectorAll('.report-task-checkbox:checked')).map(cb => cb.value);
+    if (checkedTasks.length === 0) {
+        alert('请至少选择一个任务');
+        return;
+    }
+    reportState.selectedTaskIds = checkedTasks;
+
+    const titleInput = document.getElementById('report-title-input');
+    const title = titleInput ? titleInput.value.trim() : '';
+
+    const btn = document.getElementById('report-create-btn');
+    btn.disabled = true;
+    btn.textContent = '创建中...';
+
+    try {
+        const result = await TaskAPI.createReport(
+            reportState.reportType,
+            reportState.selectedModelIds,
+            reportState.selectedTaskIds,
+            title || undefined
+        );
+        if (result.success) {
+            UI.showToast('报告创建成功');
+            window.open(result.reportUrl, '_blank');
+            UI.closeModal('report-modal');
+            reportState.currentStep = 1;
+            updateReportStepUI(1);
+            if (titleInput) titleInput.value = '';
+            fetchReportList();
+        }
+    } catch (e) {
+        alert('创建报告失败: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '创建报告';
+    }
+}
+
+async function fetchReportList() {
+    try {
+        const reports = await TaskAPI.fetchReportList();
+        reportState.reportsList = reports;
+        renderReportList(reports);
+    } catch (e) {
+        console.error('[Report] Error fetching report list:', e);
+    }
+}
+
+function renderReportList(reports) {
+    const container = document.getElementById('reports-list');
+    if (!reports || reports.length === 0) {
+        container.innerHTML = '<p style="color: #94a3b8;">暂无报告</p>';
+        return;
+    }
+    container.innerHTML = reports.map(r => `
+        <div class="report-card">
+            <div class="report-card-info">
+                <div class="report-card-title">${escapeHtml(r.title || '未命名报告')}</div>
+                <div class="report-card-meta">
+                    <span>${r.report_type === 'trace_only' ? '仅轨迹分析' : '轨迹与评分分析'}</span>
+                    <span>创建者: ${escapeHtml(r.created_by || '未知')}</span>
+                    <span>${formatDateTime(r.created_at)}</span>
+                </div>
+            </div>
+            <div class="report-card-actions">
+                <a class="btn btn-primary" href="/report.html?id=${r.id}" target="_blank" style="text-decoration: none;">查看</a>
+                <button class="btn btn-danger" data-action="delete-report" data-id="${r.id}">删除</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function handleDeleteReport(id) {
+    if (!confirm('确定要删除这份报告吗？')) return;
+    try {
+        await TaskAPI.deleteReport(id);
+        UI.showToast('报告已删除');
+        fetchReportList();
+    } catch (e) {
+        alert('删除失败: ' + e.message);
+    }
+}
+

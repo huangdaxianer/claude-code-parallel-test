@@ -1003,8 +1003,8 @@ export const UI = {
 
             return `
                 <tr>
-                    <td><div class="task-id">${escapeHtml(row.taskId)}</div></td>
-                    <td><div class="task-title" title="${escapeHtml(row.title || 'Untitled')}">${escapeHtml(row.title || 'Untitled')}</div></td>
+                    <td><div class="task-id" data-action="view" data-id="${escapeHtml(row.taskId)}" data-username="${escapeHtml(row.username || '')}" style="cursor: pointer;">${escapeHtml(row.taskId)}</div></td>
+                    <td><div class="task-title" title="${escapeHtml(row.title || 'Untitled')}" data-action="view" data-id="${escapeHtml(row.taskId)}" data-username="${escapeHtml(row.username || '')}">${escapeHtml(row.title || 'Untitled')}</div></td>
                     <td><span class="user-badge">${escapeHtml(row.username)}</span></td>
                     <td><span style="font-size: 0.85rem; color: #475569;">${escapeHtml(row.modelName)}</span></td>
                     ${questionCells}

@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分析报告</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f8fafc;
+            color: #1e293b;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+        .report-header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .report-header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        .report-header .meta {
+            color: #64748b;
+            font-size: 0.9rem;
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+        }
+        .report-badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        .badge-trace { background: #dbeafe; color: #2563eb; }
+        .badge-score { background: #fef3c7; color: #d97706; }
+
+        .section { margin-bottom: 2.5rem; }
+        .section h2 {
+            font-size: 1.15rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+            font-size: 0.9rem;
+        }
+        .data-table th {
+            background: #f8fafc;
+            font-weight: 600;
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            color: #475569;
+            font-size: 0.85rem;
+            white-space: nowrap;
+        }
+        .data-table td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .data-table tr:last-child td { border-bottom: none; }
+        .data-table tr:hover td { background: #f8fafc; }
+
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .ci {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            display: block;
+        }
+
+        .score-cell {
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .task-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .task-chip {
+            display: inline-block;
+            padding: 0.3rem 0.7rem;
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            font-size: 0.8rem;
+            color: #475569;
+        }
+
+        .voice-category {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .voice-cat-score { background: #dbeafe; color: #2563eb; }
+        .voice-cat-voluntary { background: #fef3c7; color: #d97706; }
+        .voice-cat-inline { background: #f3e8ff; color: #9333ea; }
+
+        .voice-content {
+            font-size: 0.85rem;
+            color: #334155;
+            line-height: 1.6;
+            word-break: break-word;
+        }
+        .voice-task-link {
+            font-size: 0.75rem;
+            color: #3b82f6;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+        .voice-task-link:hover { text-decoration: underline; }
+        .voice-user {
+            font-size: 0.75rem;
+            color: #94a3b8;
+        }
+        .data-table .model-group td {
+            background: #f8fafc;
+            font-weight: 600;
+            border-top: 2px solid #e2e8f0;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: #94a3b8;
+        }
+
+        .error {
+            text-align: center;
+            padding: 3rem;
+            color: #ef4444;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .summary-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            text-align: center;
+        }
+        .summary-card .label {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-bottom: 0.25rem;
+        }
+        .summary-card .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .chart-container {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            overflow-x: auto;
+        }
+        .chart-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .chart-legend {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .chart-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.8rem;
+            color: #475569;
+        }
+        .chart-legend-swatch {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="report-content">
+            <div class="loading">加载报告中...</div>
+        </div>
+    </div>
+
+    <script>
+        async function loadReport() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const reportId = urlParams.get('id');
+            if (!reportId) {
+                showError('缺少报告 ID');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/report/${reportId}`);
+                if (!res.ok) {
+                    showError(res.status === 404 ? '报告不存在' : '加载失败');
+                    return;
+                }
+                const report = await res.json();
+                renderReport(report);
+            } catch (e) {
+                showError('网络错误: ' + e.message);
+            }
+        }
+
+        function showError(msg) {
+            document.getElementById('report-content').innerHTML = `<div class="error">${esc(msg)}</div>`;
+        }
+
+        function esc(text) {
+            if (!text) return '';
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        function fmtNum(n, decimals = 2) {
+            if (n == null || isNaN(n)) return '-';
+            return Number(n).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+        }
+
+        function fmtDuration(seconds) {
+            if (seconds == null || isNaN(seconds)) return '-';
+            if (seconds < 60) return fmtNum(seconds, 1) + 's';
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}m ${fmtNum(secs, 0)}s`;
+        }
+
+        function fmtTokens(n) {
+            if (n == null || isNaN(n)) return '-';
+            if (n >= 1000000) return fmtNum(n / 1000000, 1) + 'M';
+            if (n >= 1000) return fmtNum(n / 1000, 1) + 'K';
+            return fmtNum(n, 0);
+        }
+
+        function renderCI(ci) {
+            if (!ci) return '-';
+            return `${fmtNum(ci.mean)}<span class="ci">[${fmtNum(ci.lower)}, ${fmtNum(ci.upper)}]</span>`;
+        }
+
+        function getScoreColor(score, max) {
+            const pct = score / max;
+            if (pct >= 0.8) return '#22c55e';
+            if (pct >= 0.6) return '#3b82f6';
+            if (pct >= 0.4) return '#f59e0b';
+            return '#ef4444';
+        }
+
+        function renderReport(report) {
+            const data = report.data;
+            const isScoreReport = data.type === 'trace_and_score';
+            document.title = report.title || '分析报告';
+
+            let html = '';
+
+            // Header
+            html += `
+                <div class="report-header">
+                    <h1>${esc(report.title)}</h1>
+                    <div class="meta">
+                        <span class="report-badge ${isScoreReport ? 'badge-score' : 'badge-trace'}">
+                            ${isScoreReport ? '轨迹与评分分析' : '仅轨迹分析'}
+                        </span>
+                        <span>创建者: ${esc(report.createdBy)}</span>
+                        <span>创建时间: ${new Date(report.createdAt).toLocaleString('zh-CN')}</span>
+                        <span>报告ID: ${esc(report.id)}</span>
+                    </div>
+                </div>
+            `;
+
+            // Summary Cards
+            const totalModels = data.models.length;
+            const totalTasks = data.tasks.length;
+            const totalUsers = new Set(data.tasks.map(t => t.username)).size;
+            html += `
+                <div class="summary-cards">
+                    <div class="summary-card">
+                        <div class="label">分析模型数</div>
+                        <div class="value">${totalModels}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">参与用户数</div>
+                        <div class="value">${totalUsers}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">分析任务数</div>
+                        <div class="value">${totalTasks}</div>
+                    </div>
+                </div>
+            `;
+
+            // Trace Stats Table
+            html += `<div class="section"><h2>轨迹数据对比</h2>`;
+            html += `<table class="data-table">
+                <thead><tr>
+                    <th>模型</th>
+                    <th class="num">平均耗时</th>
+                    <th class="num">平均轮次</th>
+                    <th class="num">平均 Input Tokens</th>
+                    <th class="num">平均 Output Tokens</th>
+                    <th class="num">平均 Cache Tokens</th>
+                    <th class="num">TodoWrite</th>
+                    <th class="num">Read</th>
+                    <th class="num">Write</th>
+                    <th class="num">Bash</th>
+                    <th class="num">总工具调用</th>
+                </tr></thead><tbody>`;
+
+            for (const model of data.models) {
+                const s = model.stats;
+                if (!s || s.taskCount === 0) continue;
+                html += `<tr>
+                    <td><strong>${esc(model.name)}</strong></td>
+                    <td class="num">${fmtDuration(s.avgDuration)}</td>
+                    <td class="num">${fmtNum(s.avgTurns, 1)}</td>
+                    <td class="num">${fmtTokens(s.avgInputTokens)}</td>
+                    <td class="num">${fmtTokens(s.avgOutputTokens)}</td>
+                    <td class="num">${fmtTokens(s.avgCacheReadTokens)}</td>
+                    <td class="num">${fmtNum(s.avgTodoWrite, 1)}</td>
+                    <td class="num">${fmtNum(s.avgRead, 1)}</td>
+                    <td class="num">${fmtNum(s.avgWrite, 1)}</td>
+                    <td class="num">${fmtNum(s.avgBash, 1)}</td>
+                    <td class="num"><strong>${fmtNum(s.avgTotalToolCalls, 1)}</strong></td>
+                </tr>`;
+            }
+            html += `</tbody></table></div>`;
+
+            // Confidence Intervals Table
+            html += `<div class="section"><h2>关键指标置信区间 (95%)</h2>`;
+            html += `<table class="data-table">
+                <thead><tr>
+                    <th>模型</th>
+                    <th class="num">耗时 (秒)</th>
+                    <th class="num">轮次</th>
+                    <th class="num">Input Tokens</th>
+                    <th class="num">Output Tokens</th>
+                </tr></thead><tbody>`;
+
+            for (const model of data.models) {
+                const s = model.stats;
+                if (!s || s.taskCount === 0) continue;
+                html += `<tr>
+                    <td><strong>${esc(model.name)}</strong></td>
+                    <td class="num">${renderCI(s.duration)}</td>
+                    <td class="num">${renderCI(s.turns)}</td>
+                    <td class="num">${renderCI(s.inputTokens)}</td>
+                    <td class="num">${renderCI(s.outputTokens)}</td>
+                </tr>`;
+            }
+            html += `</tbody></table></div>`;
+
+            // Score Stats (if trace_and_score)
+            if (isScoreReport && data.scoreStats) {
+                const questionIds = new Set();
+                const questionMap = {};
+                for (const modelId in data.scoreStats) {
+                    for (const qId in data.scoreStats[modelId]) {
+                        questionIds.add(qId);
+                        if (!questionMap[qId]) questionMap[qId] = data.scoreStats[modelId][qId];
+                    }
+                }
+                const qIds = Array.from(questionIds);
+
+                html += `<div class="section"><h2>评分统计</h2>`;
+
+                // Chart
+                html += renderScoreChart(data.models, data.scoreStats, qIds, questionMap);
+
+                // Table
+                html += `<table class="data-table">
+                    <thead><tr>
+                        <th>模型</th>`;
+                for (const qId of qIds) {
+                    html += `<th class="num">${esc(questionMap[qId].questionName)}<br><span style="font-weight:400;font-size:0.75rem;color:#94a3b8;">(满分${questionMap[qId].maxScore})</span></th>`;
+                }
+                html += `</tr></thead><tbody>`;
+
+                for (const model of data.models) {
+                    const modelScores = data.scoreStats[model.id];
+                    if (!modelScores) continue;
+                    html += `<tr><td><strong>${esc(model.name)}</strong></td>`;
+                    for (const qId of qIds) {
+                        const qs = modelScores[qId];
+                        if (!qs || qs.count === 0) {
+                            html += `<td class="num">-</td>`;
+                        } else {
+                            const color = getScoreColor(qs.mean, qs.maxScore);
+                            html += `<td class="score-cell num" style="color: ${color};">
+                                ${fmtNum(qs.mean)}
+                                <span class="ci">[${fmtNum(qs.lower)}, ${fmtNum(qs.upper)}]</span>
+                                <span class="ci">n=${qs.count}</span>
+                            </td>`;
+                        }
+                    }
+                    html += `</tr>`;
+                }
+                html += `</tbody></table></div>`;
+            }
+
+            // User Voices
+            if (data.userVoices && data.userVoices.length > 0) {
+                html += renderUserVoices(data.userVoices, data.models);
+            }
+
+            // Tasks List
+            html += `<div class="section"><h2>分析任务列表</h2><div class="task-list">`;
+            for (const t of data.tasks) {
+                html += `<span class="task-chip">${esc(t.title || 'Untitled')} (${esc(t.username)}) [${t.task_id}]</span>`;
+            }
+            html += `</div></div>`;
+
+            document.getElementById('report-content').innerHTML = html;
+        }
+
+        function renderUserVoices(voices, models) {
+            const catClass = { score: 'voice-cat-score', voluntary: 'voice-cat-voluntary', inline: 'voice-cat-inline' };
+
+            // Group by model, then by category
+            const modelOrder = models.map(m => m.id);
+            const modelNameMap = {};
+            models.forEach(m => { modelNameMap[m.id] = m.name; });
+
+            const grouped = {};
+            for (const v of voices) {
+                if (!grouped[v.modelId]) grouped[v.modelId] = {};
+                if (!grouped[v.modelId][v.category]) grouped[v.modelId][v.category] = [];
+                grouped[v.modelId][v.category].push(v);
+            }
+
+            let html = `<div class="section"><h2>用户之声</h2>`;
+            html += `<table class="data-table">
+                <thead><tr>
+                    <th style="width:140px;">模型</th>
+                    <th style="width:110px;">能力项目</th>
+                    <th>用户评论</th>
+                    <th style="width:80px;">用户</th>
+                    <th style="width:100px;">任务</th>
+                </tr></thead><tbody>`;
+
+            for (const modelId of modelOrder) {
+                const cats = grouped[modelId];
+                if (!cats) continue;
+
+                const modelName = modelNameMap[modelId] || modelId;
+                const catKeys = Object.keys(cats);
+                let modelRowCount = 0;
+                for (const k of catKeys) modelRowCount += cats[k].length;
+
+                let firstModel = true;
+                for (const catName of catKeys) {
+                    const items = cats[catName];
+                    const catType = items[0]?.categoryType || 'score';
+                    let firstCat = true;
+
+                    for (const item of items) {
+                        html += `<tr>`;
+                        if (firstModel) {
+                            html += `<td rowspan="${modelRowCount}" style="vertical-align:top;font-weight:600;">${esc(modelName)}</td>`;
+                            firstModel = false;
+                        }
+                        if (firstCat) {
+                            html += `<td rowspan="${items.length}" style="vertical-align:top;">
+                                <span class="voice-category ${catClass[catType] || 'voice-cat-score'}">${esc(catName)}</span>
+                            </td>`;
+                            firstCat = false;
+                        }
+                        html += `<td class="voice-content">${esc(item.content)}</td>`;
+                        html += `<td class="voice-user">${esc(item.username)}</td>`;
+                        html += `<td><a class="voice-task-link" href="/task.html?id=${item.taskId}" target="_blank" title="${esc(item.taskTitle || '')}">${item.taskId}</a></td>`;
+                        html += `</tr>`;
+                    }
+                }
+            }
+
+            html += `</tbody></table></div>`;
+            return html;
+        }
+
+        const MODEL_COLORS = [
+            '#3b82f6', '#f97316', '#22c55e', '#a855f7', '#ef4444',
+            '#06b6d4', '#ec4899', '#eab308', '#14b8a6', '#8b5cf6'
+        ];
+
+        function renderScoreChart(models, scoreStats, qIds, questionMap) {
+            const validModels = models.filter(m => scoreStats[m.id]);
+            if (validModels.length === 0 || qIds.length === 0) return '';
+
+            const nQ = qIds.length;
+            const nM = validModels.length;
+            const groupGap = 40;
+            const barWidth = Math.max(20, Math.min(40, 200 / nM));
+            const barGap = 4;
+            const groupWidth = nM * (barWidth + barGap) - barGap;
+            const totalWidth = nQ * (groupWidth + groupGap) - groupGap;
+
+            const margin = { top: 20, right: 30, bottom: 50, left: 50 };
+            const chartW = Math.max(totalWidth + 40, 300);
+            const chartH = 260;
+            const svgW = chartW + margin.left + margin.right;
+            const svgH = chartH + margin.top + margin.bottom;
+
+            const maxScore = Math.max(...qIds.map(qId => questionMap[qId].maxScore));
+
+            const yScale = (v) => chartH - (v / maxScore) * chartH;
+
+            let svg = `<svg width="100%" viewBox="0 0 ${svgW} ${svgH}" style="max-width:${svgW}px;margin:0 auto;display:block;">`;
+            svg += `<g transform="translate(${margin.left},${margin.top})">`;
+
+            // Y axis gridlines + labels
+            const yTicks = [];
+            for (let i = 0; i <= maxScore; i++) yTicks.push(i);
+            for (const tick of yTicks) {
+                const y = yScale(tick);
+                svg += `<line x1="0" y1="${y}" x2="${chartW}" y2="${y}" stroke="#e2e8f0" stroke-width="1"/>`;
+                svg += `<text x="-8" y="${y + 4}" text-anchor="end" font-size="11" fill="#94a3b8">${tick}</text>`;
+            }
+
+            // Bars
+            for (let qi = 0; qi < nQ; qi++) {
+                const qId = qIds[qi];
+                const groupX = qi * (groupWidth + groupGap) + (chartW - totalWidth) / 2;
+
+                for (let mi = 0; mi < nM; mi++) {
+                    const model = validModels[mi];
+                    const qs = scoreStats[model.id]?.[qId];
+                    if (!qs || qs.count === 0) continue;
+
+                    const x = groupX + mi * (barWidth + barGap);
+                    const barH = (qs.mean / maxScore) * chartH;
+                    const y = chartH - barH;
+                    const color = MODEL_COLORS[mi % MODEL_COLORS.length];
+
+                    // Bar
+                    svg += `<rect x="${x}" y="${y}" width="${barWidth}" height="${barH}" fill="${color}" rx="3" opacity="0.85"/>`;
+
+                    // Mean label on bar
+                    svg += `<text x="${x + barWidth / 2}" y="${y - 4}" text-anchor="middle" font-size="10" font-weight="600" fill="${color}">${fmtNum(qs.mean, 2)}</text>`;
+
+                    // CI error bar
+                    const ciTop = yScale(Math.min(qs.upper, maxScore));
+                    const ciBot = yScale(Math.max(qs.lower, 0));
+                    const cx = x + barWidth / 2;
+                    const capW = barWidth * 0.4;
+                    svg += `<line x1="${cx}" y1="${ciTop}" x2="${cx}" y2="${ciBot}" stroke="#1e293b" stroke-width="1.5" opacity="0.6"/>`;
+                    svg += `<line x1="${cx - capW}" y1="${ciTop}" x2="${cx + capW}" y2="${ciTop}" stroke="#1e293b" stroke-width="1.5" opacity="0.6"/>`;
+                    svg += `<line x1="${cx - capW}" y1="${ciBot}" x2="${cx + capW}" y2="${ciBot}" stroke="#1e293b" stroke-width="1.5" opacity="0.6"/>`;
+                }
+
+                // X axis label (question name)
+                const labelX = groupX + groupWidth / 2;
+                const qName = questionMap[qId].questionName;
+                svg += `<text x="${labelX}" y="${chartH + 20}" text-anchor="middle" font-size="12" fill="#475569">${esc(qName)}</text>`;
+                svg += `<text x="${labelX}" y="${chartH + 34}" text-anchor="middle" font-size="10" fill="#94a3b8">(满分${questionMap[qId].maxScore})</text>`;
+            }
+
+            svg += `</g></svg>`;
+
+            // Legend
+            let legend = '<div class="chart-legend">';
+            validModels.forEach((m, i) => {
+                legend += `<div class="chart-legend-item">
+                    <div class="chart-legend-swatch" style="background:${MODEL_COLORS[i % MODEL_COLORS.length]}"></div>
+                    ${esc(m.name)}
+                </div>`;
+            });
+            legend += '</div>';
+
+            return `<div class="chart-container">
+                ${legend}
+                ${svg}
+                <div style="text-align:center;font-size:0.75rem;color:#94a3b8;margin-top:0.5rem;">误差线表示 95% 置信区间</div>
+            </div>`;
+        }
+
+        loadReport();
+    </script>
+</body>
+</html>

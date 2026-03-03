@@ -382,6 +382,19 @@ textarea:focus {
     display: block;
 }
 
+.task-title[data-action],
+.task-id[data-action] {
+    cursor: pointer;
+}
+
+.task-title[data-action]:hover {
+    color: var(--primary);
+}
+
+.task-id[data-action]:hover {
+    color: var(--primary);
+}
+
 .task-badge {
     color: var(--primary);
     font-size: 0.75rem;

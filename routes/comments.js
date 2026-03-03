@@ -47,13 +47,24 @@ router.get('/', (req, res) => {
     if (!taskId || !modelId) return res.status(400).json({ error: 'Missing params' });
 
     try {
-        const comments = db.prepare(`
-            SELECT c.*, u.username as user_name 
-            FROM feedback_comments c
-            LEFT JOIN users u ON c.user_id = u.id
-            WHERE c.task_id = ? AND c.model_id = ?
-            ORDER BY c.created_at DESC
-        `).all(taskId, modelId);
+        let comments;
+        if (req.user.role === 'admin') {
+            comments = db.prepare(`
+                SELECT c.*, u.username as user_name 
+                FROM feedback_comments c
+                LEFT JOIN users u ON c.user_id = u.id
+                WHERE c.task_id = ? AND c.model_id = ?
+                ORDER BY c.created_at DESC
+            `).all(taskId, modelId);
+        } else {
+            comments = db.prepare(`
+                SELECT c.*, u.username as user_name 
+                FROM feedback_comments c
+                LEFT JOIN users u ON c.user_id = u.id
+                WHERE c.task_id = ? AND c.model_id = ? AND c.user_id = ?
+                ORDER BY c.created_at DESC
+            `).all(taskId, modelId, req.user.id);
+        }
         res.json(comments);
     } catch (e) {
         console.error('Error fetching comments:', e);
@@ -67,13 +78,24 @@ router.get('/user-feedback', (req, res) => {
     if (!taskId) return res.status(400).json({ error: 'Missing taskId' });
 
     try {
-        const feedback = db.prepare(`
-            SELECT uf.*, u.username as user_name 
-            FROM user_feedback uf
-            LEFT JOIN users u ON uf.user_id = u.id
-            WHERE uf.task_id = ?
-            ORDER BY uf.created_at DESC
-        `).all(taskId);
+        let feedback;
+        if (req.user.role === 'admin') {
+            feedback = db.prepare(`
+                SELECT uf.*, u.username as user_name 
+                FROM user_feedback uf
+                LEFT JOIN users u ON uf.user_id = u.id
+                WHERE uf.task_id = ?
+                ORDER BY uf.created_at DESC
+            `).all(taskId);
+        } else {
+            feedback = db.prepare(`
+                SELECT uf.*, u.username as user_name 
+                FROM user_feedback uf
+                LEFT JOIN users u ON uf.user_id = u.id
+                WHERE uf.task_id = ? AND uf.user_id = ?
+                ORDER BY uf.created_at DESC
+            `).all(taskId, req.user.id);
+        }
         res.json(feedback);
     } catch (e) {
         console.error('Error fetching user feedback:', e);

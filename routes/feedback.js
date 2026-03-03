@@ -27,7 +27,12 @@ router.get('/check', (req, res) => {
     if (!taskId || !modelId) return res.status(400).json({ error: 'Missing params' });
 
     try {
-        const feedback = db.prepare('SELECT * FROM feedback_responses WHERE task_id = ? AND model_id = ?').all(taskId, modelId);
+        let feedback;
+        if (req.user.role === 'admin') {
+            feedback = db.prepare('SELECT * FROM feedback_responses WHERE task_id = ? AND model_id = ?').all(taskId, modelId);
+        } else {
+            feedback = db.prepare('SELECT * FROM feedback_responses WHERE task_id = ? AND model_id = ? AND user_id = ?').all(taskId, modelId, req.user.id);
+        }
         res.json({ exists: feedback.length > 0, feedback: feedback });
     } catch (e) {
         console.error('Error checking feedback:', e);
@@ -48,15 +53,15 @@ router.post('/submit', (req, res) => {
 
     try {
         const insertStmt = db.prepare(`
-            INSERT OR REPLACE INTO feedback_responses (task_id, model_id, question_id, score, comment)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO feedback_responses (task_id, model_id, question_id, score, comment, user_id)
+            VALUES (?, ?, ?, ?, ?, ?)
         `);
 
         let allRequiredMet = false;
 
         db.transaction(() => {
             for (const r of responses) {
-                insertStmt.run(taskId, modelId, r.questionId, r.score, r.comment || '');
+                insertStmt.run(taskId, modelId, r.questionId, r.score, r.comment || '', req.user.id);
             }
 
             const requiredQuestions = db.prepare('SELECT id FROM feedback_questions WHERE is_active = 1 AND is_required = 1').all();

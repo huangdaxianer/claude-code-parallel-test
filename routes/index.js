@@ -14,6 +14,7 @@ const tasksRoutes = require('./tasks');
 const previewRoutes = require('./preview');
 const filesRoutes = require('./files');
 const usersRoutes = require('./users');
+const reportRoutes = require('./reports');
 
 // 获取对当前用户组启用的模型 (Public/User) — 不需要管理员权限，但需要登录
 router.get('/models/enabled', requireLogin, (req, res) => {
@@ -42,6 +43,29 @@ router.get('/models/enabled', requireLogin, (req, res) => {
     } catch (e) {
         console.error('Error fetching enabled models:', e);
         res.status(500).json({ error: 'Failed to fetch enabled models' });
+    }
+});
+
+// 公开报告查看接口（不需要登录）
+router.get('/report/:id', (req, res) => {
+    try {
+        const report = db.prepare(`
+            SELECT r.*, u.username as created_by_name
+            FROM reports r LEFT JOIN users u ON r.created_by = u.id
+            WHERE r.id = ?
+        `).get(req.params.id);
+        if (!report) return res.status(404).json({ error: 'Report not found' });
+        res.json({
+            id: report.id,
+            title: report.title,
+            reportType: report.report_type,
+            createdAt: report.created_at,
+            createdBy: report.created_by_name,
+            data: JSON.parse(report.report_data)
+        });
+    } catch (e) {
+        console.error('[Report] Error fetching report:', e);
+        res.status(500).json({ error: 'Failed to fetch report' });
     }
 });
 

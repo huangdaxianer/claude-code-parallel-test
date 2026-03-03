@@ -181,15 +181,16 @@
             background: white;
             border-radius: 0.75rem;
             border: 1px solid #e2e8f0;
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: hidden;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
         }
 
         .tasks-table {
             width: 100%;
+            min-width: max-content;
             border-collapse: collapse;
             font-size: 0.9rem;
-            table-layout: fixed;
         }
 
         .tasks-table th {
@@ -396,11 +397,12 @@
         .model-col-header {
             font-size: 0.8rem;
             text-align: center;
-            overflow: hidden;
+            white-space: nowrap;
         }
 
         .model-col-cell {
             text-align: center;
+            min-width: 80px;
         }
 
         /* Column filter icon & popup */
@@ -924,6 +926,202 @@
             color: #94a3b8;
             font-size: 0.85rem;
         }
+
+        /* Report Wizard */
+        .report-steps {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            margin-bottom: 2rem;
+        }
+
+        .report-step {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 999px;
+            font-size: 0.9rem;
+            color: #94a3b8;
+            font-weight: 500;
+        }
+
+        .report-step.active {
+            color: #0f172a;
+            background: #f1f5f9;
+        }
+
+        .report-step.completed {
+            color: #10b981;
+        }
+
+        .step-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            color: #64748b;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .report-step.active .step-num {
+            background: #0f172a;
+            color: white;
+        }
+
+        .report-step.completed .step-num {
+            background: #10b981;
+            color: white;
+        }
+
+        .report-step-line {
+            width: 40px;
+            height: 2px;
+            background: #e2e8f0;
+        }
+
+        .report-step-content {
+            display: none;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+        }
+
+        .report-step-content.active {
+            display: block;
+        }
+
+        .report-type-card {
+            flex: 1;
+            cursor: pointer;
+        }
+
+        .report-type-card input[type="radio"] {
+            display: none;
+        }
+
+        .report-type-card-inner {
+            border: 2px solid #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            transition: all 0.2s;
+        }
+
+        .report-type-card input:checked + .report-type-card-inner {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+
+        .report-type-card:hover .report-type-card-inner {
+            border-color: #93c5fd;
+        }
+
+        .report-type-icon {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .report-type-title {
+            font-weight: 600;
+            font-size: 1rem;
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+        }
+
+        .report-type-desc {
+            font-size: 0.85rem;
+            color: #64748b;
+            line-height: 1.5;
+        }
+
+        .report-type-req {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .report-model-item, .report-task-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .report-model-item:hover, .report-task-item:hover {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+        }
+
+        .report-model-item input:checked ~ .report-item-label,
+        .report-task-item input:checked ~ .report-item-label {
+            color: #1e293b;
+            font-weight: 500;
+        }
+
+        .report-item-label {
+            color: #475569;
+            font-size: 0.9rem;
+        }
+
+        .report-item-meta {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            margin-left: auto;
+        }
+
+        .report-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            margin-bottom: 0.5rem;
+            transition: all 0.15s;
+        }
+
+        .report-card:hover {
+            border-color: #cbd5e1;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .report-card-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .report-card-title {
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 0.95rem;
+        }
+
+        .report-card-meta {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            display: flex;
+            gap: 1rem;
+        }
+
+        .report-card-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
     </style>
 </head>
 
@@ -939,6 +1137,7 @@
             <button class="tab-btn" data-tab="models">模型管理</button>
             <button class="tab-btn" data-tab="eval">评测配置</button>
             <button class="tab-btn" data-tab="feedback-stats">反馈统计</button>
+            <button class="tab-btn" data-tab="reports">统计报告</button>
             <button class="tab-btn" data-tab="users">用户管理</button>
             <div class="tabs-nav-right">
                 <a class="btn-back-tasks" href="/task.html" title="返回我的任务列表">
@@ -981,7 +1180,7 @@
             <div class="filters">
                 <div class="filter-group">
                     <label>搜索:</label>
-                    <input type="text" class="filter-input" id="filter-search" placeholder="搜索任务标题或 Prompt...">
+                    <input type="text" class="filter-input" id="filter-search" placeholder="搜索任务 ID、标题或 Prompt...">
                 </div>
                 <!-- Legend -->
                 <div class="legend">
@@ -1019,7 +1218,7 @@
 
 
             <!-- Table -->
-            <div class="table-container" style="overflow-x: auto;">
+            <div class="table-container">
                 <table class="tasks-table">
                     <thead id="tasks-thead">
                         <tr>
@@ -1108,6 +1307,102 @@
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- Reports Tab -->
+        <div id="tab-reports" class="tab-pane">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h2 style="font-size: 1.25rem; font-weight: 600;">统计报告</h2>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-primary" data-action="open-create-report">+ 创建报告</button>
+                    <button class="btn" data-action="refresh-reports">🔄 刷新</button>
+                </div>
+            </div>
+            <div id="reports-list">
+                <p style="color: #94a3b8;">加载中...</p>
+            </div>
+        </div>
+
+        <!-- Create Report Modal -->
+        <div class="modal-overlay" id="report-modal">
+            <div class="modal" style="max-width: 700px; width: 95%;">
+                <div class="modal-header">
+                    <h3>创建报告</h3>
+                    <button class="modal-close" data-action="close-modal" data-modal-id="report-modal">&times;</button>
+                </div>
+                <div class="modal-body" style="max-height: calc(85vh - 120px);">
+                    <!-- Step Indicator -->
+                    <div class="report-steps" id="report-step-indicator">
+                        <div class="report-step active" data-step="1"><span class="step-num">1</span><span class="step-label">选择模式</span></div>
+                        <div class="report-step-line"></div>
+                        <div class="report-step" data-step="2"><span class="step-num">2</span><span class="step-label">选择模型</span></div>
+                        <div class="report-step-line"></div>
+                        <div class="report-step" data-step="3"><span class="step-num">3</span><span class="step-label">选择任务</span></div>
+                    </div>
+
+                    <!-- Step 1: Report Type -->
+                    <div class="report-step-content active" id="report-step-1">
+                        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem;">选择报告模式</h3>
+                        <div style="display: flex; gap: 1rem;">
+                            <label class="report-type-card" id="type-trace-only">
+                                <input type="radio" name="report-type" value="trace_only" checked>
+                                <div class="report-type-card-inner">
+                                    <div class="report-type-icon">📊</div>
+                                    <div class="report-type-title">仅分析轨迹</div>
+                                    <div class="report-type-desc">分析模型的工具调用、Token 用量、耗时、轮次等轨迹数据</div>
+                                    <div class="report-type-req">要求：所选模型对应子任务状态为「已完成」或「已反馈」</div>
+                                </div>
+                            </label>
+                            <label class="report-type-card" id="type-trace-and-score">
+                                <input type="radio" name="report-type" value="trace_and_score">
+                                <div class="report-type-card-inner">
+                                    <div class="report-type-icon">📊📝</div>
+                                    <div class="report-type-title">分析轨迹和评分</div>
+                                    <div class="report-type-desc">在轨迹分析的基础上，额外计算用户评分均值及 95% 置信区间</div>
+                                    <div class="report-type-req">要求：所选模型对应子任务状态均为「已反馈」</div>
+                                </div>
+                            </label>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem;">
+                            <button class="btn btn-primary" data-action="report-next-step" data-current="1">下一步</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Select Models -->
+                    <div class="report-step-content" id="report-step-2">
+                        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem;">选择待分析模型</h3>
+                        <div id="report-models-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <p style="color: #94a3b8;">加载中...</p>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 1.5rem;">
+                            <button class="btn" data-action="report-prev-step" data-current="2">上一步</button>
+                            <button class="btn btn-primary" data-action="report-next-step" data-current="2">下一步</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Select Tasks -->
+                    <div class="report-step-content" id="report-step-3">
+                        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">选择待分析任务</h3>
+                        <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1rem;" id="report-task-hint"></p>
+                        <div style="margin-bottom: 0.75rem;">
+                            <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                                <input type="checkbox" id="report-select-all-tasks"> 全选
+                            </label>
+                        </div>
+                        <div id="report-tasks-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 300px; overflow-y: auto;">
+                            <p style="color: #94a3b8;">请先选择模型...</p>
+                        </div>
+                        <div style="margin-top: 1rem;">
+                            <label style="font-size: 0.9rem; font-weight: 500;">报告标题（可选）</label>
+                            <input type="text" id="report-title-input" class="filter-input" placeholder="留空将自动生成" style="margin-top: 0.25rem; width: 100%;">
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 1.5rem;">
+                            <button class="btn" data-action="report-prev-step" data-current="3">上一步</button>
+                            <button class="btn btn-primary" data-action="report-create" id="report-create-btn">创建报告</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 

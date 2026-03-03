@@ -270,5 +270,46 @@ export const TaskAPI = {
             throw new Error(error.error || '未知错误');
         }
         return await res.json();
+    },
+
+    // Report APIs
+    async fetchReportModels() {
+        const res = await fetch('/api/admin/report/models', { headers: getAuthHeaders() });
+        return await res.json();
+    },
+
+    async fetchAvailableTasks(reportType, modelIds) {
+        const res = await fetch('/api/admin/report/available-tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ reportType, modelIds })
+        });
+        return await res.json();
+    },
+
+    async createReport(reportType, modelIds, taskIds, title) {
+        const res = await fetch('/api/admin/report/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ reportType, modelIds, taskIds, title })
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || '创建报告失败');
+        }
+        return await res.json();
+    },
+
+    async fetchReportList() {
+        const res = await fetch('/api/admin/report/list', { headers: getAuthHeaders() });
+        return await res.json();
+    },
+
+    async deleteReport(id) {
+        const res = await fetch(`/api/admin/report/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        return await res.json();
     }
 };

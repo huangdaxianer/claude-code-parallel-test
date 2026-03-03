@@ -551,7 +551,7 @@ router.get('/feedback-stats', (req, res) => {
             SELECT 
                 t.task_id,
                 t.title,
-                u.username,
+                COALESCE(u_resp.username, u_task.username) as username,
                 fr.model_id,
                 mc.endpoint_name,
                 fq.id as question_id,
@@ -563,10 +563,11 @@ router.get('/feedback-stats', (req, res) => {
             FROM feedback_responses fr
             JOIN feedback_questions fq ON fr.question_id = fq.id
             JOIN tasks t ON fr.task_id = t.task_id
-            JOIN users u ON t.user_id = u.id
+            JOIN users u_task ON t.user_id = u_task.id
+            LEFT JOIN users u_resp ON fr.user_id = u_resp.id
             LEFT JOIN model_configs mc ON mc.model_id = fr.model_id
             WHERE fq.is_active = 1
-            ORDER BY t.created_at DESC, u.username, fr.model_id, fq.id
+            ORDER BY t.created_at DESC, COALESCE(u_resp.username, u_task.username), fr.model_id, fq.id
         `).all();
 
         const grouped = {};
@@ -858,5 +859,9 @@ router.delete('/models/:id', (req, res) => {
         res.status(500).json({ error: 'Failed to delete model config' });
     }
 });
+
+// 挂载报告子路由
+const reportRoutes = require('./reports');
+router.use('/report', reportRoutes);
 
 module.exports = router;
