@@ -186,6 +186,10 @@ router.post('/create', (req, res) => {
                 turns: computeConfidenceInterval95(turnsList),
                 inputTokens: computeConfidenceInterval95(inputTokens),
                 outputTokens: computeConfidenceInterval95(outputTokens),
+                todoWrite: computeConfidenceInterval95(todoWrites),
+                read: computeConfidenceInterval95(reads),
+                write: computeConfidenceInterval95(writes),
+                bash: computeConfidenceInterval95(bashes),
             };
         }
 
@@ -244,6 +248,11 @@ router.post('/create', (req, res) => {
                 };
             }
 
+            // Accumulate per-task mapped scores across questions for avg CI
+            // taskScoresByModel[modelId][taskId] = [mappedScore, ...]
+            const taskScoresByModel = {};
+            for (const modelId of modelIds) taskScoresByModel[modelId] = {};
+
             // For each question, find "complete" tasks where ALL models have scores
             for (const question of questions) {
                 // Fetch all responses for this question across all models and tasks
@@ -280,7 +289,28 @@ router.post('/create', (req, res) => {
                         count: scores.length,
                         ...computeConfidenceInterval95(scores)
                     };
+
+                    // Accumulate per-task scores for avg CI (same complete-task filter)
+                    for (const tid of completeTasks) {
+                        const mapped = mapScore(taskModelScores[tid][modelId], question.scoring_type);
+                        if (mapped != null) {
+                            if (!taskScoresByModel[modelId][tid]) taskScoresByModel[modelId][tid] = [];
+                            taskScoresByModel[modelId][tid].push(mapped);
+                        }
+                    }
                 }
+            }
+
+            // Compute avg CI per model: per-task average → CI across tasks
+            for (const modelId of modelIds) {
+                if (!scoreStats[modelId]) scoreStats[modelId] = {};
+                const perTaskAvgs = Object.values(taskScoresByModel[modelId])
+                    .filter(arr => arr.length > 0)
+                    .map(arr => arr.reduce((a, b) => a + b, 0) / arr.length);
+                scoreStats[modelId]['_avg'] = {
+                    count: perTaskAvgs.length,
+                    ...computeConfidenceInterval95(perTaskAvgs)
+                };
             }
         }
 
@@ -387,7 +417,7 @@ router.post('/create', (req, res) => {
             reportId = generateReportId();
         } while (db.prepare('SELECT 1 FROM reports WHERE id = ?').get(reportId));
 
-        const reportTitle = title || `${reportType === 'trace_only' ? '轨迹分析' : '轨迹与评分分析'}报告 - ${new Date().toLocaleDateString('zh-CN')}`;
+        const reportTitle = title || `${reportType === 'trace_only' ? '轨迹分析' : '轨迹与评分分析'}报告 - ${new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
 
         db.prepare(`
             INSERT INTO reports (id, title, report_type, selected_models, selected_tasks, report_data, created_by)

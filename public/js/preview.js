@@ -213,7 +213,7 @@
                     // 更新日志到 progressDiv
                     if (info.logs && progressDiv) {
                         const logsHtml = info.logs.map(l =>
-                            `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:6px;">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
+                            `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:6px;">[${new Date(l.ts).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai' })}]</span>${escapeHtml(l.msg)}</div>`
                         ).join('');
                         progressDiv.innerHTML = logsHtml || '<div style="color:#9ca3af; padding:1rem;">等待服务响应...</div>';
                         progressDiv.scrollTop = progressDiv.scrollHeight;
@@ -297,7 +297,7 @@
         // 3. 展示日志在 progressDiv 中
         if (progressDiv) {
             const logsHtml = (logs || []).map(l =>
-                `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:6px;">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
+                `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:6px;">[${new Date(l.ts).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai' })}]</span>${escapeHtml(l.msg)}</div>`
             ).join('');
             progressDiv.style.display = 'block';
             progressDiv.style.height = '100%';

@@ -101,7 +101,7 @@ export const UI = {
         const span = Elements.lastRefresh();
         if (span) {
             const now = new Date();
-            span.textContent = `更新于 ${now.toLocaleTimeString()}`;
+            span.textContent = `更新于 ${now.toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
         }
     },
 

@@ -18,7 +18,7 @@
             padding: 2rem 1.5rem;
         }
         .report-header {
-            text-align: center;
+            text-align: left;
             margin-bottom: 2.5rem;
             padding-bottom: 1.5rem;
             border-bottom: 1px solid #e2e8f0;
@@ -32,26 +32,35 @@
             color: #64748b;
             font-size: 0.9rem;
             display: flex;
-            justify-content: center;
-            gap: 1.5rem;
+            justify-content: flex-start;
+            flex-wrap: wrap;
+            gap: 0.25rem 0;
         }
-        .report-badge {
-            display: inline-block;
-            padding: 0.2rem 0.6rem;
-            border-radius: 999px;
-            font-size: 0.8rem;
-            font-weight: 500;
+        .report-header .meta span::after {
+            content: '·';
+            margin: 0 0.5rem;
+            color: #cbd5e1;
         }
-        .badge-trace { background: #dbeafe; color: #2563eb; }
-        .badge-score { background: #fef3c7; color: #d97706; }
+        .report-header .meta span:last-child::after {
+            content: '';
+            margin: 0;
+        }
 
         .section { margin-bottom: 2.5rem; }
         .section h2 {
             font-size: 1.15rem;
             font-weight: 600;
             margin-bottom: 1rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 2px solid #e2e8f0;
+        }
+        .section-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .section-header-row h2 {
+            margin-bottom: 0;
         }
 
         .data-table {
@@ -63,6 +72,14 @@
             border: 1px solid #e2e8f0;
             font-size: 0.9rem;
         }
+        .data-table.has-tooltip {
+            overflow: visible;
+        }
+        .data-table.has-tooltip thead,
+        .data-table.has-tooltip thead tr,
+        .data-table.has-tooltip thead th {
+            overflow: visible;
+        }
         .data-table th {
             background: #f8fafc;
             font-weight: 600;
@@ -73,6 +90,8 @@
             font-size: 0.85rem;
             white-space: nowrap;
         }
+        .data-table th.th-center { text-align: center; }
+        .data-table th.th-right { text-align: right; }
         .data-table th.sortable {
             cursor: pointer;
             user-select: none;
@@ -90,7 +109,6 @@
             font-size: 0.7rem;
             color: #cbd5e1;
         }
-        .data-table th.sortable.sort-asc .sort-arrow,
         .data-table th.sortable.sort-desc .sort-arrow {
             color: #3b82f6;
         }
@@ -111,6 +129,12 @@
         .score-cell {
             font-weight: 600;
             text-align: center;
+        }
+        .score-cell-link {
+            cursor: pointer;
+        }
+        .score-cell-link:hover {
+            text-decoration: underline;
         }
 
         .task-list {
@@ -282,6 +306,33 @@
         .th-info-icon:hover .info-tooltip {
             display: block;
         }
+        .score-dim-tabs {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+        .dim-tab {
+            padding: 0.4rem 0.9rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 999px;
+            background: white;
+            color: #64748b;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-weight: 500;
+            outline: none;
+        }
+        .dim-tab:hover {
+            background: #f1f5f9;
+            color: #334155;
+        }
+        .dim-tab.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
     </style>
 </head>
 <body>
@@ -344,11 +395,6 @@
             return fmtNum(n, 0);
         }
 
-        function renderCI(ci) {
-            if (!ci) return '-';
-            return `${fmtNum(ci.mean)}<span class="ci">[${fmtNum(ci.lower)}, ${fmtNum(ci.upper)}]</span>`;
-        }
-
         function getScoreColor(score, max) {
             const pct = score / max;
             if (pct >= 0.8) return '#22c55e';
@@ -365,103 +411,30 @@
             let html = '';
 
             // Header
-            html += `
-                <div class="report-header">
-                    <h1>${esc(report.title)}</h1>
-                    <div class="meta">
-                        <span class="report-badge ${isScoreReport ? 'badge-score' : 'badge-trace'}">
-                            ${isScoreReport ? '轨迹与评分分析' : '仅轨迹分析'}
-                        </span>
-                        <span>创建者: ${esc(report.createdBy)}</span>
-                        <span>创建时间: ${new Date(report.createdAt).toLocaleString('zh-CN')}</span>
-                        <span>报告ID: ${esc(report.id)}</span>
-                    </div>
-                </div>
-            `;
-
-            // Summary Cards
             const totalModels = data.models.length;
             const totalTasks = data.tasks.length;
             const totalUsers = new Set(data.tasks.map(t => t.username)).size;
             html += `
-                <div class="summary-cards">
-                    <div class="summary-card">
-                        <div class="label">分析模型数</div>
-                        <div class="value">${totalModels}</div>
-                    </div>
-                    <div class="summary-card">
-                        <div class="label">参与用户数</div>
-                        <div class="value">${totalUsers}</div>
-                    </div>
-                    <div class="summary-card">
-                        <div class="label">分析任务数</div>
-                        <div class="value">${totalTasks}</div>
+                <div class="report-header">
+                    <h1>${esc(report.title)}</h1>
+                    <div class="meta">
+                        <span>创建者: ${esc(report.createdBy)}</span>
+                        <span>创建时间: ${new Date(report.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</span>
+                        <span>${totalModels} 个模型</span>
+                        <span>${totalUsers} 位用户</span>
+                        <span>${totalTasks} 个任务</span>
                     </div>
                 </div>
             `;
 
-            // Trace Stats Table (sortable)
-            const traceColumns = [
-                { key: 'name', label: '模型', isNum: false },
-                { key: 'avgDuration', label: '平均耗时', isNum: true },
-                { key: 'avgTurns', label: '平均轮次', isNum: true },
-                { key: 'avgInputTokens', label: '平均 Input Tokens', isNum: true },
-                { key: 'avgOutputTokens', label: '平均 Output Tokens', isNum: true },
-                { key: 'avgTodoWrite', label: 'TodoWrite', isNum: true },
-                { key: 'avgRead', label: 'Read', isNum: true },
-                { key: 'avgWrite', label: 'Write', isNum: true },
-                { key: 'avgBash', label: 'Bash', isNum: true },
-                { key: 'avgTotalToolCalls', label: '总工具调用', isNum: true },
-            ];
-
-            const traceRows = data.models
-                .filter(m => m.stats && m.stats.taskCount > 0)
-                .map(m => ({ name: m.name, ...m.stats }));
-
-            html += `<div class="section"><h2>轨迹数据对比</h2>`;
-            html += `<table class="data-table" id="trace-table">
-                <thead><tr>`;
-            for (const col of traceColumns) {
-                html += `<th class="${col.isNum ? 'num ' : ''}sortable" data-sort-key="${col.key}">${col.label}<span class="sort-arrow">⇅</span></th>`;
-            }
-            html += `</tr></thead><tbody id="trace-tbody">`;
-            html += `</tbody></table></div>`;
-
-            // Will be populated after innerHTML is set
-            window.__traceRows = traceRows;
-            window.__traceColumns = traceColumns;
-
-            // Confidence Intervals Table
-            html += `<div class="section"><h2>关键指标置信区间 (95%)</h2>`;
-            html += `<table class="data-table">
-                <thead><tr>
-                    <th>模型</th>
-                    <th class="num">耗时 (秒)</th>
-                    <th class="num">轮次</th>
-                    <th class="num">Input Tokens</th>
-                    <th class="num">Output Tokens</th>
-                </tr></thead><tbody>`;
-
-            for (const model of data.models) {
-                const s = model.stats;
-                if (!s || s.taskCount === 0) continue;
-                html += `<tr>
-                    <td><strong>${esc(model.name)}</strong></td>
-                    <td class="num">${renderCI(s.duration)}</td>
-                    <td class="num">${renderCI(s.turns)}</td>
-                    <td class="num">${renderCI(s.inputTokens)}</td>
-                    <td class="num">${renderCI(s.outputTokens)}</td>
-                </tr>`;
-            }
-            html += `</tbody></table></div>`;
-
-            // Score Stats (if trace_and_score)
+            // Score Stats (if trace_and_score) — rendered BEFORE trace section
             if (isScoreReport && data.scoreStats) {
                 const questionIds = new Set();
                 const questionMap = {};
                 const qMeta = data.scoreQuestionMeta || {};
                 for (const modelId in data.scoreStats) {
                     for (const qId in data.scoreStats[modelId]) {
+                        if (qId === '_avg') continue;
                         questionIds.add(qId);
                         if (!questionMap[qId]) questionMap[qId] = data.scoreStats[modelId][qId];
                     }
@@ -470,18 +443,18 @@
 
                 html += `<div class="section"><h2>评分统计</h2>`;
 
-                // Chart (maxScore is now always 5)
-                html += renderScoreChart(data.models, data.scoreStats, qIds, questionMap);
+                // Chart container (rendered dynamically by initScoreSection)
+                html += `<div class="chart-container" id="score-chart-container"></div>`;
 
-                // Build score rows data for sortable table
+                // Build score table columns
                 const scoreColumns = [{ key: 'name', label: '模型', isNum: false }];
+                scoreColumns.push({ key: 'avg', label: '平均分', isNum: true });
                 for (const qId of qIds) {
                     const meta = qMeta[qId] || questionMap[qId] || {};
                     const qName = meta.questionName || questionMap[qId]?.questionName || qId;
-                    const maxScore = 5;
                     const count = questionMap[qId]?.count || 0;
 
-                    let tooltipLines = [`N = ${count}`, `满分 = ${maxScore}`];
+                    let tooltipLines = [`N = ${count}`];
                     const options = meta.options;
                     if (Array.isArray(options) && options.length > 0) {
                         tooltipLines.push('---');
@@ -498,19 +471,21 @@
                         rawLabel: qName,
                     });
                 }
-                scoreColumns.push({ key: 'avg', label: '平均分', isNum: true });
 
+                // Build score rows with raw CI data for chart
                 const scoreRows = [];
                 for (const model of data.models) {
                     const modelScores = data.scoreStats[model.id];
                     if (!modelScores) continue;
-                    const row = { name: model.name };
+                    const row = { name: model.name, modelId: model.id };
                     let sumMean = 0, countDims = 0;
                     for (const qId of qIds) {
                         const qs = modelScores[qId];
                         if (qs && qs.count > 0) {
                             row['q_' + qId] = qs.mean;
                             row['q_' + qId + '_ci'] = `[${fmtNum(qs.lower)}, ${fmtNum(qs.upper)}]`;
+                            row['q_' + qId + '_lower'] = qs.lower;
+                            row['q_' + qId + '_upper'] = qs.upper;
                             sumMean += qs.mean;
                             countDims++;
                         } else {
@@ -518,12 +493,19 @@
                         }
                     }
                     row.avg = countDims > 0 ? Math.round((sumMean / countDims) * 100) / 100 : null;
+                    // Avg CI from backend (per-task average → CI across tasks)
+                    const avgCI = modelScores['_avg'];
+                    if (avgCI && avgCI.count > 0) {
+                        row.avg_lower = avgCI.lower;
+                        row.avg_upper = avgCI.upper;
+                    }
                     scoreRows.push(row);
                 }
 
-                html += `<table class="data-table" id="score-table"><thead><tr>`;
+                html += `<table class="data-table has-tooltip" id="score-table"><thead><tr>`;
                 for (const col of scoreColumns) {
-                    html += `<th class="${col.isNum ? 'num ' : ''}sortable" data-sort-key="${col.key}">${col.label}<span class="sort-arrow">⇅</span></th>`;
+                    const alignClass = col.isNum ? 'th-center ' : '';
+                    html += `<th class="${alignClass}sortable" data-sort-key="${col.key}">${col.label}<span class="sort-arrow">↓</span></th>`;
                 }
                 html += `</tr></thead><tbody id="score-tbody"></tbody></table></div>`;
 
@@ -531,6 +513,41 @@
                 window.__scoreColumns = scoreColumns;
                 window.__scoreQIds = qIds;
             }
+
+            // Trace Stats Table (sortable) — after score section
+            const traceColumns = [
+                { key: 'name', label: '模型', isNum: false },
+                { key: 'avgDuration', label: '平均耗时', isNum: true },
+                { key: 'avgTurns', label: '平均轮次', isNum: true },
+                { key: 'avgInputTokens', label: '平均 Input Tokens', isNum: true },
+                { key: 'avgOutputTokens', label: '平均 Output Tokens', isNum: true },
+                { key: 'avgTodoWrite', label: 'TodoWrite', isNum: true },
+                { key: 'avgRead', label: 'Read', isNum: true },
+                { key: 'avgWrite', label: 'Write', isNum: true },
+                { key: 'avgBash', label: 'Bash', isNum: true },
+            ];
+
+            const traceRows = data.models
+                .filter(m => m.stats && m.stats.taskCount > 0)
+                .map(m => ({ name: m.name, ...m.stats }));
+
+            html += `<div class="section"><div class="section-header-row">
+                <h2>轨迹数据对比</h2>
+                <label style="display:inline-flex;align-items:center;gap:0.4rem;font-size:0.85rem;color:#64748b;cursor:pointer;flex-shrink:0;">
+                    <input type="checkbox" id="trace-ci-toggle"> 展示置信区间
+                </label>
+            </div>`;
+            html += `<table class="data-table" id="trace-table">
+                <thead><tr>`;
+            for (const col of traceColumns) {
+                const alignClass = col.isNum ? 'th-right ' : '';
+                html += `<th class="${alignClass}sortable" data-sort-key="${col.key}">${col.label}<span class="sort-arrow">↓</span></th>`;
+            }
+            html += `</tr></thead><tbody id="trace-tbody">`;
+            html += `</tbody></table></div>`;
+
+            window.__traceRows = traceRows;
+            window.__traceColumns = traceColumns;
 
             // User Voices
             if (data.userVoices && data.userVoices.length > 0) {
@@ -548,66 +565,105 @@
 
             // Initialize trace table rows and sorting
             if (window.__traceRows) {
+                window.__traceCIEnabled = false;
                 renderTraceRows(window.__traceRows);
-                initSortableTable('trace-table', window.__traceRows, window.__traceColumns, renderTraceRows);
+                initSortableTable('trace-table', window.__traceRows, window.__traceColumns, renderTraceRows, { descOnly: true });
+
+                const ciToggle = document.getElementById('trace-ci-toggle');
+                if (ciToggle) {
+                    ciToggle.addEventListener('change', () => {
+                        window.__traceCIEnabled = ciToggle.checked;
+                        renderTraceRows(window.__lastRenderedTraceRows || window.__traceRows);
+                    });
+                }
             }
-            // Initialize score table rows and sorting
+            // Initialize score chart + table (linked dimension switching)
             if (window.__scoreRows) {
-                renderScoreRows(window.__scoreRows);
-                initSortableTable('score-table', window.__scoreRows, window.__scoreColumns, renderScoreRows);
+                initScoreSection();
             }
         }
 
         function renderTraceRows(rows) {
             const tbody = document.getElementById('trace-tbody');
             if (!tbody) return;
-            tbody.innerHTML = rows.map(row => `<tr>
-                <td><strong>${esc(row.name)}</strong></td>
-                <td class="num">${fmtDuration(row.avgDuration)}</td>
-                <td class="num">${fmtNum(row.avgTurns, 1)}</td>
-                <td class="num">${fmtTokens(row.avgInputTokens)}</td>
-                <td class="num">${fmtTokens(row.avgOutputTokens)}</td>
-                <td class="num">${fmtNum(row.avgTodoWrite, 1)}</td>
-                <td class="num">${fmtNum(row.avgRead, 1)}</td>
-                <td class="num">${fmtNum(row.avgWrite, 1)}</td>
-                <td class="num">${fmtNum(row.avgBash, 1)}</td>
-                <td class="num"><strong>${fmtNum(row.avgTotalToolCalls, 1)}</strong></td>
-            </tr>`).join('');
+            window.__lastRenderedTraceRows = rows;
+            const ci = window.__traceCIEnabled;
+
+            function ciSpanInt(obj) {
+                if (!ci || !obj) return '';
+                return `<span class="ci">[${fmtNum(obj.lower, 0)}, ${fmtNum(obj.upper, 0)}]</span>`;
+            }
+            function ciSpan1(obj) {
+                if (!ci || !obj) return '';
+                return `<span class="ci">[${fmtNum(obj.lower, 1)}, ${fmtNum(obj.upper, 1)}]</span>`;
+            }
+            function ciSpanK(obj) {
+                if (!ci || !obj) return '';
+                return `<span class="ci">[${fmtTokens(obj.lower)}, ${fmtTokens(obj.upper)}]</span>`;
+            }
+
+            tbody.innerHTML = rows.map(row => {
+                const s = row;
+                const durationCell = ci
+                    ? `${fmtNum(s.avgDuration, 0)}s${ciSpanInt(s.duration)}`
+                    : fmtDuration(s.avgDuration);
+                return `<tr>
+                    <td><strong>${esc(row.name)}</strong></td>
+                    <td class="num">${durationCell}</td>
+                    <td class="num">${fmtNum(row.avgTurns, 1)}${ciSpan1(s.turns)}</td>
+                    <td class="num">${fmtTokens(row.avgInputTokens)}${ciSpanK(s.inputTokens)}</td>
+                    <td class="num">${fmtTokens(row.avgOutputTokens)}${ciSpanK(s.outputTokens)}</td>
+                    <td class="num">${fmtNum(row.avgTodoWrite, 1)}${ciSpan1(s.todoWrite)}</td>
+                    <td class="num">${fmtNum(row.avgRead, 1)}${ciSpan1(s.read)}</td>
+                    <td class="num">${fmtNum(row.avgWrite, 1)}${ciSpan1(s.write)}</td>
+                    <td class="num">${fmtNum(row.avgBash, 1)}${ciSpan1(s.bash)}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function slugForId(s) {
+            return String(s || '').replace(/[\s\t\n\r"<>'`]/g, '_');
         }
 
         function renderScoreRows(rows) {
             const tbody = document.getElementById('score-tbody');
             if (!tbody) return;
             const qIds = window.__scoreQIds || [];
+            const columns = window.__scoreColumns || [];
             tbody.innerHTML = rows.map(row => {
                 let cells = `<td><strong>${esc(row.name)}</strong></td>`;
+                if (row.avg != null) {
+                    const color = getScoreColor(row.avg, 5);
+                    const avgCi = (row.avg_lower != null && row.avg_upper != null)
+                        ? `<span class="ci">[${fmtNum(row.avg_lower)}, ${fmtNum(row.avg_upper)}]</span>` : '';
+                    const target = '主动反馈';
+                    cells += `<td class="score-cell num score-cell-link" style="color: ${color};" data-model-id="${esc(row.modelId || '')}" data-target-category="${esc(target)}" title="点击跳转到用户之声"><strong>${fmtNum(row.avg)}</strong>${avgCi}</td>`;
+                } else {
+                    cells += `<td class="num">-</td>`;
+                }
                 for (const qId of qIds) {
                     const val = row['q_' + qId];
+                    const col = columns.find(c => c.key === 'q_' + qId);
+                    const target = col ? (col.rawLabel || col.label || '') : '';
                     if (val == null) {
                         cells += `<td class="num">-</td>`;
                     } else {
                         const ci = row['q_' + qId + '_ci'] || '';
                         const color = getScoreColor(val, 5);
-                        cells += `<td class="score-cell num" style="color: ${color};">
+                        cells += `<td class="score-cell num score-cell-link" style="color: ${color};" data-model-id="${esc(row.modelId || '')}" data-target-category="${esc(target)}" title="点击跳转到用户之声">
                             ${fmtNum(val)}
                             <span class="ci">${ci}</span>
                         </td>`;
                     }
                 }
-                // Average column
-                if (row.avg != null) {
-                    const color = getScoreColor(row.avg, 5);
-                    cells += `<td class="score-cell num" style="color: ${color};"><strong>${fmtNum(row.avg)}</strong></td>`;
-                } else {
-                    cells += `<td class="num">-</td>`;
-                }
                 return `<tr>${cells}</tr>`;
             }).join('');
         }
 
-        function initSortableTable(tableId, rows, columns, renderFn) {
+        function initSortableTable(tableId, rows, columns, renderFn, opts) {
             const table = document.getElementById(tableId);
             if (!table) return;
+            const descOnly = opts && opts.descOnly;
 
             let currentSortKey = null;
             let currentSortDir = null; // 'asc' | 'desc' | null
@@ -616,27 +672,33 @@
                 th.addEventListener('click', () => {
                     const key = th.dataset.sortKey;
 
-                    if (currentSortKey === key) {
-                        // Cycle: asc -> desc -> none
-                        if (currentSortDir === 'asc') currentSortDir = 'desc';
-                        else if (currentSortDir === 'desc') { currentSortDir = null; currentSortKey = null; }
-                        else currentSortDir = 'asc';
+                    if (descOnly) {
+                        if (currentSortKey === key) {
+                            currentSortDir = null; currentSortKey = null;
+                        } else {
+                            currentSortKey = key;
+                            currentSortDir = 'desc';
+                        }
                     } else {
-                        currentSortKey = key;
-                        currentSortDir = 'asc';
+                        if (currentSortKey === key) {
+                            if (currentSortDir === 'asc') currentSortDir = 'desc';
+                            else if (currentSortDir === 'desc') { currentSortDir = null; currentSortKey = null; }
+                            else currentSortDir = 'asc';
+                        } else {
+                            currentSortKey = key;
+                            currentSortDir = 'asc';
+                        }
                     }
 
-                    // Update header classes
                     table.querySelectorAll('th.sortable').forEach(h => {
                         h.classList.remove('sort-asc', 'sort-desc');
-                        h.querySelector('.sort-arrow').textContent = '⇅';
+                        h.querySelector('.sort-arrow').textContent = descOnly ? '↓' : '⇅';
                     });
                     if (currentSortDir) {
                         th.classList.add(currentSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
                         th.querySelector('.sort-arrow').textContent = currentSortDir === 'asc' ? '↑' : '↓';
                     }
 
-                    // Sort and re-render
                     const sorted = [...rows];
                     if (currentSortKey && currentSortDir) {
                         const col = columns.find(c => c.key === currentSortKey);
@@ -699,7 +761,8 @@
                     let firstCat = true;
 
                     for (const item of items) {
-                        html += `<tr>`;
+                        const voiceRowId = firstCat ? ` id="voice-${slugForId(modelId)}-${slugForId(catName)}"` : '';
+                        html += `<tr${voiceRowId}>`;
                         if (firstModel) {
                             html += `<td rowspan="${modelRowCount}" style="vertical-align:top;font-weight:600;">${esc(modelName)}</td>`;
                             firstModel = false;
@@ -712,7 +775,7 @@
                         }
                         html += `<td class="voice-content">${esc(item.content)}</td>`;
                         html += `<td class="voice-user">${esc(item.username)}</td>`;
-                        html += `<td><a class="voice-task-link" href="/task.html?id=${item.taskId}" target="_blank" title="${esc(item.taskTitle || '')}">${item.taskId}</a></td>`;
+                        html += `<td><a class="voice-task-link" href="/task.html?task=${item.taskId}&view_user=${encodeURIComponent(item.username)}" target="_blank" title="${esc(item.taskTitle || '')}">${item.taskId}</a></td>`;
                         html += `</tr>`;
                     }
                 }
@@ -722,100 +785,147 @@
             return html;
         }
 
-        const MODEL_COLORS = [
-            '#3b82f6', '#f97316', '#22c55e', '#a855f7', '#ef4444',
-            '#06b6d4', '#ec4899', '#eab308', '#14b8a6', '#8b5cf6'
-        ];
+        function truncateName(name, maxLen) {
+            if (!name) return '';
+            if (name.length <= maxLen) return name;
+            return name.substring(0, maxLen - 1) + '…';
+        }
 
-        function renderScoreChart(models, scoreStats, qIds, questionMap) {
-            const validModels = models.filter(m => scoreStats[m.id]);
-            if (validModels.length === 0 || qIds.length === 0) return '';
+        function updateScoreChart(rows, dimensionKey, maxScore) {
+            const container = document.getElementById('score-chart-container');
+            if (!container) return;
 
-            const nQ = qIds.length;
-            const nM = validModels.length;
-            const groupGap = 40;
-            const barWidth = Math.max(20, Math.min(40, 200 / nM));
-            const barGap = 4;
-            const groupWidth = nM * (barWidth + barGap) - barGap;
-            const totalWidth = nQ * (groupWidth + groupGap) - groupGap;
+            const filtered = rows.filter(r => r[dimensionKey] != null);
+            const sorted = [...filtered].sort((a, b) => (b[dimensionKey] || 0) - (a[dimensionKey] || 0));
 
-            const margin = { top: 20, right: 30, bottom: 50, left: 50 };
+            if (sorted.length === 0) {
+                container.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:2rem;">暂无数据</div>';
+                return;
+            }
+
+            const columns = window.__scoreColumns || [];
+            const dimCol = dimensionKey === 'avg' ? { rawLabel: '平均分' } : columns.find(c => c.key === dimensionKey);
+            const dimName = dimCol ? (dimCol.rawLabel || dimCol.label || dimensionKey) : dimensionKey;
+
+            const nM = sorted.length;
+            const barWidth = 56;
+            const gap = 28;
+            const totalWidth = nM * barWidth + (nM - 1) * gap;
+
+            const margin = { top: 28, right: 30, bottom: 44, left: 50 };
+            const chartH = 220;
             const chartW = Math.max(totalWidth + 40, 300);
-            const chartH = 260;
             const svgW = chartW + margin.left + margin.right;
             const svgH = chartH + margin.top + margin.bottom;
-
-            const maxScore = Math.max(...qIds.map(qId => questionMap[qId].maxScore));
 
             const yScale = (v) => chartH - (v / maxScore) * chartH;
 
             let svg = `<svg width="100%" viewBox="0 0 ${svgW} ${svgH}" style="max-width:${svgW}px;margin:0 auto;display:block;">`;
             svg += `<g transform="translate(${margin.left},${margin.top})">`;
 
-            // Y axis gridlines + labels
-            const yTicks = [];
-            for (let i = 0; i <= maxScore; i++) yTicks.push(i);
-            for (const tick of yTicks) {
-                const y = yScale(tick);
+            for (let i = 0; i <= maxScore; i++) {
+                const y = yScale(i);
                 svg += `<line x1="0" y1="${y}" x2="${chartW}" y2="${y}" stroke="#e2e8f0" stroke-width="1"/>`;
-                svg += `<text x="-8" y="${y + 4}" text-anchor="end" font-size="11" fill="#94a3b8">${tick}</text>`;
+                svg += `<text x="-8" y="${y + 4}" text-anchor="end" font-size="11" fill="#94a3b8">${i}</text>`;
             }
 
-            // Bars
-            for (let qi = 0; qi < nQ; qi++) {
-                const qId = qIds[qi];
-                const groupX = qi * (groupWidth + groupGap) + (chartW - totalWidth) / 2;
+            const startX = (chartW - totalWidth) / 2;
+            for (let i = 0; i < nM; i++) {
+                const row = sorted[i];
+                const val = row[dimensionKey];
+                const x = startX + i * (barWidth + gap);
+                const barH = (val / maxScore) * chartH;
+                const y = chartH - barH;
+                const color = getScoreColor(val, maxScore);
 
-                for (let mi = 0; mi < nM; mi++) {
-                    const model = validModels[mi];
-                    const qs = scoreStats[model.id]?.[qId];
-                    if (!qs || qs.count === 0) continue;
+                svg += `<rect x="${x}" y="${y}" width="${barWidth}" height="${barH}" fill="${color}" rx="3" opacity="0.85"/>`;
+                svg += `<text x="${x + barWidth / 2}" y="${y - 5}" text-anchor="middle" font-size="11" font-weight="600" fill="${color}">${fmtNum(val, 2)}</text>`;
 
-                    const x = groupX + mi * (barWidth + barGap);
-                    const barH = (qs.mean / maxScore) * chartH;
-                    const y = chartH - barH;
-                    const color = MODEL_COLORS[mi % MODEL_COLORS.length];
-
-                    // Bar
-                    svg += `<rect x="${x}" y="${y}" width="${barWidth}" height="${barH}" fill="${color}" rx="3" opacity="0.85"/>`;
-
-                    // Mean label on bar
-                    svg += `<text x="${x + barWidth / 2}" y="${y - 4}" text-anchor="middle" font-size="10" font-weight="600" fill="${color}">${fmtNum(qs.mean, 2)}</text>`;
-
-                    // CI error bar
-                    const ciTop = yScale(Math.min(qs.upper, maxScore));
-                    const ciBot = yScale(Math.max(qs.lower, 0));
+                const lower = row[dimensionKey + '_lower'];
+                const upper = row[dimensionKey + '_upper'];
+                if (lower != null && upper != null) {
+                    const ciTop = yScale(Math.min(upper, maxScore));
+                    const ciBot = yScale(Math.max(lower, 0));
                     const cx = x + barWidth / 2;
-                    const capW = barWidth * 0.4;
-                    svg += `<line x1="${cx}" y1="${ciTop}" x2="${cx}" y2="${ciBot}" stroke="#1e293b" stroke-width="1.5" opacity="0.6"/>`;
-                    svg += `<line x1="${cx - capW}" y1="${ciTop}" x2="${cx + capW}" y2="${ciTop}" stroke="#1e293b" stroke-width="1.5" opacity="0.6"/>`;
-                    svg += `<line x1="${cx - capW}" y1="${ciBot}" x2="${cx + capW}" y2="${ciBot}" stroke="#1e293b" stroke-width="1.5" opacity="0.6"/>`;
+                    const capW = barWidth * 0.3;
+                    svg += `<line x1="${cx}" y1="${ciTop}" x2="${cx}" y2="${ciBot}" stroke="#1e293b" stroke-width="1.5" opacity="0.5"/>`;
+                    svg += `<line x1="${cx - capW}" y1="${ciTop}" x2="${cx + capW}" y2="${ciTop}" stroke="#1e293b" stroke-width="1.5" opacity="0.5"/>`;
+                    svg += `<line x1="${cx - capW}" y1="${ciBot}" x2="${cx + capW}" y2="${ciBot}" stroke="#1e293b" stroke-width="1.5" opacity="0.5"/>`;
                 }
 
-                // X axis label (question name)
-                const labelX = groupX + groupWidth / 2;
-                const qName = questionMap[qId].questionName;
-                svg += `<text x="${labelX}" y="${chartH + 20}" text-anchor="middle" font-size="12" fill="#475569">${esc(qName)}</text>`;
-                svg += `<text x="${labelX}" y="${chartH + 34}" text-anchor="middle" font-size="10" fill="#94a3b8">(满分${questionMap[qId].maxScore})</text>`;
+                const displayName = truncateName(row.name, 10);
+                svg += `<text x="${x + barWidth / 2}" y="${chartH + 18}" text-anchor="middle" font-size="10" fill="#475569">${esc(displayName)}</text>`;
             }
 
             svg += `</g></svg>`;
-
-            // Legend
-            let legend = '<div class="chart-legend">';
-            validModels.forEach((m, i) => {
-                legend += `<div class="chart-legend-item">
-                    <div class="chart-legend-swatch" style="background:${MODEL_COLORS[i % MODEL_COLORS.length]}"></div>
-                    ${esc(m.name)}
+            container.innerHTML = svg + `
+                <div style="text-align:center;margin-top:0.75rem;">
+                    <div style="font-size:0.9rem;font-weight:600;color:#334155;">${esc(dimName)}</div>
+                    <div style="font-size:0.75rem;color:#94a3b8;margin-top:0.25rem;">选择表格表头可以切换图表展示项目</div>
                 </div>`;
-            });
-            legend += '</div>';
+        }
 
-            return `<div class="chart-container">
-                ${legend}
-                ${svg}
-                <div style="text-align:center;font-size:0.75rem;color:#94a3b8;margin-top:0.5rem;">误差线表示 95% 置信区间</div>
-            </div>`;
+        function initScoreSection() {
+            const rows = window.__scoreRows;
+            const columns = window.__scoreColumns;
+            let activeDim = 'avg';
+
+            function setDimension(key) {
+                if (key === 'name') return;
+                activeDim = key;
+
+                updateScoreChart(rows, key, 5);
+                sortAndRender(key);
+            }
+
+            function sortAndRender(key) {
+                const table = document.getElementById('score-table');
+                if (!table) return;
+
+                table.querySelectorAll('th.sortable').forEach(h => {
+                    h.classList.remove('sort-desc');
+                });
+                const activeTh = table.querySelector(`th[data-sort-key="${key}"]`);
+                if (activeTh) activeTh.classList.add('sort-desc');
+
+                const col = columns.find(c => c.key === key);
+                const sorted = [...rows].sort((a, b) => {
+                    let va = a[key], vb = b[key];
+                    if (col && !col.isNum) {
+                        return String(va || '').localeCompare(String(vb || ''), 'zh-CN');
+                    }
+                    if (va == null) va = -Infinity;
+                    if (vb == null) vb = -Infinity;
+                    return (Number(vb) || 0) - (Number(va) || 0);
+                });
+                renderScoreRows(sorted);
+            }
+
+            const table = document.getElementById('score-table');
+            if (table) {
+                table.querySelectorAll('th.sortable').forEach(th => {
+                    th.addEventListener('click', () => {
+                        const key = th.dataset.sortKey;
+                        if (key === 'name') {
+                            sortAndRender(key);
+                        } else {
+                            setDimension(key);
+                        }
+                    });
+                });
+                table.addEventListener('click', (e) => {
+                    const cell = e.target.closest('.score-cell-link');
+                    if (!cell) return;
+                    const modelId = cell.dataset.modelId;
+                    const targetCat = cell.dataset.targetCategory;
+                    if (!modelId || !targetCat) return;
+                    const id = `voice-${slugForId(modelId)}-${slugForId(targetCat)}`;
+                    const el = document.getElementById(id);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+            }
+
+            setDimension('avg');
         }
 
         loadReport();

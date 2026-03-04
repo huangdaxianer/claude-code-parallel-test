@@ -13,11 +13,14 @@ export function escapeHtml(text) {
         .replace(/'/g, '&#039;');
 }
 
-// Format datetime
+// Format datetime (UTC+8)
+const TZ_UTC8 = 'Asia/Shanghai';
+
 export function formatDateTime(dateStr) {
     if (!dateStr) return '-';
     const date = new Date(dateStr);
     return date.toLocaleString('zh-CN', {
+        timeZone: TZ_UTC8,
         month: '2-digit',
         day: '2-digit',
         hour: '2-digit',

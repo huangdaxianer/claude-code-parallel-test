@@ -43,7 +43,7 @@
         if (logs && logs.length > 0) {
             els.logsDiv.style.display = 'block';
             els.logsDiv.innerHTML = logs.map(l =>
-                `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:4px;">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
+                `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:4px;">[${new Date(l.ts).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai' })}]</span>${escapeHtml(l.msg)}</div>`
             ).join('');
         } else {
             els.logsDiv.style.display = 'block';
@@ -157,7 +157,7 @@
                 // Update logs
                 if (data.logs && data.logs.length > 0) {
                     els.logsDiv.innerHTML = data.logs.map(l =>
-                        `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:4px;">[${new Date(l.ts).toLocaleTimeString()}]</span>${escapeHtml(l.msg)}</div>`
+                        `<div style="margin-bottom:2px;"><span style="color:#6b7280;margin-right:4px;">[${new Date(l.ts).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai' })}]</span>${escapeHtml(l.msg)}</div>`
                     ).join('');
                     els.logsDiv.scrollTop = els.logsDiv.scrollHeight;
                 }
