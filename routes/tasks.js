@@ -39,19 +39,20 @@ router.get('/', (req, res) => {
         if (req.user.role === 'admin') {
             // 管理员：支持 userId 筛选，默认返回全部
             if (userId) {
-                tasks = db.prepare('SELECT task_id, title, user_id, created_at FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT ?').all(userId, queryLimit);
+                tasks = db.prepare('SELECT task_id, title, user_id, source_type, created_at FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT ?').all(userId, queryLimit);
             } else {
-                tasks = db.prepare('SELECT task_id, title, user_id, created_at FROM tasks ORDER BY created_at DESC LIMIT ?').all(queryLimit);
+                tasks = db.prepare('SELECT task_id, title, user_id, source_type, created_at FROM tasks ORDER BY created_at DESC LIMIT ?').all(queryLimit);
             }
         } else {
             // 普通用户：只能看自己的任务
-            tasks = db.prepare('SELECT task_id, title, user_id, created_at FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT ?').all(req.user.id, queryLimit);
+            tasks = db.prepare('SELECT task_id, title, user_id, source_type, created_at FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT ?').all(req.user.id, queryLimit);
         }
 
         return res.json(tasks.map(t => ({
             taskId: t.task_id,
             title: t.title,
             userId: t.user_id,
+            sourceType: t.source_type || 'prompt',
             createdAt: t.created_at
         })));
     } catch (e) {
@@ -420,11 +421,12 @@ router.post('/', (req, res) => {
     const currentUserId = req.user.id;
     // 仅管理员可启用 Agent Teams
     const enableAgentTeams = (req.user.role === 'admin' && task.enableAgentTeams) ? 1 : 0;
-    console.log(`[Task Create] taskId=${task.taskId}, userId=${currentUserId} (from session), enableAgentTeams=${enableAgentTeams}`);
+    const sourceType = task.baseDir ? 'upload' : 'prompt';
+    console.log(`[Task Create] taskId=${task.taskId}, userId=${currentUserId} (from session), enableAgentTeams=${enableAgentTeams}, sourceType=${sourceType}`);
     console.log(`[Task Create] Models received: ${JSON.stringify(task.models)}`);
     try {
-        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir, user_id, enable_agent_teams) VALUES (?, ?, ?, ?, ?, ?)');
-        insertTask.run(task.taskId, task.title, task.prompt, task.baseDir, currentUserId, enableAgentTeams);
+        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir, user_id, enable_agent_teams, source_type) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        insertTask.run(task.taskId, task.title, task.prompt, task.baseDir, currentUserId, enableAgentTeams, sourceType);
 
         const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_id, status) VALUES (?, ?, ?)');
         const models = Array.isArray(task.models) ? task.models : [];
@@ -781,7 +783,7 @@ router.post('/batch', upload.single('file'), (req, res) => {
         // Get enabled models using model_id
         const baseModels = db.prepare('SELECT model_id FROM model_configs WHERE model_id IS NOT NULL').all().map(m => m.model_id);
 
-        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir, user_id) VALUES (?, ?, ?, ?, ?)');
+        const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir, user_id, source_type) VALUES (?, ?, ?, ?, ?, ?)');
         const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_id, status) VALUES (?, ?, ?)');
         const insertQueue = db.prepare("INSERT INTO task_queue (task_id, status) VALUES (?, 'pending')");
         const batchUserId = req.user.id;
@@ -791,7 +793,7 @@ router.post('/batch', upload.single('file'), (req, res) => {
                 const taskId = crypto.randomBytes(4).toString('hex').toUpperCase();
                 const title = `Batch Task ${index + 1}`;
 
-                insertTask.run(taskId, title, prompt, null, batchUserId);
+                insertTask.run(taskId, title, prompt, null, batchUserId, 'prompt');
                 baseModels.forEach(m => insertRun.run(taskId, m, 'pending'));
                 insertQueue.run(taskId);
 

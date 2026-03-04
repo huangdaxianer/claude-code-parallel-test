@@ -16,9 +16,17 @@ export function escapeHtml(text) {
 // Format datetime (UTC+8)
 const TZ_UTC8 = 'Asia/Shanghai';
 
+// Ensure DB datetime strings (no TZ suffix) are parsed as UTC
+function ensureUTC(dateStr) {
+    if (typeof dateStr === 'string' && !dateStr.endsWith('Z') && !dateStr.includes('+')) {
+        return dateStr.replace(' ', 'T') + 'Z';
+    }
+    return dateStr;
+}
+
 export function formatDateTime(dateStr) {
     if (!dateStr) return '-';
-    const date = new Date(dateStr);
+    const date = new Date(ensureUTC(dateStr));
     return date.toLocaleString('zh-CN', {
         timeZone: TZ_UTC8,
         month: '2-digit',

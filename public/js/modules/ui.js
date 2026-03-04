@@ -292,7 +292,10 @@ export const UI = {
                        ${isChecked ? 'checked' : ''}>
             </td>
             <td class="task-cell">
-                <div class="task-title" title="${escapeHtml(task.title || 'Untitled')}" data-action="view" data-id="${task.taskId}" data-username="${escapeHtml(task.username || '')}">${escapeHtml(task.title || 'Untitled')}</div>
+                <div class="task-title" title="${escapeHtml(task.title || 'Untitled')}" data-action="view" data-id="${task.taskId}" data-username="${escapeHtml(task.username || '')}">
+                    ${escapeHtml(task.title || 'Untitled')}
+                    <span class="source-badge ${task.sourceType === 'upload' ? 'upload' : 'prompt'}">${task.sourceType === 'upload' ? '项目' : 'Prompt'}</span>
+                </div>
                 <div class="task-id">${task.taskId}</div>
             </td>
             <td class="user-cell">

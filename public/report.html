@@ -446,9 +446,32 @@
                 // Chart container (rendered dynamically by initScoreSection)
                 html += `<div class="chart-container" id="score-chart-container"></div>`;
 
+                // Build weight map from report data
+                const reportWeights = data.questionWeights || {};
+                const hasWeights = Object.keys(reportWeights).length > 0;
+
+                // Build weight tooltip content
+                let weightTooltipLines = [];
+                if (hasWeights) {
+                    for (const qId of qIds) {
+                        const meta = qMeta[qId] || questionMap[qId] || {};
+                        const qName = meta.questionName || questionMap[qId]?.questionName || qId;
+                        const w = reportWeights[qId] || 0;
+                        weightTooltipLines.push(`${qName}: ${w}%`);
+                    }
+                } else {
+                    const eqW = qIds.length > 0 ? Math.round(100 / qIds.length * 100) / 100 : 0;
+                    for (const qId of qIds) {
+                        const meta = qMeta[qId] || questionMap[qId] || {};
+                        const qName = meta.questionName || questionMap[qId]?.questionName || qId;
+                        weightTooltipLines.push(`${qName}: ${eqW}%`);
+                    }
+                }
+                const weightTooltipHtml = weightTooltipLines.map(l => esc(l)).join('<br>');
+
                 // Build score table columns
                 const scoreColumns = [{ key: 'name', label: '模型', isNum: false }];
-                scoreColumns.push({ key: 'avg', label: '平均分', isNum: true });
+                scoreColumns.push({ key: 'avg', label: `加权总分<span class="th-info-icon">i<span class="info-tooltip">${weightTooltipHtml}</span></span>`, isNum: true });
                 for (const qId of qIds) {
                     const meta = qMeta[qId] || questionMap[qId] || {};
                     const qName = meta.questionName || questionMap[qId]?.questionName || qId;
@@ -474,11 +497,24 @@
 
                 // Build score rows with raw CI data for chart
                 const scoreRows = [];
+                // Build weight fractions for frontend weighted sum
+                const weightFracs = {};
+                if (hasWeights) {
+                    for (const qId of qIds) {
+                        weightFracs[qId] = (parseInt(reportWeights[qId]) || 0) / 100;
+                    }
+                } else {
+                    const n = qIds.length;
+                    for (const qId of qIds) {
+                        weightFracs[qId] = n > 0 ? 1 / n : 0;
+                    }
+                }
+
                 for (const model of data.models) {
                     const modelScores = data.scoreStats[model.id];
                     if (!modelScores) continue;
                     const row = { name: model.name, modelId: model.id };
-                    let sumMean = 0, countDims = 0;
+                    let weightedSum = 0, totalWeight = 0;
                     for (const qId of qIds) {
                         const qs = modelScores[qId];
                         if (qs && qs.count > 0) {
@@ -486,14 +522,15 @@
                             row['q_' + qId + '_ci'] = `[${fmtNum(qs.lower)}, ${fmtNum(qs.upper)}]`;
                             row['q_' + qId + '_lower'] = qs.lower;
                             row['q_' + qId + '_upper'] = qs.upper;
-                            sumMean += qs.mean;
-                            countDims++;
+                            const w = weightFracs[qId] || 0;
+                            weightedSum += qs.mean * w;
+                            totalWeight += w;
                         } else {
                             row['q_' + qId] = null;
                         }
                     }
-                    row.avg = countDims > 0 ? Math.round((sumMean / countDims) * 100) / 100 : null;
-                    // Avg CI from backend (per-task average → CI across tasks)
+                    row.avg = totalWeight > 0 ? Math.round(weightedSum * 100) / 100 : null;
+                    // Avg CI from backend (per-task weighted sum → CI across tasks)
                     const avgCI = modelScores['_avg'];
                     if (avgCI && avgCI.count > 0) {
                         row.avg_lower = avgCI.lower;
@@ -804,7 +841,7 @@
             }
 
             const columns = window.__scoreColumns || [];
-            const dimCol = dimensionKey === 'avg' ? { rawLabel: '平均分' } : columns.find(c => c.key === dimensionKey);
+            const dimCol = dimensionKey === 'avg' ? { rawLabel: '加权总分' } : columns.find(c => c.key === dimensionKey);
             const dimName = dimCol ? (dimCol.rawLabel || dimCol.label || dimensionKey) : dimensionKey;
 
             const nM = sorted.length;

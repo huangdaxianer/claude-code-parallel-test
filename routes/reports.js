@@ -122,7 +122,7 @@ router.post('/available-tasks', (req, res) => {
 // POST /api/admin/report/create - generate report
 router.post('/create', (req, res) => {
     try {
-        const { reportType, modelIds, taskIds, title, selectedQuestionIds } = req.body;
+        const { reportType, modelIds, taskIds, title, selectedQuestionIds, questionWeights } = req.body;
         if (!reportType || !Array.isArray(modelIds) || !Array.isArray(taskIds) || modelIds.length === 0 || taskIds.length === 0) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
@@ -301,15 +301,69 @@ router.post('/create', (req, res) => {
                 }
             }
 
-            // Compute avg CI per model: per-task average → CI across tasks
+            // Build weight map: questionId → weight fraction (0~1)
+            const hasWeights = questionWeights && typeof questionWeights === 'object' && Object.keys(questionWeights).length > 0;
+            const weightMap = {};
+            if (hasWeights) {
+                for (const qId in questionWeights) {
+                    weightMap[qId] = (parseInt(questionWeights[qId]) || 0) / 100;
+                }
+            } else {
+                // Equal weights fallback
+                const n = questions.length;
+                for (const q of questions) {
+                    weightMap[q.id] = 1 / n;
+                }
+            }
+
+            // Compute weighted total CI per model: per-task weighted sum → CI across tasks
             for (const modelId of modelIds) {
                 if (!scoreStats[modelId]) scoreStats[modelId] = {};
-                const perTaskAvgs = Object.values(taskScoresByModel[modelId])
-                    .filter(arr => arr.length > 0)
-                    .map(arr => arr.reduce((a, b) => a + b, 0) / arr.length);
+
+                // For each task, compute weighted sum instead of simple average
+                const perTaskWeightedSums = [];
+                const taskEntries = taskScoresByModel[modelId];
+                // We need per-task per-question scores, rebuild from scoreStats
+                // Use the already-accumulated taskScoresByModel which has per-task arrays (ordered by question)
+                // But taskScoresByModel stores flat arrays without question association
+                // We need a different approach: use raw data keyed by task+question
+
+                // Rebuild per-task weighted sums from raw score data
+                const taskQuestionScores = {}; // taskId → { questionId → mappedScore }
+                for (const question of questions) {
+                    const qStats = scoreStats[modelId][question.id];
+                    if (!qStats || qStats.count === 0) continue;
+
+                    const allResponses = db.prepare(`
+                        SELECT task_id, score FROM feedback_responses
+                        WHERE question_id = ? AND task_id IN (${taskPlaceholders})
+                          AND model_id = ? AND score IS NOT NULL AND score > 0
+                    `).all(question.id, ...taskIds, modelId);
+
+                    for (const r of allResponses) {
+                        if (!taskQuestionScores[r.task_id]) taskQuestionScores[r.task_id] = {};
+                        taskQuestionScores[r.task_id][question.id] = mapScore(r.score, question.scoring_type);
+                    }
+                }
+
+                // For each task that has all questions scored, compute weighted sum
+                for (const tid of Object.keys(taskQuestionScores)) {
+                    const tScores = taskQuestionScores[tid];
+                    const questionIds = questions.map(q => q.id);
+                    const hasAll = questionIds.every(qid => tScores[qid] != null);
+                    if (!hasAll) continue;
+
+                    let weightedSum = 0;
+                    for (const qid of questionIds) {
+                        const w = weightMap[qid] || 0;
+                        weightedSum += tScores[qid] * w;
+                    }
+                    perTaskWeightedSums.push(weightedSum);
+                }
+
                 scoreStats[modelId]['_avg'] = {
-                    count: perTaskAvgs.length,
-                    ...computeConfidenceInterval95(perTaskAvgs)
+                    count: perTaskWeightedSums.length,
+                    ...computeConfidenceInterval95(perTaskWeightedSums)
                 };
             }
         }
@@ -409,6 +463,7 @@ router.post('/create', (req, res) => {
             tasks,
             scoreStats,
             scoreQuestionMeta,
+            questionWeights: questionWeights || null,
             userVoices,
         };
 
@@ -435,7 +490,7 @@ router.post('/create', (req, res) => {
         res.json({ success: true, reportId, reportUrl: `/report.html?id=${reportId}` });
     } catch (e) {
         console.error('[Report] Error creating report:', e);
-        res.status(500).json({ error: 'Failed to create report' });
+        res.status(500).json({ error: 'Failed to create report: ' + (e.message || String(e)) });
     }
 });
 

@@ -231,7 +231,12 @@
     function formatTime(timestamp) {
         if (!timestamp) return '';
         try {
-            const d = new Date(timestamp);
+            // Ensure DB datetime strings are parsed as UTC
+            let ts = timestamp;
+            if (typeof ts === 'string' && !ts.endsWith('Z') && !ts.includes('+')) {
+                ts = ts.replace(' ', 'T') + 'Z';
+            }
+            const d = new Date(ts);
             return d.toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
         } catch (e) {
             return '';

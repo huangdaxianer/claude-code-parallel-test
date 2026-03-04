@@ -382,6 +382,27 @@ textarea:focus {
     display: block;
 }
 
+.source-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+    line-height: 1.4;
+}
+
+.source-badge.prompt {
+    background: #eff6ff;
+    color: #3b82f6;
+}
+
+.source-badge.upload {
+    background: #f0fdf4;
+    color: #22c55e;
+}
+
 .task-title[data-action],
 .task-id[data-action] {
     cursor: pointer;

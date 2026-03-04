@@ -116,6 +116,10 @@ app.use((err, req, res, next) => {
 // 恢复上次运行遗留的卡死任务（必须在 processQueue 之前）
 watchdog.recoverOrphanedTasks();
 
+// 清理上次运行遗留的孤儿预览进程
+const previewService = require('./services/previewService');
+previewService.cleanupOrphanedPreviews();
+
 // 启动队列处理
 processQueue();
 

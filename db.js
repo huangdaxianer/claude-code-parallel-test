@@ -339,6 +339,13 @@ try { db.exec("ALTER TABLE gsb_tasks ADD COLUMN swapped INTEGER DEFAULT 0"); } c
 // Migration: Add enable_agent_teams to tasks (per-task flag, admin only)
 try { db.exec("ALTER TABLE tasks ADD COLUMN enable_agent_teams INTEGER DEFAULT 0"); } catch (e) { }
 
+// Migration: Add source_type to tasks ('prompt' = pure prompt, 'upload' = uploaded/incremental project)
+try { db.exec("ALTER TABLE tasks ADD COLUMN source_type TEXT DEFAULT 'prompt'"); } catch (e) { }
+// Backfill existing tasks based on base_dir
+try {
+    db.exec("UPDATE tasks SET source_type = 'upload' WHERE base_dir IS NOT NULL AND base_dir != '' AND (source_type IS NULL OR source_type = 'prompt')");
+} catch (e) { }
+
 // Helper function to generate 5-character model ID
 function generateModelId() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

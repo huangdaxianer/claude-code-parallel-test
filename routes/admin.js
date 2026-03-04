@@ -66,6 +66,7 @@ router.get('/tasks', (req, res) => {
                 t.title,
                 t.prompt,
                 t.base_dir,
+                t.source_type,
                 t.user_id,
                 t.created_at,
                 u.username,
@@ -81,19 +82,29 @@ router.get('/tasks', (req, res) => {
         `;
         const tasks = db.prepare(tasksSql).all(...params, pageSize, offset);
 
+        // Get enabled model IDs for the admin's user group
+        const adminGroupId = req.user.group_id;
+        const enabledModelIds = db.prepare(`
+            SELECT mc.model_id
+            FROM model_configs mc
+            LEFT JOIN model_group_settings mgs ON mc.id = mgs.model_id AND mgs.group_id = ?
+            WHERE COALESCE(mgs.is_enabled, 1) = 1 AND mc.model_id IS NOT NULL
+        `).all(adminGroupId).map(r => r.model_id);
+
         const tasksWithRuns = tasks.map(task => {
             const runs = db.prepare(`
                 SELECT mr.model_id, mr.status, mr.duration, mr.input_tokens, mr.output_tokens, mc.endpoint_name
                 FROM model_runs mr
                 LEFT JOIN model_configs mc ON mc.model_id = mr.model_id
                 WHERE mr.task_id = ?
-            `).all(task.task_id);
+            `).all(task.task_id).filter(r => enabledModelIds.includes(r.model_id));
 
             return {
                 taskId: task.task_id,
                 title: task.title,
                 prompt: task.prompt,
                 baseDir: task.base_dir,
+                sourceType: task.source_type || 'prompt',
                 userId: task.user_id,
                 username: task.username || 'Unknown',
                 createdAt: task.created_at,
@@ -446,6 +457,41 @@ router.get('/queue-status', (req, res) => {
     }
 });
 
+// 按状态获取 model_runs 列表（用于统计卡片弹窗）
+router.get('/model-runs-by-status', (req, res) => {
+    try {
+        const status = req.query.status;
+        if (!status || !['running', 'stopped', 'pending'].includes(status)) {
+            return res.status(400).json({ error: 'Invalid status parameter' });
+        }
+
+        const runs = db.prepare(`
+            SELECT
+                mr.task_id,
+                mr.model_id,
+                mr.status,
+                mr.stop_reason,
+                mr.retry_count,
+                mc.endpoint_name as model_name,
+                t.title,
+                t.prompt,
+                t.created_at,
+                u.username
+            FROM model_runs mr
+            LEFT JOIN model_configs mc ON mc.model_id = mr.model_id
+            LEFT JOIN tasks t ON t.task_id = mr.task_id
+            LEFT JOIN users u ON t.user_id = u.id
+            WHERE mr.status = ?
+            ORDER BY t.created_at DESC
+        `).all(status);
+
+        res.json({ runs });
+    } catch (e) {
+        console.error('Error fetching model runs by status:', e);
+        res.status(500).json({ error: 'Failed to fetch model runs' });
+    }
+});
+
 // 获取所有评价问题 (Admin)
 router.get('/questions', (req, res) => {
     try {
@@ -611,9 +657,10 @@ router.get('/feedback-stats', (req, res) => {
     }
 });
 
-// 获取所有模型配置 (Admin) - 包含每个用户组的设置
+// 获取所有模型配置 (Admin) - 只返回对当前管理员用户组启用的模型
 router.get('/models', (req, res) => {
     try {
+        const adminGroupId = req.user.group_id;
         const models = db.prepare('SELECT id as internal_id, model_id as id, endpoint_name as name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, is_preview_model, always_thinking_enabled, provider, created_at FROM model_configs ORDER BY created_at DESC').all();
         const groups = db.prepare('SELECT * FROM user_groups ORDER BY is_default DESC, name ASC').all();
 
@@ -625,8 +672,15 @@ router.get('/models', (req, res) => {
             settingsMap[s.model_id][s.group_id] = s;
         });
 
+        // Filter models: only include models enabled for the admin's user group
+        const enabledModels = models.filter(model => {
+            const setting = settingsMap[model.internal_id]?.[adminGroupId];
+            const isEnabled = setting ? setting.is_enabled : 1;
+            return isEnabled === 1;
+        });
+
         // Attach group settings to each model
-        const modelsWithGroupSettings = models.map(model => {
+        const modelsWithGroupSettings = enabledModels.map(model => {
             const groupSettings = groups.map(group => {
                 const setting = settingsMap[model.internal_id]?.[group.id];
                 return {

@@ -85,6 +85,33 @@ async function forceCleanup(folderName) {
     }
 }
 
+// 启动时清理孤儿预览进程（上次服务崩溃/重启遗留的）
+async function cleanupOrphanedPreviews() {
+    const portStart = config.PREVIEW_PORT_START;
+    const portEnd = config.PREVIEW_PORT_END;
+    console.log(`[Preview] Cleaning up orphaned preview processes on ports ${portStart}-${portEnd}...`);
+
+    return new Promise((resolve) => {
+        exec(`lsof -t -iTCP:${portStart}-${portEnd} -sTCP:LISTEN`, (err, stdout) => {
+            if (err || !stdout || !stdout.trim()) {
+                console.log('[Preview] No orphaned preview processes found.');
+                return resolve(0);
+            }
+            const pids = [...new Set(stdout.trim().split(/\s+/).map(p => parseInt(p, 10)).filter(p => !isNaN(p)))];
+            console.log(`[Preview] Found ${pids.length} orphaned preview processes, killing...`);
+            let killed = 0;
+            for (const pid of pids) {
+                try {
+                    process.kill(pid, 'SIGKILL');
+                    killed++;
+                } catch (e) { /* already dead */ }
+            }
+            console.log(`[Preview] Killed ${killed} orphaned preview processes.`);
+            resolve(killed);
+        });
+    });
+}
+
 // Start the monitor immediately
 startHeartbeatMonitor();
 
@@ -622,5 +649,6 @@ module.exports = {
     detectProjectType,
     updateHeartbeat,
     updateTaskHeartbeat,
-    preparePreview
+    preparePreview,
+    cleanupOrphanedPreviews
 };

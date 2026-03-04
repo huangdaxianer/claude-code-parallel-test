@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     init();
 });
 
-function init() {
+async function init() {
     // Auth Check
     const savedUserStr = localStorage.getItem('claude_user');
     const loginRedirect = '/login.html?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
@@ -46,10 +46,11 @@ function init() {
     // Handle initial tab from URL
     initTabFromURL();
 
-    // Initial Load
+    // Initial Load — fetchModels must complete before refreshTasks to ensure
+    // model columns are derived from the filtered models API, not from task runs
     fetchUsers();
     fetchQueueStatus();
-    fetchModels();
+    await fetchModels();
     refreshTasks();
     fetchQuestions();
 
@@ -109,7 +110,7 @@ function setupEventListeners() {
     });
 
     // Modal Outside Clicks
-    const modalIds = ['prompt-modal', 'config-modal', 'question-modal', 'model-modal', 'group-modal', 'create-user-modal', 'report-modal'];
+    const modalIds = ['prompt-modal', 'config-modal', 'question-modal', 'model-modal', 'group-modal', 'create-user-modal', 'report-modal', 'task-list-modal'];
     modalIds.forEach(id => {
         document.getElementById(id)?.addEventListener('click', (e) => {
             if (e.target.id === id) UI.closeModal(id);
@@ -887,6 +888,140 @@ window.openConfigModal = function () {
     UI.openConfigModal(AppState.queueStatus.maxParallelSubtasks);
 };
 
+window.openTaskListModal = async function (status) {
+    const titleMap = { running: '进行中任务', stopped: '已中止任务' };
+    const titleEl = document.getElementById('task-list-modal-title');
+    const contentEl = document.getElementById('task-list-modal-content');
+    if (!titleEl || !contentEl) return;
+
+    titleEl.textContent = titleMap[status] || '任务列表';
+    contentEl.innerHTML = '<p style="color: #94a3b8; text-align: center; padding: 2rem 0;">加载中...</p>';
+    document.getElementById('task-list-modal')?.classList.add('show');
+
+    try {
+        const res = await fetch(`/api/admin/model-runs-by-status?status=${status}`);
+        const data = await res.json();
+        const runs = data.runs || [];
+
+        if (runs.length === 0) {
+            contentEl.innerHTML = `<p style="color: #94a3b8; text-align: center; padding: 2rem 0;">暂无${titleMap[status]}</p>`;
+            return;
+        }
+
+        const escapeHtml = (s) => {
+            const div = document.createElement('div');
+            div.textContent = s || '';
+            return div.innerHTML;
+        };
+
+        const stopReasonMap = {
+            activity_timeout: '活动超时',
+            wall_clock_timeout: '总时间超时',
+            manual_stop: '手动中止',
+            is_error: '执行出错',
+            abnormal_completion: '异常完成',
+            process_error: '进程错误',
+            non_zero_exit: '非零退出',
+            orphaned: '孤儿进程',
+            server_restart: '服务器重启'
+        };
+
+        const showBatchRestart = status === 'stopped';
+
+        const rows = runs.map((r, i) => {
+            const title = escapeHtml(r.title || r.prompt?.substring(0, 60) || '-');
+            const time = r.created_at ? formatDateTime(r.created_at) : '-';
+            const reason = r.stop_reason ? (stopReasonMap[r.stop_reason] || r.stop_reason) : '-';
+            const retries = r.retry_count != null ? r.retry_count : 0;
+            const taskUrl = `/task.html?view_user=${encodeURIComponent(r.username || '')}&task=${encodeURIComponent(r.task_id)}`;
+            const checkboxHtml = showBatchRestart
+                ? `<td style="padding: 0.6rem 0.5rem; text-align: center;"><input type="checkbox" class="task-list-cb" data-task-id="${escapeHtml(r.task_id)}" /></td>`
+                : '';
+            return `<tr style="border-bottom: 1px solid #f1f5f9;">
+                ${checkboxHtml}
+                <td style="padding: 0.6rem 0.75rem; font-family: Menlo, monospace; font-size: 0.8rem;"><a href="${taskUrl}" target="_blank" style="color: #3b82f6; text-decoration: none;">${escapeHtml(r.task_id)}</a></td>
+                <td style="padding: 0.6rem 0.75rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${title}</td>
+                <td style="padding: 0.6rem 0.75rem; color: #64748b; font-size: 0.85rem;">${escapeHtml(r.username || '-')}</td>
+                <td style="padding: 0.6rem 0.75rem; color: #64748b; font-size: 0.85rem;">${escapeHtml(r.model_name || r.model_id || '-')}</td>
+                <td style="padding: 0.6rem 0.75rem; color: ${r.stop_reason ? '#ef4444' : '#64748b'}; font-size: 0.85rem;">${reason}</td>
+                <td style="padding: 0.6rem 0.75rem; color: #64748b; font-size: 0.85rem; text-align: center;">${retries}</td>
+                <td style="padding: 0.6rem 0.75rem; color: #64748b; font-size: 0.85rem; white-space: nowrap;">${time}</td>
+            </tr>`;
+        }).join('');
+
+        const checkAllHtml = showBatchRestart
+            ? `<th style="padding: 0.5rem 0.5rem; width: 36px; text-align: center;"><input type="checkbox" id="task-list-select-all" /></th>`
+            : '';
+
+        const batchBarHtml = showBatchRestart
+            ? `<div id="task-list-batch-bar" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+                <span style="font-size: 0.85rem; color: #64748b;">已选 <strong id="task-list-selected-count">0</strong> 个任务</span>
+                <button id="task-list-batch-restart-btn" class="btn btn-primary" style="font-size: 0.85rem; padding: 0.4rem 1rem;" disabled>批量重启</button>
+               </div>`
+            : '';
+
+        contentEl.innerHTML = `${batchBarHtml}<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+            <thead><tr style="border-bottom: 2px solid #e2e8f0; text-align: left;">
+                ${checkAllHtml}
+                <th style="padding: 0.5rem 0.75rem; font-weight: 600; color: #475569;">ID</th>
+                <th style="padding: 0.5rem 0.75rem; font-weight: 600; color: #475569;">标题</th>
+                <th style="padding: 0.5rem 0.75rem; font-weight: 600; color: #475569;">用户</th>
+                <th style="padding: 0.5rem 0.75rem; font-weight: 600; color: #475569;">模型</th>
+                <th style="padding: 0.5rem 0.75rem; font-weight: 600; color: #475569;">失败原因</th>
+                <th style="padding: 0.5rem 0.75rem; font-weight: 600; color: #475569;">重试</th>
+                <th style="padding: 0.5rem 0.75rem; font-weight: 600; color: #475569;">创建时间</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+
+        // Batch restart event bindings for stopped tasks
+        if (showBatchRestart) {
+            const selectAllCb = document.getElementById('task-list-select-all');
+            const batchBtn = document.getElementById('task-list-batch-restart-btn');
+            const countEl = document.getElementById('task-list-selected-count');
+
+            const updateSelected = () => {
+                const checked = contentEl.querySelectorAll('.task-list-cb:checked');
+                countEl.textContent = checked.length;
+                batchBtn.disabled = checked.length === 0;
+            };
+
+            selectAllCb?.addEventListener('change', () => {
+                contentEl.querySelectorAll('.task-list-cb').forEach(cb => { cb.checked = selectAllCb.checked; });
+                updateSelected();
+            });
+
+            contentEl.addEventListener('change', (e) => {
+                if (e.target.classList.contains('task-list-cb')) updateSelected();
+            });
+
+            batchBtn?.addEventListener('click', async () => {
+                const checkedCbs = contentEl.querySelectorAll('.task-list-cb:checked');
+                const taskIds = [...new Set([...checkedCbs].map(cb => cb.dataset.taskId))];
+                if (taskIds.length === 0) return;
+                if (!confirm(`确定要重启 ${taskIds.length} 个任务吗？`)) return;
+
+                batchBtn.disabled = true;
+                batchBtn.textContent = '重启中...';
+                let successCount = 0;
+                for (const taskId of taskIds) {
+                    try {
+                        await TaskAPI.restartTask(taskId);
+                        successCount++;
+                    } catch (err) {
+                        console.error(`Failed to restart ${taskId}:`, err);
+                    }
+                }
+                alert(`已成功重启 ${successCount} / ${taskIds.length} 个任务`);
+                UI.closeModal('task-list-modal');
+                refreshTasks();
+            });
+        }
+    } catch (e) {
+        contentEl.innerHTML = `<p style="color: #ef4444; text-align: center; padding: 2rem 0;">加载失败: ${e.message}</p>`;
+    }
+};
+
 // Actions helpers (reused from before)
 async function stopTask(taskId) {
     if (!confirm(`确定要中止任务 ${taskId} 吗？`)) return;
@@ -1026,6 +1161,7 @@ let reportState = {
     selectedModelIds: [],
     questions: [],
     selectedQuestionIds: [],
+    questionWeights: {},
     availableTasks: [],
     selectedTaskIds: [],
     reportsList: []
@@ -1038,6 +1174,7 @@ async function initReportTab() {
 async function openCreateReportModal() {
     reportState.currentStep = 1;
     reportState.selectedQuestionIds = [];
+    reportState.questionWeights = {};
     updateReportStepUI(1);
     document.getElementById('report-modal')?.classList.add('show');
     try {
@@ -1102,12 +1239,21 @@ function renderReportQuestions() {
         return;
     }
     container.innerHTML = questions.map(q => `
-        <label class="report-model-item">
+        <label class="report-model-item" style="display: flex; align-items: center;">
             <input type="checkbox" value="${q.id}" class="report-question-checkbox" checked>
-            <span class="report-item-label">${escapeHtml(q.short_name || q.stem)}</span>
-            <span class="report-item-meta">${q.scoring_type === 'stars_5' ? '5分制' : '3分制'}</span>
+            <span class="report-item-label" style="flex: 1;">${escapeHtml(q.short_name || q.stem)}</span>
+            <span class="report-item-meta" style="margin-right: 0.5rem;">${q.scoring_type === 'stars_5' ? '5分制' : '3分制'}</span>
+            <span style="display: inline-flex; align-items: center; gap: 0.25rem; flex-shrink: 0;">
+                <input type="number" class="report-question-weight" data-question-id="${q.id}" value="" min="0" max="100" step="1"
+                    style="width: 52px; padding: 0.2rem 0.3rem; border: 1px solid #d1d5db; border-radius: 4px; text-align: right; font-size: 0.85rem;"
+                    placeholder="0">
+                <span style="font-size: 0.85rem; color: #64748b;">%</span>
+            </span>
         </label>
     `).join('');
+
+    // Auto-distribute equal weights on initial render
+    distributeEqualWeights();
 
     const selectAll = document.getElementById('report-select-all-questions');
     if (selectAll) {
@@ -1116,7 +1262,74 @@ function renderReportQuestions() {
             document.querySelectorAll('.report-question-checkbox').forEach(cb => {
                 cb.checked = selectAll.checked;
             });
+            distributeEqualWeights();
         };
+    }
+
+    // When a checkbox changes, redistribute weights
+    container.addEventListener('change', (e) => {
+        if (e.target.classList.contains('report-question-checkbox')) {
+            distributeEqualWeights();
+        }
+    });
+
+    // Update weight status on weight input change
+    container.addEventListener('input', (e) => {
+        if (e.target.classList.contains('report-question-weight')) {
+            updateWeightStatus();
+        }
+    });
+
+    // Equal weight button
+    const equalBtn = document.getElementById('report-equal-weights-btn');
+    if (equalBtn) {
+        equalBtn.onclick = () => distributeEqualWeights();
+    }
+}
+
+function distributeEqualWeights() {
+    const checkedBoxes = document.querySelectorAll('.report-question-checkbox:checked');
+    const count = checkedBoxes.length;
+    if (count === 0) {
+        document.querySelectorAll('.report-question-weight').forEach(w => { w.value = ''; });
+        updateWeightStatus();
+        return;
+    }
+    const base = Math.floor(100 / count);
+    const remainder = 100 - base * count;
+    const checkedIds = new Set(Array.from(checkedBoxes).map(cb => cb.value));
+
+    let idx = 0;
+    document.querySelectorAll('.report-question-weight').forEach(w => {
+        if (checkedIds.has(w.dataset.questionId)) {
+            w.value = idx < remainder ? base + 1 : base;
+            idx++;
+        } else {
+            w.value = '';
+        }
+    });
+    updateWeightStatus();
+}
+
+function updateWeightStatus() {
+    const statusEl = document.getElementById('report-weight-status');
+    if (!statusEl) return;
+    const checkedIds = new Set(Array.from(document.querySelectorAll('.report-question-checkbox:checked')).map(cb => cb.value));
+    let total = 0;
+    document.querySelectorAll('.report-question-weight').forEach(w => {
+        if (checkedIds.has(w.dataset.questionId)) {
+            total += parseInt(w.value) || 0;
+        }
+    });
+    if (checkedIds.size === 0) {
+        statusEl.textContent = '';
+        statusEl.style.color = '#64748b';
+    } else if (total === 100) {
+        statusEl.textContent = '✓ 权重合计 100%';
+        statusEl.style.color = '#16a34a';
+    } else {
+        statusEl.textContent = `✗ 权重合计 ${total}%，需要等于 100%`;
+        statusEl.style.color = '#dc2626';
     }
 }
 
@@ -1170,7 +1383,23 @@ async function handleReportNextStep(current) {
             alert('请至少选择一个评分维度');
             return;
         }
+        // Collect and validate weights
+        const checkedIds = new Set(checkedQuestions.map(String));
+        const questionWeights = {};
+        let totalWeight = 0;
+        document.querySelectorAll('.report-question-weight').forEach(w => {
+            if (checkedIds.has(w.dataset.questionId)) {
+                const val = parseInt(w.value) || 0;
+                questionWeights[w.dataset.questionId] = val;
+                totalWeight += val;
+            }
+        });
+        if (totalWeight !== 100) {
+            alert(`权重合计为 ${totalWeight}%，需要等于 100%`);
+            return;
+        }
         reportState.selectedQuestionIds = checkedQuestions;
+        reportState.questionWeights = questionWeights;
         await loadTasksStep(reportState.selectedModelIds);
     }
 }
@@ -1225,7 +1454,8 @@ async function handleReportCreate() {
             reportState.selectedModelIds,
             reportState.selectedTaskIds,
             title || undefined,
-            reportState.reportType === 'trace_and_score' ? reportState.selectedQuestionIds : undefined
+            reportState.reportType === 'trace_and_score' ? reportState.selectedQuestionIds : undefined,
+            reportState.reportType === 'trace_and_score' ? reportState.questionWeights : undefined
         );
         if (result.success) {
             UI.showToast('报告创建成功');

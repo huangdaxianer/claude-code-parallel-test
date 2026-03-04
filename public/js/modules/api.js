@@ -292,11 +292,11 @@ export const TaskAPI = {
         return await res.json();
     },
 
-    async createReport(reportType, modelIds, taskIds, title, selectedQuestionIds) {
+    async createReport(reportType, modelIds, taskIds, title, selectedQuestionIds, questionWeights) {
         const res = await fetch('/api/admin/report/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ reportType, modelIds, taskIds, title, selectedQuestionIds })
+            body: JSON.stringify({ reportType, modelIds, taskIds, title, selectedQuestionIds, questionWeights })
         });
         if (!res.ok) {
             const error = await res.json();
