@@ -73,6 +73,27 @@
             font-size: 0.85rem;
             white-space: nowrap;
         }
+        .data-table th.sortable {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            padding-right: 1.6rem;
+        }
+        .data-table th.sortable:hover {
+            background: #eef2f7;
+        }
+        .data-table th.sortable .sort-arrow {
+            position: absolute;
+            right: 0.4rem;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.7rem;
+            color: #cbd5e1;
+        }
+        .data-table th.sortable.sort-asc .sort-arrow,
+        .data-table th.sortable.sort-desc .sort-arrow {
+            color: #3b82f6;
+        }
         .data-table td {
             padding: 0.75rem 1rem;
             border-bottom: 1px solid #f1f5f9;
@@ -212,6 +233,55 @@
             height: 12px;
             border-radius: 3px;
         }
+
+        .th-info-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            color: #64748b;
+            font-size: 0.65rem;
+            font-weight: 700;
+            font-style: italic;
+            cursor: help;
+            margin-left: 4px;
+            vertical-align: middle;
+            position: relative;
+        }
+        .th-info-icon .info-tooltip {
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: #f1f5f9;
+            padding: 0.6rem 0.8rem;
+            border-radius: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 400;
+            font-style: normal;
+            white-space: nowrap;
+            z-index: 100;
+            line-height: 1.5;
+            text-align: left;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .th-info-icon .info-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: #1e293b;
+        }
+        .th-info-icon:hover .info-tooltip {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -330,41 +400,36 @@
                 </div>
             `;
 
-            // Trace Stats Table
-            html += `<div class="section"><h2>轨迹数据对比</h2>`;
-            html += `<table class="data-table">
-                <thead><tr>
-                    <th>模型</th>
-                    <th class="num">平均耗时</th>
-                    <th class="num">平均轮次</th>
-                    <th class="num">平均 Input Tokens</th>
-                    <th class="num">平均 Output Tokens</th>
-                    <th class="num">平均 Cache Tokens</th>
-                    <th class="num">TodoWrite</th>
-                    <th class="num">Read</th>
-                    <th class="num">Write</th>
-                    <th class="num">Bash</th>
-                    <th class="num">总工具调用</th>
-                </tr></thead><tbody>`;
+            // Trace Stats Table (sortable)
+            const traceColumns = [
+                { key: 'name', label: '模型', isNum: false },
+                { key: 'avgDuration', label: '平均耗时', isNum: true },
+                { key: 'avgTurns', label: '平均轮次', isNum: true },
+                { key: 'avgInputTokens', label: '平均 Input Tokens', isNum: true },
+                { key: 'avgOutputTokens', label: '平均 Output Tokens', isNum: true },
+                { key: 'avgTodoWrite', label: 'TodoWrite', isNum: true },
+                { key: 'avgRead', label: 'Read', isNum: true },
+                { key: 'avgWrite', label: 'Write', isNum: true },
+                { key: 'avgBash', label: 'Bash', isNum: true },
+                { key: 'avgTotalToolCalls', label: '总工具调用', isNum: true },
+            ];
 
-            for (const model of data.models) {
-                const s = model.stats;
-                if (!s || s.taskCount === 0) continue;
-                html += `<tr>
-                    <td><strong>${esc(model.name)}</strong></td>
-                    <td class="num">${fmtDuration(s.avgDuration)}</td>
-                    <td class="num">${fmtNum(s.avgTurns, 1)}</td>
-                    <td class="num">${fmtTokens(s.avgInputTokens)}</td>
-                    <td class="num">${fmtTokens(s.avgOutputTokens)}</td>
-                    <td class="num">${fmtTokens(s.avgCacheReadTokens)}</td>
-                    <td class="num">${fmtNum(s.avgTodoWrite, 1)}</td>
-                    <td class="num">${fmtNum(s.avgRead, 1)}</td>
-                    <td class="num">${fmtNum(s.avgWrite, 1)}</td>
-                    <td class="num">${fmtNum(s.avgBash, 1)}</td>
-                    <td class="num"><strong>${fmtNum(s.avgTotalToolCalls, 1)}</strong></td>
-                </tr>`;
+            const traceRows = data.models
+                .filter(m => m.stats && m.stats.taskCount > 0)
+                .map(m => ({ name: m.name, ...m.stats }));
+
+            html += `<div class="section"><h2>轨迹数据对比</h2>`;
+            html += `<table class="data-table" id="trace-table">
+                <thead><tr>`;
+            for (const col of traceColumns) {
+                html += `<th class="${col.isNum ? 'num ' : ''}sortable" data-sort-key="${col.key}">${col.label}<span class="sort-arrow">⇅</span></th>`;
             }
+            html += `</tr></thead><tbody id="trace-tbody">`;
             html += `</tbody></table></div>`;
+
+            // Will be populated after innerHTML is set
+            window.__traceRows = traceRows;
+            window.__traceColumns = traceColumns;
 
             // Confidence Intervals Table
             html += `<div class="section"><h2>关键指标置信区间 (95%)</h2>`;
@@ -394,6 +459,7 @@
             if (isScoreReport && data.scoreStats) {
                 const questionIds = new Set();
                 const questionMap = {};
+                const qMeta = data.scoreQuestionMeta || {};
                 for (const modelId in data.scoreStats) {
                     for (const qId in data.scoreStats[modelId]) {
                         questionIds.add(qId);
@@ -404,38 +470,66 @@
 
                 html += `<div class="section"><h2>评分统计</h2>`;
 
-                // Chart
+                // Chart (maxScore is now always 5)
                 html += renderScoreChart(data.models, data.scoreStats, qIds, questionMap);
 
-                // Table
-                html += `<table class="data-table">
-                    <thead><tr>
-                        <th>模型</th>`;
+                // Build score rows data for sortable table
+                const scoreColumns = [{ key: 'name', label: '模型', isNum: false }];
                 for (const qId of qIds) {
-                    html += `<th class="num">${esc(questionMap[qId].questionName)}<br><span style="font-weight:400;font-size:0.75rem;color:#94a3b8;">(满分${questionMap[qId].maxScore})</span></th>`;
-                }
-                html += `</tr></thead><tbody>`;
+                    const meta = qMeta[qId] || questionMap[qId] || {};
+                    const qName = meta.questionName || questionMap[qId]?.questionName || qId;
+                    const maxScore = 5;
+                    const count = questionMap[qId]?.count || 0;
 
+                    let tooltipLines = [`N = ${count}`, `满分 = ${maxScore}`];
+                    const options = meta.options;
+                    if (Array.isArray(options) && options.length > 0) {
+                        tooltipLines.push('---');
+                        for (const opt of options) {
+                            tooltipLines.push(`${opt.value}分: ${opt.label}`);
+                        }
+                    }
+
+                    const tooltipHtml = tooltipLines.map(l => l === '---' ? '<hr style="border:none;border-top:1px solid #475569;margin:3px 0;">' : esc(l)).join('<br>');
+                    scoreColumns.push({
+                        key: 'q_' + qId,
+                        label: `${esc(qName)}<span class="th-info-icon">i<span class="info-tooltip">${tooltipHtml}</span></span>`,
+                        isNum: true,
+                        rawLabel: qName,
+                    });
+                }
+                scoreColumns.push({ key: 'avg', label: '平均分', isNum: true });
+
+                const scoreRows = [];
                 for (const model of data.models) {
                     const modelScores = data.scoreStats[model.id];
                     if (!modelScores) continue;
-                    html += `<tr><td><strong>${esc(model.name)}</strong></td>`;
+                    const row = { name: model.name };
+                    let sumMean = 0, countDims = 0;
                     for (const qId of qIds) {
                         const qs = modelScores[qId];
-                        if (!qs || qs.count === 0) {
-                            html += `<td class="num">-</td>`;
+                        if (qs && qs.count > 0) {
+                            row['q_' + qId] = qs.mean;
+                            row['q_' + qId + '_ci'] = `[${fmtNum(qs.lower)}, ${fmtNum(qs.upper)}]`;
+                            sumMean += qs.mean;
+                            countDims++;
                         } else {
-                            const color = getScoreColor(qs.mean, qs.maxScore);
-                            html += `<td class="score-cell num" style="color: ${color};">
-                                ${fmtNum(qs.mean)}
-                                <span class="ci">[${fmtNum(qs.lower)}, ${fmtNum(qs.upper)}]</span>
-                                <span class="ci">n=${qs.count}</span>
-                            </td>`;
+                            row['q_' + qId] = null;
                         }
                     }
-                    html += `</tr>`;
+                    row.avg = countDims > 0 ? Math.round((sumMean / countDims) * 100) / 100 : null;
+                    scoreRows.push(row);
                 }
-                html += `</tbody></table></div>`;
+
+                html += `<table class="data-table" id="score-table"><thead><tr>`;
+                for (const col of scoreColumns) {
+                    html += `<th class="${col.isNum ? 'num ' : ''}sortable" data-sort-key="${col.key}">${col.label}<span class="sort-arrow">⇅</span></th>`;
+                }
+                html += `</tr></thead><tbody id="score-tbody"></tbody></table></div>`;
+
+                window.__scoreRows = scoreRows;
+                window.__scoreColumns = scoreColumns;
+                window.__scoreQIds = qIds;
             }
 
             // User Voices
@@ -451,6 +545,117 @@
             html += `</div></div>`;
 
             document.getElementById('report-content').innerHTML = html;
+
+            // Initialize trace table rows and sorting
+            if (window.__traceRows) {
+                renderTraceRows(window.__traceRows);
+                initSortableTable('trace-table', window.__traceRows, window.__traceColumns, renderTraceRows);
+            }
+            // Initialize score table rows and sorting
+            if (window.__scoreRows) {
+                renderScoreRows(window.__scoreRows);
+                initSortableTable('score-table', window.__scoreRows, window.__scoreColumns, renderScoreRows);
+            }
+        }
+
+        function renderTraceRows(rows) {
+            const tbody = document.getElementById('trace-tbody');
+            if (!tbody) return;
+            tbody.innerHTML = rows.map(row => `<tr>
+                <td><strong>${esc(row.name)}</strong></td>
+                <td class="num">${fmtDuration(row.avgDuration)}</td>
+                <td class="num">${fmtNum(row.avgTurns, 1)}</td>
+                <td class="num">${fmtTokens(row.avgInputTokens)}</td>
+                <td class="num">${fmtTokens(row.avgOutputTokens)}</td>
+                <td class="num">${fmtNum(row.avgTodoWrite, 1)}</td>
+                <td class="num">${fmtNum(row.avgRead, 1)}</td>
+                <td class="num">${fmtNum(row.avgWrite, 1)}</td>
+                <td class="num">${fmtNum(row.avgBash, 1)}</td>
+                <td class="num"><strong>${fmtNum(row.avgTotalToolCalls, 1)}</strong></td>
+            </tr>`).join('');
+        }
+
+        function renderScoreRows(rows) {
+            const tbody = document.getElementById('score-tbody');
+            if (!tbody) return;
+            const qIds = window.__scoreQIds || [];
+            tbody.innerHTML = rows.map(row => {
+                let cells = `<td><strong>${esc(row.name)}</strong></td>`;
+                for (const qId of qIds) {
+                    const val = row['q_' + qId];
+                    if (val == null) {
+                        cells += `<td class="num">-</td>`;
+                    } else {
+                        const ci = row['q_' + qId + '_ci'] || '';
+                        const color = getScoreColor(val, 5);
+                        cells += `<td class="score-cell num" style="color: ${color};">
+                            ${fmtNum(val)}
+                            <span class="ci">${ci}</span>
+                        </td>`;
+                    }
+                }
+                // Average column
+                if (row.avg != null) {
+                    const color = getScoreColor(row.avg, 5);
+                    cells += `<td class="score-cell num" style="color: ${color};"><strong>${fmtNum(row.avg)}</strong></td>`;
+                } else {
+                    cells += `<td class="num">-</td>`;
+                }
+                return `<tr>${cells}</tr>`;
+            }).join('');
+        }
+
+        function initSortableTable(tableId, rows, columns, renderFn) {
+            const table = document.getElementById(tableId);
+            if (!table) return;
+
+            let currentSortKey = null;
+            let currentSortDir = null; // 'asc' | 'desc' | null
+
+            table.querySelectorAll('th.sortable').forEach(th => {
+                th.addEventListener('click', () => {
+                    const key = th.dataset.sortKey;
+
+                    if (currentSortKey === key) {
+                        // Cycle: asc -> desc -> none
+                        if (currentSortDir === 'asc') currentSortDir = 'desc';
+                        else if (currentSortDir === 'desc') { currentSortDir = null; currentSortKey = null; }
+                        else currentSortDir = 'asc';
+                    } else {
+                        currentSortKey = key;
+                        currentSortDir = 'asc';
+                    }
+
+                    // Update header classes
+                    table.querySelectorAll('th.sortable').forEach(h => {
+                        h.classList.remove('sort-asc', 'sort-desc');
+                        h.querySelector('.sort-arrow').textContent = '⇅';
+                    });
+                    if (currentSortDir) {
+                        th.classList.add(currentSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+                        th.querySelector('.sort-arrow').textContent = currentSortDir === 'asc' ? '↑' : '↓';
+                    }
+
+                    // Sort and re-render
+                    const sorted = [...rows];
+                    if (currentSortKey && currentSortDir) {
+                        const col = columns.find(c => c.key === currentSortKey);
+                        sorted.sort((a, b) => {
+                            let va = a[currentSortKey], vb = b[currentSortKey];
+                            if (va == null) va = col && col.isNum ? 0 : '';
+                            if (vb == null) vb = col && col.isNum ? 0 : '';
+                            let cmp;
+                            if (col && !col.isNum) {
+                                cmp = String(va).localeCompare(String(vb), 'zh-CN');
+                            } else {
+                                cmp = (Number(va) || 0) - (Number(vb) || 0);
+                            }
+                            return currentSortDir === 'desc' ? -cmp : cmp;
+                        });
+                    }
+                    renderFn(sorted);
+                });
+            });
         }
 
         function renderUserVoices(voices, models) {

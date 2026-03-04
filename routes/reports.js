@@ -64,6 +64,20 @@ router.get('/models', (req, res) => {
     }
 });
 
+// GET /api/admin/report/questions - active feedback questions for ability selection
+router.get('/questions', (req, res) => {
+    try {
+        const questions = db.prepare(`
+            SELECT id, stem, short_name, scoring_type, options_json, display_order
+            FROM feedback_questions WHERE is_active = 1 ORDER BY display_order, id
+        `).all();
+        res.json(questions);
+    } catch (e) {
+        console.error('[Report] Error fetching questions:', e);
+        res.status(500).json({ error: 'Failed to fetch questions' });
+    }
+});
+
 // POST /api/admin/report/available-tasks - tasks that qualify for report
 router.post('/available-tasks', (req, res) => {
     try {
@@ -108,7 +122,7 @@ router.post('/available-tasks', (req, res) => {
 // POST /api/admin/report/create - generate report
 router.post('/create', (req, res) => {
     try {
-        const { reportType, modelIds, taskIds, title } = req.body;
+        const { reportType, modelIds, taskIds, title, selectedQuestionIds } = req.body;
         if (!reportType || !Array.isArray(modelIds) || !Array.isArray(taskIds) || modelIds.length === 0 || taskIds.length === 0) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
@@ -154,9 +168,7 @@ router.post('/create', (req, res) => {
             const reads = runs.map(r => r.count_read || 0);
             const writes = runs.map(r => r.count_write || 0);
             const bashes = runs.map(r => r.count_bash || 0);
-            const totalTools = runs.map(r =>
-                (r.count_todo_write || 0) + (r.count_read || 0) + (r.count_write || 0) + (r.count_bash || 0)
-            );
+            const totalTools = runs.map(r => r.turns || 0);
 
             modelStats[modelId] = {
                 taskCount: n,
@@ -178,29 +190,94 @@ router.post('/create', (req, res) => {
         }
 
         let scoreStats = null;
+        let scoreQuestionMeta = null;
         if (reportType === 'trace_and_score') {
             scoreStats = {};
-            const activeQuestions = db.prepare(`
-                SELECT id, stem, short_name, scoring_type
-                FROM feedback_questions WHERE is_active = 1 ORDER BY display_order, id
-            `).all();
+            scoreQuestionMeta = {};
 
-            for (const modelId of modelIds) {
-                scoreStats[modelId] = {};
-                for (const question of activeQuestions) {
-                    const scores = db.prepare(`
-                        SELECT score FROM feedback_responses
-                        WHERE model_id = ? AND question_id = ? AND task_id IN (${taskPlaceholders})
-                        AND score IS NOT NULL AND score > 0
-                    `).all(modelId, question.id, ...taskIds).map(r => r.score);
+            // Use selected questions or fall back to all active
+            let questions;
+            if (Array.isArray(selectedQuestionIds) && selectedQuestionIds.length > 0) {
+                const qPlaceholders = selectedQuestionIds.map(() => '?').join(',');
+                questions = db.prepare(`
+                    SELECT id, stem, short_name, scoring_type, options_json, display_order
+                    FROM feedback_questions WHERE id IN (${qPlaceholders}) AND is_active = 1
+                    ORDER BY display_order, id
+                `).all(...selectedQuestionIds);
+            } else {
+                questions = db.prepare(`
+                    SELECT id, stem, short_name, scoring_type, options_json, display_order
+                    FROM feedback_questions WHERE is_active = 1 ORDER BY display_order, id
+                `).all();
+            }
 
-                    const maxScore = question.scoring_type === 'stars_5' ? 5 : 3;
+            // Map score for 3-point scale: 1→1, 2→3, 3→5 (align with 5-point)
+            function mapScore(rawScore, scoringType) {
+                if (scoringType === 'stars_3') {
+                    const map = { 1: 1, 2: 3, 3: 5 };
+                    return map[rawScore] || rawScore;
+                }
+                return rawScore;
+            }
+
+            // Build question metadata (for tooltip in report page)
+            for (const q of questions) {
+                let rawOptions = [];
+                try { rawOptions = q.options_json ? JSON.parse(q.options_json) : []; } catch (e) {}
+
+                const isStars3 = q.scoring_type === 'stars_3';
+                const defaultLabels = isStars3 ? ['差', '一般', '好'] : ['非常差', '差', '一般', '好', '非常好'];
+                const labels = (Array.isArray(rawOptions) && rawOptions.length > 0 && rawOptions.some(o => o && o.trim()))
+                    ? rawOptions : defaultLabels;
+
+                const options = labels.map((label, idx) => {
+                    const rawValue = idx + 1;
+                    const mappedValue = isStars3 ? ({ 1: 1, 2: 3, 3: 5 }[rawValue] || rawValue) : rawValue;
+                    return { value: mappedValue, label: label || '' };
+                });
+
+                scoreQuestionMeta[q.id] = {
+                    questionName: q.short_name || q.stem,
+                    scoringType: q.scoring_type,
+                    maxScore: 5,
+                    options,
+                };
+            }
+
+            // For each question, find "complete" tasks where ALL models have scores
+            for (const question of questions) {
+                // Fetch all responses for this question across all models and tasks
+                const allResponses = db.prepare(`
+                    SELECT task_id, model_id, score FROM feedback_responses
+                    WHERE question_id = ? AND task_id IN (${taskPlaceholders})
+                      AND model_id IN (${modelPlaceholders})
+                      AND score IS NOT NULL AND score > 0
+                `).all(question.id, ...taskIds, ...modelIds);
+
+                // Group by task_id → set of model_ids that have scores
+                const taskModelScores = {};
+                for (const r of allResponses) {
+                    if (!taskModelScores[r.task_id]) taskModelScores[r.task_id] = {};
+                    taskModelScores[r.task_id][r.model_id] = r.score;
+                }
+
+                // Only keep tasks where ALL selected models have a score
+                const completeTasks = Object.keys(taskModelScores).filter(tid =>
+                    modelIds.every(mid => taskModelScores[tid][mid] != null)
+                );
+
+                for (const modelId of modelIds) {
+                    if (!scoreStats[modelId]) scoreStats[modelId] = {};
+
+                    const scores = completeTasks
+                        .map(tid => mapScore(taskModelScores[tid][modelId], question.scoring_type))
+                        .filter(s => s != null);
+
                     scoreStats[modelId][question.id] = {
                         questionName: question.short_name || question.stem,
                         scoringType: question.scoring_type,
-                        maxScore,
+                        maxScore: 5,
                         count: scores.length,
-                        scores,
                         ...computeConfidenceInterval95(scores)
                     };
                 }
@@ -301,6 +378,7 @@ router.post('/create', (req, res) => {
             models: models.map(m => ({ ...m, stats: modelStats[m.id] })),
             tasks,
             scoreStats,
+            scoreQuestionMeta,
             userVoices,
         };
 

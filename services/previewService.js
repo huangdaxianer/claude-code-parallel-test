@@ -464,6 +464,22 @@ async function preparePreview(taskId, modelId) {
                     if (buildFiles.find(f => f.toLowerCase() === 'index.html')) {
                         console.log(`[PreviewPrep] Found pre-built ${dir}/index.html, copying to root as static: ${folderName}`);
                         execSync(`cp -R "${buildPath}/"* "${isolatedPath}/"`, { stdio: 'pipe' });
+
+                        // Vite/Webpack builds use absolute paths (e.g. src="/assets/..."),
+                        // which break when served under /api/preview/view/... subpath.
+                        // Rewrite to relative paths so the browser resolves them correctly.
+                        const copiedIndexPath = path.join(isolatedPath, 'index.html');
+                        try {
+                            let html = fs.readFileSync(copiedIndexPath, 'utf-8');
+                            const fixedHtml = html.replace(/(src|href|action)="\/(?!\/)/g, '$1="./');
+                            if (fixedHtml !== html) {
+                                fs.writeFileSync(copiedIndexPath, fixedHtml, 'utf-8');
+                                console.log(`[PreviewPrep] Fixed absolute paths to relative in index.html: ${folderName}`);
+                            }
+                        } catch (e) {
+                            console.error(`[PreviewPrep] Failed to fix paths in index.html: ${e.message}`);
+                        }
+
                         db.prepare("UPDATE model_runs SET previewable = 'static' WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
                         return;
                     }

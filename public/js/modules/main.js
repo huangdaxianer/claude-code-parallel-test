@@ -1024,6 +1024,8 @@ let reportState = {
     reportType: 'trace_only',
     models: [],
     selectedModelIds: [],
+    questions: [],
+    selectedQuestionIds: [],
     availableTasks: [],
     selectedTaskIds: [],
     reportsList: []
@@ -1035,13 +1037,19 @@ async function initReportTab() {
 
 async function openCreateReportModal() {
     reportState.currentStep = 1;
+    reportState.selectedQuestionIds = [];
     updateReportStepUI(1);
     document.getElementById('report-modal')?.classList.add('show');
     try {
-        reportState.models = await TaskAPI.fetchReportModels();
+        const [models, questions] = await Promise.all([
+            TaskAPI.fetchReportModels(),
+            TaskAPI.fetchReportQuestions()
+        ]);
+        reportState.models = models;
+        reportState.questions = questions;
         renderReportModels();
     } catch (e) {
-        console.error('[Report] Error loading models:', e);
+        console.error('[Report] Error loading models/questions:', e);
     }
 }
 
@@ -1086,14 +1094,51 @@ function renderReportTasks() {
     }
 }
 
+function renderReportQuestions() {
+    const container = document.getElementById('report-questions-list');
+    const questions = reportState.questions;
+    if (!questions || !questions.length) {
+        container.innerHTML = '<p style="color: #94a3b8;">暂无可用评分维度</p>';
+        return;
+    }
+    container.innerHTML = questions.map(q => `
+        <label class="report-model-item">
+            <input type="checkbox" value="${q.id}" class="report-question-checkbox" checked>
+            <span class="report-item-label">${escapeHtml(q.short_name || q.stem)}</span>
+            <span class="report-item-meta">${q.scoring_type === 'stars_5' ? '5分制' : '3分制'}</span>
+        </label>
+    `).join('');
+
+    const selectAll = document.getElementById('report-select-all-questions');
+    if (selectAll) {
+        selectAll.checked = true;
+        selectAll.onchange = () => {
+            document.querySelectorAll('.report-question-checkbox').forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+        };
+    }
+}
+
 function updateReportStepUI(step) {
     reportState.currentStep = step;
+    const isScore = reportState.reportType === 'trace_and_score';
+
+    // Show/hide abilities step indicator
+    document.querySelectorAll('.report-step-abilities, .report-step-line-abilities').forEach(el => {
+        el.style.display = isScore ? '' : 'none';
+    });
+    // Update tasks step number display
+    const tasksStepNum = document.querySelector('#report-step-indicator .report-step[data-step="4"] .step-num-text');
+    if (tasksStepNum) tasksStepNum.textContent = isScore ? '4' : '3';
+
     document.querySelectorAll('.report-step-content').forEach(el => el.classList.remove('active'));
     const stepEl = document.getElementById(`report-step-${step}`);
     if (stepEl) stepEl.classList.add('active');
 
     document.querySelectorAll('#report-step-indicator .report-step').forEach(el => {
         const s = parseInt(el.dataset.step);
+        if (s === 3 && !isScore) return; // skip abilities step
         el.classList.remove('active', 'completed');
         if (s === step) el.classList.add('active');
         else if (s < step) el.classList.add('completed');
@@ -1113,29 +1158,50 @@ async function handleReportNextStep(current) {
         }
         reportState.selectedModelIds = checkedModels;
 
-        const hint = document.getElementById('report-task-hint');
-        if (reportState.reportType === 'trace_only') {
-            hint.textContent = `仅展示所选 ${checkedModels.length} 个模型的子任务全部为「已完成」或「已反馈」的任务`;
+        if (reportState.reportType === 'trace_and_score') {
+            renderReportQuestions();
+            updateReportStepUI(3);
         } else {
-            hint.textContent = `仅展示所选 ${checkedModels.length} 个模型的子任务全部为「已反馈」的任务`;
+            await loadTasksStep(checkedModels);
         }
-
-        const tasksContainer = document.getElementById('report-tasks-list');
-        tasksContainer.innerHTML = '<p style="color: #94a3b8;">加载中...</p>';
-        updateReportStepUI(3);
-
-        try {
-            reportState.availableTasks = await TaskAPI.fetchAvailableTasks(reportState.reportType, reportState.selectedModelIds);
-            renderReportTasks();
-        } catch (e) {
-            tasksContainer.innerHTML = '<p style="color: #ef4444;">加载失败，请重试</p>';
-            console.error('[Report] Error loading tasks:', e);
+    } else if (current === 3) {
+        const checkedQuestions = Array.from(document.querySelectorAll('.report-question-checkbox:checked')).map(cb => parseInt(cb.value));
+        if (checkedQuestions.length === 0) {
+            alert('请至少选择一个评分维度');
+            return;
         }
+        reportState.selectedQuestionIds = checkedQuestions;
+        await loadTasksStep(reportState.selectedModelIds);
+    }
+}
+
+async function loadTasksStep(checkedModels) {
+    const hint = document.getElementById('report-task-hint');
+    if (reportState.reportType === 'trace_only') {
+        hint.textContent = `仅展示所选 ${checkedModels.length} 个模型的子任务全部为「已完成」或「已反馈」的任务`;
+    } else {
+        hint.textContent = `仅展示所选 ${checkedModels.length} 个模型的子任务全部为「已反馈」的任务`;
+    }
+
+    const tasksContainer = document.getElementById('report-tasks-list');
+    tasksContainer.innerHTML = '<p style="color: #94a3b8;">加载中...</p>';
+    updateReportStepUI(4);
+
+    try {
+        reportState.availableTasks = await TaskAPI.fetchAvailableTasks(reportState.reportType, reportState.selectedModelIds);
+        renderReportTasks();
+    } catch (e) {
+        tasksContainer.innerHTML = '<p style="color: #ef4444;">加载失败，请重试</p>';
+        console.error('[Report] Error loading tasks:', e);
     }
 }
 
 function handleReportPrevStep(current) {
-    if (current > 1) updateReportStepUI(current - 1);
+    if (current === 4 && reportState.reportType === 'trace_only') {
+        updateReportStepUI(2);
+    } else if (current > 1) {
+        updateReportStepUI(current - 1);
+    }
 }
 
 async function handleReportCreate() {
@@ -1158,7 +1224,8 @@ async function handleReportCreate() {
             reportState.reportType,
             reportState.selectedModelIds,
             reportState.selectedTaskIds,
-            title || undefined
+            title || undefined,
+            reportState.reportType === 'trace_and_score' ? reportState.selectedQuestionIds : undefined
         );
         if (result.success) {
             UI.showToast('报告创建成功');
