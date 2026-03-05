@@ -991,7 +991,7 @@ window.openDistributionModal = async function (type) {
 
     titleEl.textContent = titleMap[type] || '子任务分布';
     contentEl.innerHTML = '<div style="text-align:center; padding:1rem; color:#94a3b8;">加载中...</div>';
-    document.getElementById('distribution-modal').classList.add('active');
+    document.getElementById('distribution-modal').classList.add('show');
 
     try {
         const res = await fetch(`/api/admin/subtask-distribution?type=${type}`);
