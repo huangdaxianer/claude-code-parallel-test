@@ -317,6 +317,7 @@ function executeModel(taskId, modelId, modelConfig) {
         console.log(`[Executor] Using firejail sandbox for ${subtaskKey}`);
 
         const envVars = buildSafeEnv(modelId);
+        envVars.CLAUDE_CODE_MAX_OUTPUT_TOKENS = '128000';
         if (modelConfig.alwaysThinkingEnabled) {
             envVars.alwaysThinkingEnabled = 'true';
         }
@@ -331,6 +332,7 @@ function executeModel(taskId, modelId, modelConfig) {
                 `ANTHROPIC_AUTH_TOKEN=${envVars.ANTHROPIC_AUTH_TOKEN}`,
                 `ANTHROPIC_BASE_URL=${envVars.ANTHROPIC_BASE_URL}`,
                 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${envVars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC}`,
+                `CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000`,
                 ...(envVars.alwaysThinkingEnabled ? [`alwaysThinkingEnabled=${envVars.alwaysThinkingEnabled}`] : []),
                 ...(envVars.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS ? [`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=${envVars.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS}`] : []),
                 'firejail', ...fullArgs
@@ -352,6 +354,7 @@ function executeModel(taskId, modelId, modelConfig) {
         // 无沙箱模式
         console.log(`[Executor] Running without sandbox for ${subtaskKey}`);
         const envVars = buildSafeEnv(modelId);
+        envVars.CLAUDE_CODE_MAX_OUTPUT_TOKENS = '128000';
         if (modelConfig.alwaysThinkingEnabled) {
             envVars.alwaysThinkingEnabled = 'true';
         }
@@ -366,6 +369,7 @@ function executeModel(taskId, modelId, modelConfig) {
                 `ANTHROPIC_AUTH_TOKEN=${envVars.ANTHROPIC_AUTH_TOKEN}`,
                 `ANTHROPIC_BASE_URL=${envVars.ANTHROPIC_BASE_URL}`,
                 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${envVars.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC}`,
+                `CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000`,
                 ...(envVars.alwaysThinkingEnabled ? [`alwaysThinkingEnabled=${envVars.alwaysThinkingEnabled}`] : []),
                 ...(envVars.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS ? [`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=${envVars.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS}`] : []),
                 executorConfig.claudeBin, ...claudeArgs
