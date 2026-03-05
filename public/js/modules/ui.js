@@ -136,10 +136,11 @@ export const UI = {
         // User filter options
         const userFilter = AppState.userFilter || '';
         const hasUserFilter = !!userFilter;
-        let userOptionsHTML = `<button class="filter-option${!userFilter ? ' selected' : ''}" data-action="user-filter" data-value="">全部</button>`;
+        let userOptionsHTML = `<div class="filter-search-wrap"><input type="text" class="filter-search-input" id="user-filter-search" placeholder="搜索用户..." data-action="none"></div>`;
+        userOptionsHTML += `<button class="filter-option${!userFilter ? ' selected' : ''}" data-action="user-filter" data-value="">全部</button>`;
         AppState.users.forEach(u => {
             const sel = (String(u.id) === String(userFilter)) ? ' selected' : '';
-            userOptionsHTML += `<button class="filter-option${sel}" data-action="user-filter" data-value="${u.id}">${escapeHtml(u.username)}</button>`;
+            userOptionsHTML += `<button class="filter-option${sel}" data-action="user-filter" data-value="${u.id}" data-username="${escapeHtml(u.username)}">${escapeHtml(u.username)}</button>`;
         });
 
         // Source type filter options

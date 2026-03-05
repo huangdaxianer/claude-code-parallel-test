@@ -109,6 +109,24 @@ function setupEventListeners() {
         searchTimer = setTimeout(applyFilters, 300);
     });
 
+    // User filter search input (事件委托，因为搜索框是动态生成的)
+    document.body.addEventListener('input', (e) => {
+        if (e.target.id === 'user-filter-search') {
+            const keyword = e.target.value.trim().toLowerCase();
+            const popup = e.target.closest('.col-filter-popup');
+            if (!popup) return;
+            popup.querySelectorAll('.filter-option').forEach(btn => {
+                if (btn.dataset.value === '') {
+                    // "全部" 选项始终显示
+                    btn.style.display = '';
+                    return;
+                }
+                const username = (btn.dataset.username || btn.textContent).toLowerCase();
+                btn.style.display = username.includes(keyword) ? '' : 'none';
+            });
+        }
+    });
+
     // Modal Outside Clicks
     const modalIds = ['prompt-modal', 'config-modal', 'question-modal', 'model-modal', 'group-modal', 'create-user-modal', 'report-modal', 'task-list-modal'];
     modalIds.forEach(id => {
@@ -179,7 +197,14 @@ async function handleGlobalClick(e) {
                 document.querySelectorAll('.col-filter-popup.show').forEach(p => {
                     if (p.id !== popupId) p.classList.remove('show');
                 });
-                if (popup) popup.classList.toggle('show');
+                if (popup) {
+                    popup.classList.toggle('show');
+                    // 自动聚焦搜索框
+                    const searchInput = popup.querySelector('.filter-search-input');
+                    if (searchInput && popup.classList.contains('show')) {
+                        setTimeout(() => searchInput.focus(), 50);
+                    }
+                }
                 break;
             }
 
