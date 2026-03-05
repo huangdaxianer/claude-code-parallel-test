@@ -64,15 +64,17 @@ router.post('/submit', (req, res) => {
                 insertStmt.run(taskId, modelId, r.questionId, r.score, r.comment || '', req.user.id);
             }
 
-            const requiredQuestions = db.prepare('SELECT id FROM feedback_questions WHERE is_active = 1 AND is_required = 1').all();
-            const currentResponses = db.prepare('SELECT question_id, score FROM feedback_responses WHERE task_id = ? AND model_id = ?').all(taskId, modelId);
+            const requiredQuestions = db.prepare('SELECT id, has_comment FROM feedback_questions WHERE is_active = 1 AND is_required = 1').all();
+            const currentResponses = db.prepare('SELECT question_id, score, comment FROM feedback_responses WHERE task_id = ? AND model_id = ?').all(taskId, modelId);
 
             const responseMap = {};
-            currentResponses.forEach(r => { responseMap[r.question_id] = r.score; });
+            currentResponses.forEach(r => { responseMap[r.question_id] = { score: r.score, comment: r.comment }; });
 
             allRequiredMet = requiredQuestions.every(q => {
-                const score = responseMap[q.id];
-                return score !== undefined && score > 0;
+                const resp = responseMap[q.id];
+                if (!resp || resp.score === undefined || resp.score <= 0) return false;
+                if (q.has_comment && (!resp.comment || resp.comment.trim() === '')) return false;
+                return true;
             });
 
             const newStatus = allRequiredMet ? 'evaluated' : 'completed';

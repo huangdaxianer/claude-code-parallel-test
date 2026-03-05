@@ -153,8 +153,9 @@
                 })()}
                     
                     ${q.has_comment ? `
-                        <textarea class="feedback-comment" placeholder="请输入评论（可选）" rows="2" 
+                        <textarea class="feedback-comment" placeholder="请输入评论（${q.is_required ? '必填' : '可选'}）" rows="2"
                             style="width:100%; border:1px solid #e2e8f0; border-radius:6px; padding:0.5rem; margin-top:0.5rem; font-size:0.9rem;"
+                            ${q.is_required ? 'data-required="1"' : ''}
                         >${App.utils.escapeHtml(comment || '')}</textarea>
                     ` : ''}
                 </div>
