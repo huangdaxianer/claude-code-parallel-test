@@ -423,13 +423,37 @@ router.post('/', (req, res) => {
     const enableAgentTeams = (req.user.role === 'admin' && task.enableAgentTeams) ? 1 : 0;
     const sourceType = task.baseDir ? 'upload' : 'prompt';
     console.log(`[Task Create] taskId=${task.taskId}, userId=${currentUserId} (from session), enableAgentTeams=${enableAgentTeams}, sourceType=${sourceType}`);
-    console.log(`[Task Create] Models received: ${JSON.stringify(task.models)}`);
+
+    let models = Array.isArray(task.models) ? task.models : [];
+
+    // 外部评测人员：自动使用该用户组启用且默认勾选的模型
+    if (req.user.role === 'external' && models.length === 0) {
+        const defaultModels = db.prepare(`
+            SELECT mc.model_id as id
+            FROM model_configs mc
+            LEFT JOIN model_group_settings mgs ON mc.id = mgs.model_id AND mgs.group_id = ?
+            WHERE COALESCE(mgs.is_enabled, 1) = 1
+              AND COALESCE(mgs.is_default_checked, mc.is_default_checked) = 1
+              AND mc.model_id IS NOT NULL
+        `).all(req.user.group_id);
+        models = defaultModels.map(m => m.id);
+        console.log(`[Task Create] External user: auto-assigned ${models.length} default models: ${models.join(', ')}`);
+        if (models.length === 0) {
+            return res.status(400).json({ error: '当前用户组没有可用的默认模型，请联系管理员' });
+        }
+    }
+
+    // 外部评测人员必须提供 prompt
+    if (req.user.role === 'external' && (!task.prompt || !task.prompt.trim())) {
+        return res.status(400).json({ error: '请输入任务描述' });
+    }
+
+    console.log(`[Task Create] Models received: ${JSON.stringify(models)}`);
     try {
         const insertTask = db.prepare('INSERT INTO tasks (task_id, title, prompt, base_dir, user_id, enable_agent_teams, source_type) VALUES (?, ?, ?, ?, ?, ?, ?)');
         insertTask.run(task.taskId, task.title, task.prompt, task.baseDir, currentUserId, enableAgentTeams, sourceType);
 
         const insertRun = db.prepare('INSERT INTO model_runs (task_id, model_id, status) VALUES (?, ?, ?)');
-        const models = Array.isArray(task.models) ? task.models : [];
         console.log(`[Task Create] Inserting ${models.length} model runs: ${models.join(', ')}`);
         const insertManyRuns = db.transaction((taskId, modelList) => {
             for (const m of modelList) {

@@ -21,11 +21,13 @@
         document.getElementById('single-task-area').style.display = 'block';
         document.getElementById('batch-preview-area').style.display = 'none';
 
+        const isExternal = App.state.currentUser && App.state.currentUser.role === 'external';
+
         const uploadButtonsRow = document.querySelector('.upload-buttons-row');
         if (uploadButtonsRow) uploadButtonsRow.style.display = 'flex';
 
         const csvBtn = document.getElementById('browse-csv-btn');
-        if (csvBtn) csvBtn.style.display = 'flex';
+        if (csvBtn) csvBtn.style.display = isExternal ? 'none' : 'flex';
 
         document.getElementById('csv-file-input').value = '';
         document.getElementById('browse-csv-btn').classList.remove('has-file');
@@ -33,6 +35,11 @@
         document.getElementById('zip-input').value = ''; // Reset ZIP input
 
         document.getElementById('task-prompt').value = '';
+
+        // 外部评测人员：隐藏模型选择区域
+        const modelSelection = document.querySelector('.model-selection');
+        if (modelSelection) modelSelection.style.display = isExternal ? 'none' : '';
+
         App.modal.updateStartButtonStyle();
 
         document.getElementById('new-task-modal').classList.add('show');
@@ -99,6 +106,12 @@
         if (csvBtn) csvBtn.style.display = 'none';
 
         document.getElementById('task-prompt').value = '';
+
+        // 外部评测人员：隐藏模型选择区域
+        const isExternal = App.state.currentUser && App.state.currentUser.role === 'external';
+        const modelSelection = document.querySelector('.model-selection');
+        if (modelSelection) modelSelection.style.display = isExternal ? 'none' : '';
+
         App.modal.updateStartButtonStyle();
 
         document.getElementById('new-task-modal').classList.add('show');
@@ -709,7 +722,11 @@
     App.modal.updateStartButtonStyle = function () {
         const prompt = document.getElementById('task-prompt').value.trim();
         const btn = document.getElementById('add-task-btn');
+        const isExternal = App.state.currentUser && App.state.currentUser.role === 'external';
         if (prompt) {
+            btn.classList.remove('btn-empty-prompt');
+        } else if (isExternal) {
+            // 外部评测人员不能使用随机 prompt，空 prompt 时不添加特殊样式
             btn.classList.remove('btn-empty-prompt');
         } else {
             btn.classList.add('btn-empty-prompt');
@@ -720,13 +737,17 @@
      * 启动新任务
      */
     App.modal.startNewTask = async function () {
-        const selectedModels = Array.from(document.querySelectorAll('input[name="model"]:checked')).map(cb => cb.value);
-        if (selectedModels.length === 0) return alert('请至少选择一个模型');
+        const isExternal = App.state.currentUser && App.state.currentUser.role === 'external';
+        // 外部评测人员不需要手动选择模型，后端会自动分配默认模型
+        const selectedModels = isExternal
+            ? []
+            : Array.from(document.querySelectorAll('input[name="model"]:checked')).map(cb => cb.value);
+        if (!isExternal && selectedModels.length === 0) return alert('请至少选择一个模型');
 
         const btn = document.getElementById('add-task-btn');
         btn.disabled = true;
 
-        // 批量任务模式
+        // 批量任务模式（外部评测人员不可用批量模式）
         if (App.state.batchPrompts.length > 0) {
             const selectedIndices = Array.from(document.querySelectorAll('.task-checkbox:checked'))
                 .map(cb => parseInt(cb.getAttribute('data-index')));
@@ -787,6 +808,11 @@
         let prompt = document.getElementById('task-prompt').value.trim();
 
         if (!prompt) {
+            if (isExternal) {
+                // 外部评测人员必须输入 prompt，不允许使用预填充 prompt
+                btn.disabled = false;
+                return alert('请输入任务描述');
+            }
             prompt = App.modal.getRandomPrompt();
             document.getElementById('task-prompt').value = prompt;
         }
