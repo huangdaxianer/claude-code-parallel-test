@@ -173,9 +173,6 @@ function buildFirejailArgs(taskDir, modelId) {
     // 资源限制：降低调度优先级，防止沙箱内进程抢占过多 CPU
     args.push('--nice=10');
 
-    // 限制沙箱内最大子进程数，防止 fork bomb 或失控脚本耗尽系统资源
-    args.push('--rlimit-nproc=20');
-
     return args;
 }
 
