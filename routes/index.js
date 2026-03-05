@@ -69,6 +69,112 @@ router.get('/report/:id', (req, res) => {
     }
 });
 
+// 公开报告 GSB 计算接口（不需要登录）
+router.get('/report/:id/gsb', (req, res) => {
+    try {
+        const { modelA, modelB } = req.query;
+        if (!modelA || !modelB || modelA === modelB) {
+            return res.status(400).json({ error: 'Need two different model IDs (modelA, modelB)' });
+        }
+
+        const report = db.prepare('SELECT selected_tasks, report_data FROM reports WHERE id = ?').get(req.params.id);
+        if (!report) return res.status(404).json({ error: 'Report not found' });
+
+        const reportData = JSON.parse(report.report_data);
+        if (reportData.type !== 'trace_and_score') {
+            return res.status(400).json({ error: 'Report is not trace_and_score type' });
+        }
+
+        // Get selected task IDs and question IDs from report
+        const taskIds = JSON.parse(report.selected_tasks);
+        const questionMeta = reportData.scoreQuestionMeta || {};
+        let questionIds = Object.keys(questionMeta).map(Number).filter(n => !isNaN(n));
+
+        // Fallback: extract question IDs from scoreStats if scoreQuestionMeta is empty
+        if (questionIds.length === 0 && reportData.scoreStats) {
+            const qIdSet = new Set();
+            for (const modelId of Object.keys(reportData.scoreStats)) {
+                for (const qId of Object.keys(reportData.scoreStats[modelId])) {
+                    if (qId === '_avg') continue;
+                    const num = Number(qId);
+                    if (!isNaN(num)) qIdSet.add(num);
+                }
+            }
+            questionIds = Array.from(qIdSet);
+        }
+
+        if (questionIds.length === 0 || taskIds.length === 0) {
+            return res.json({ results: {} });
+        }
+
+        const taskPlaceholders = taskIds.map(() => '?').join(',');
+
+        // Map score for 3-point scale: 1→1, 2→3, 3→5
+        function mapScore(rawScore, scoringType) {
+            if (scoringType === 'stars_3') {
+                const map = { 1: 1, 2: 3, 3: 5 };
+                return map[rawScore] || rawScore;
+            }
+            return rawScore;
+        }
+
+        // Fetch all scores for both models across all tasks and questions
+        const scores = db.prepare(`
+            SELECT fr.task_id, fr.question_id, fr.model_id, fr.score, fq.scoring_type
+            FROM feedback_responses fr
+            JOIN feedback_questions fq ON fq.id = fr.question_id
+            WHERE fr.task_id IN (${taskPlaceholders})
+              AND fr.model_id IN (?, ?)
+              AND fr.question_id IN (${questionIds.map(() => '?').join(',')})
+              AND fr.score IS NOT NULL AND fr.score > 0
+        `).all(...taskIds, modelA, modelB, ...questionIds);
+
+        // Group: taskId → questionId → modelId → mappedScore
+        const scoreMap = {};
+        for (const s of scores) {
+            if (!scoreMap[s.task_id]) scoreMap[s.task_id] = {};
+            if (!scoreMap[s.task_id][s.question_id]) scoreMap[s.task_id][s.question_id] = {};
+            scoreMap[s.task_id][s.question_id][s.model_id] = mapScore(s.score, s.scoring_type);
+        }
+
+        // Compute GSB per question
+        const results = {};
+        for (const qId of questionIds) {
+            let aWins = 0, same = 0, bWins = 0;
+            for (const tid of taskIds) {
+                const qs = scoreMap[tid]?.[qId];
+                if (!qs) continue;
+                const scoreA = qs[modelA];
+                const scoreB = qs[modelB];
+                if (scoreA == null || scoreB == null) continue;
+                if (scoreA > scoreB) aWins++;
+                else if (scoreA < scoreB) bWins++;
+                else same++;
+            }
+            results[qId] = { aWins, same, bWins, total: aWins + same + bWins };
+        }
+
+        // Build question name map for response (from meta or scoreStats)
+        const qNameMap = {};
+        for (const qId of questionIds) {
+            if (questionMeta[qId]) {
+                qNameMap[qId] = questionMeta[qId].questionName;
+            } else {
+                // Try to get from scoreStats
+                for (const modelId of Object.keys(reportData.scoreStats || {})) {
+                    const qs = reportData.scoreStats[modelId]?.[qId];
+                    if (qs?.questionName) { qNameMap[qId] = qs.questionName; break; }
+                }
+            }
+        }
+
+        res.json({ results, questionMeta: qNameMap });
+    } catch (e) {
+        console.error('[Report] Error computing GSB:', e);
+        res.status(500).json({ error: 'Failed to compute GSB' });
+    }
+});
+
 // 挂载路由
 router.use('/', authRoutes);                                    // 登录接口，不需要鉴权
 router.use('/admin', requireAdmin, adminRoutes);                // 管理员接口，已有 requireAdmin

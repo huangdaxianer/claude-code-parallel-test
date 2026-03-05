@@ -388,6 +388,116 @@
         .filter-result strong {
             color: #3b82f6;
         }
+
+        /* GSB Section */
+        .gsb-section {
+            margin-bottom: 2.5rem;
+        }
+        .gsb-model-selectors {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            margin-bottom: 1.25rem;
+        }
+        .gsb-model-selectors label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #475569;
+            white-space: nowrap;
+        }
+        .gsb-model-selectors select {
+            padding: 0.4rem 0.6rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            font-size: 0.85rem;
+            color: #334155;
+            background: white;
+            outline: none;
+            min-width: 160px;
+        }
+        .gsb-model-selectors select:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+        }
+        .gsb-vs {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #94a3b8;
+        }
+        .gsb-chart-row {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            margin-bottom: 0.5rem;
+        }
+        .gsb-chart-label {
+            width: 100px;
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: #475569;
+            text-align: right;
+            padding-right: 0.75rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-shrink: 0;
+        }
+        .gsb-chart-bar-wrap {
+            flex: 1;
+            height: 28px;
+            display: flex;
+            border-radius: 4px;
+            overflow: hidden;
+            background: #f1f5f9;
+        }
+        .gsb-bar-segment {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: white;
+            transition: width 0.3s ease;
+            min-width: 0;
+            overflow: hidden;
+        }
+        .gsb-bar-win-a { background: #3b82f6; }
+        .gsb-bar-same { background: #94a3b8; }
+        .gsb-bar-win-b { background: #f59e0b; }
+        .gsb-chart-stats {
+            width: 180px;
+            font-size: 0.75rem;
+            color: #64748b;
+            padding-left: 0.75rem;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .gsb-legend {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .gsb-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.8rem;
+            color: #475569;
+        }
+        .gsb-legend-swatch {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+        .gsb-empty {
+            text-align: center;
+            color: #94a3b8;
+            padding: 2rem;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -634,6 +744,35 @@
                 window.__qMeta = qMeta;
             }
 
+            // GSB Win Rate Section (between score stats and trace stats, only for trace_and_score)
+            if (isScoreReport && data.scoreStats && data.models.length >= 2) {
+                const gsbModels = data.models;
+                html += `<div class="section gsb-section" id="gsb-section">
+                    <div class="section-header-row"><h2>GSB 胜率对比</h2></div>
+                    <div class="gsb-model-selectors">
+                        <label>模型 A</label>
+                        <select id="gsb-model-a">`;
+                for (const m of gsbModels) {
+                    html += `<option value="${esc(m.id)}">${esc(m.name)}</option>`;
+                }
+                html += `</select>
+                        <span class="gsb-vs">VS</span>
+                        <label>模型 B</label>
+                        <select id="gsb-model-b">`;
+                for (let i = 0; i < gsbModels.length; i++) {
+                    const m = gsbModels[i];
+                    html += `<option value="${esc(m.id)}"${i === 1 ? ' selected' : ''}>${esc(m.name)}</option>`;
+                }
+                html += `</select>
+                    </div>
+                    <div class="chart-container" id="gsb-chart-container">
+                        <div class="gsb-empty">请选择两个不同的模型</div>
+                    </div>
+                </div>`;
+
+                window.__gsbModels = gsbModels;
+            }
+
             // Filter panel for trace_only reports (when score section doesn't exist)
             if (!isScoreReport && data.rawTaskData) {
                 html += `<div class="filter-panel" id="report-filter-panel">
@@ -737,6 +876,11 @@
 
             // Initialize filter panel
             initFilterPanel(data);
+
+            // Initialize GSB section
+            if (window.__gsbModels) {
+                initGSBSection(data);
+            }
         }
 
         function renderTraceRows(rows) {
@@ -1296,6 +1440,15 @@
                     .join('');
             }
 
+            // Update GSB chart (only when rawTaskData is available for local compute)
+            if (data.rawTaskData) {
+                const gsbSelectA = document.getElementById('gsb-model-a');
+                const gsbSelectB = document.getElementById('gsb-model-b');
+                if (gsbSelectA && gsbSelectB) {
+                    renderGSBChart(data, gsbSelectA.value, gsbSelectB.value, filteredTaskIds);
+                }
+            }
+
             // Update user voices
             if (data.userVoices) {
                 const filteredVoices = data.userVoices.filter(v => filteredSet.has(v.taskId));
@@ -1330,6 +1483,182 @@
             document.getElementById('filter-source-type')?.addEventListener('change', onFilterChange);
             document.getElementById('filter-min-turns')?.addEventListener('input', onFilterChange);
             document.getElementById('filter-max-turns')?.addEventListener('input', onFilterChange);
+        }
+
+        // --- GSB Win Rate Logic ---
+
+        function computeGSB(data, modelAId, modelBId, filteredTaskIds) {
+            const raw = data.rawTaskData;
+            const qIds = window.__scoreQIds || [];
+            const qMeta = window.__qMeta || {};
+            if (!raw || qIds.length === 0) return null;
+
+            const taskIds = filteredTaskIds || data.tasks.map(t => t.task_id);
+            const results = {}; // questionId → { aWins, same, bWins, total }
+
+            for (const qId of qIds) {
+                let aWins = 0, same = 0, bWins = 0;
+                for (const tid of taskIds) {
+                    const taskScores = raw[tid]?.scores;
+                    if (!taskScores) continue;
+                    const scoreA = taskScores[modelAId]?.[qId];
+                    const scoreB = taskScores[modelBId]?.[qId];
+                    if (scoreA == null || scoreB == null) continue;
+                    if (scoreA > scoreB) aWins++;
+                    else if (scoreA < scoreB) bWins++;
+                    else same++;
+                }
+                const total = aWins + same + bWins;
+                results[qId] = { aWins, same, bWins, total };
+            }
+
+            // Compute overall (across all dimensions)
+            let totalAWins = 0, totalSame = 0, totalBWins = 0;
+            for (const qId of qIds) {
+                totalAWins += results[qId].aWins;
+                totalSame += results[qId].same;
+                totalBWins += results[qId].bWins;
+            }
+            const totalAll = totalAWins + totalSame + totalBWins;
+            results['_overall'] = { aWins: totalAWins, same: totalSame, bWins: totalBWins, total: totalAll };
+
+            return results;
+        }
+
+        async function fetchGSBFromAPI(reportId, modelAId, modelBId) {
+            try {
+                const res = await fetch(`/api/report/${reportId}/gsb?modelA=${encodeURIComponent(modelAId)}&modelB=${encodeURIComponent(modelBId)}`);
+                if (!res.ok) return null;
+                const data = await res.json();
+                // Store API question meta if local qMeta is empty
+                if (data.questionMeta) {
+                    window.__apiGSBQuestionMeta = data.questionMeta;
+                }
+                return data.results || null;
+            } catch (e) {
+                console.error('[GSB] API error:', e);
+                return null;
+            }
+        }
+
+        async function renderGSBChart(data, modelAId, modelBId, filteredTaskIds) {
+            const container = document.getElementById('gsb-chart-container');
+            if (!container) return;
+
+            if (modelAId === modelBId) {
+                container.innerHTML = '<div class="gsb-empty">请选择两个不同的模型</div>';
+                return;
+            }
+
+            let results;
+            if (data.rawTaskData) {
+                // Compute locally from raw data
+                results = computeGSB(data, modelAId, modelBId, filteredTaskIds);
+            } else {
+                // Fetch from API
+                container.innerHTML = '<div class="gsb-empty" style="color:#64748b;">计算中...</div>';
+                const reportId = new URLSearchParams(window.location.search).get('id');
+                results = await fetchGSBFromAPI(reportId, modelAId, modelBId);
+            }
+
+            if (!results) {
+                container.innerHTML = '<div class="gsb-empty">暂无评分数据</div>';
+                return;
+            }
+
+            // Compute overall if missing (API results don't include _overall)
+            if (!results['_overall']) {
+                let totalAWins = 0, totalSame = 0, totalBWins = 0;
+                for (const key of Object.keys(results)) {
+                    if (key === '_overall') continue;
+                    totalAWins += results[key].aWins;
+                    totalSame += results[key].same;
+                    totalBWins += results[key].bWins;
+                }
+                results['_overall'] = { aWins: totalAWins, same: totalSame, bWins: totalBWins, total: totalAWins + totalSame + totalBWins };
+            }
+
+            // Use local qIds or derive from API results
+            let qIds = window.__scoreQIds || [];
+            const qMeta = window.__qMeta || {};
+            const apiMeta = window.__apiGSBQuestionMeta || {};
+
+            // For older reports without scoreQIds, derive from results
+            if (qIds.length === 0) {
+                qIds = Object.keys(results).filter(k => k !== '_overall');
+            }
+
+            const models = data.models;
+            const modelAName = models.find(m => m.id === modelAId)?.name || modelAId;
+            const modelBName = models.find(m => m.id === modelBId)?.name || modelBId;
+
+            let html = '';
+            // Legend
+            html += `<div class="gsb-legend">
+                <div class="gsb-legend-item"><div class="gsb-legend-swatch" style="background:#3b82f6;"></div>${esc(truncateName(modelAName, 20))} 胜</div>
+                <div class="gsb-legend-item"><div class="gsb-legend-swatch" style="background:#94a3b8;"></div>平局</div>
+                <div class="gsb-legend-item"><div class="gsb-legend-swatch" style="background:#f59e0b;"></div>${esc(truncateName(modelBName, 20))} 胜</div>
+            </div>`;
+
+            // Build rows: overall first, then each dimension
+            const rowKeys = ['_overall', ...qIds];
+
+            for (const key of rowKeys) {
+                const r = results[key];
+                if (!r || r.total === 0) continue;
+
+                const label = key === '_overall'
+                    ? '综合'
+                    : (qMeta[key]?.questionName || apiMeta[key] || key);
+                const pctA = (r.aWins / r.total * 100);
+                const pctS = (r.same / r.total * 100);
+                const pctB = (r.bWins / r.total * 100);
+
+                const showLabelA = pctA >= 12 ? `${pctA.toFixed(0)}%` : '';
+                const showLabelS = pctS >= 12 ? `${pctS.toFixed(0)}%` : '';
+                const showLabelB = pctB >= 12 ? `${pctB.toFixed(0)}%` : '';
+
+                const isOverall = key === '_overall';
+                const labelStyle = isOverall ? 'font-weight:700;' : '';
+                const barH = isOverall ? 'height:34px;' : '';
+
+                html += `<div class="gsb-chart-row">
+                    <div class="gsb-chart-label" style="${labelStyle}" title="${esc(label)}">${esc(label)}</div>
+                    <div class="gsb-chart-bar-wrap" style="${barH}">
+                        ${pctA > 0 ? `<div class="gsb-bar-segment gsb-bar-win-a" style="width:${pctA}%;">${showLabelA}</div>` : ''}
+                        ${pctS > 0 ? `<div class="gsb-bar-segment gsb-bar-same" style="width:${pctS}%;">${showLabelS}</div>` : ''}
+                        ${pctB > 0 ? `<div class="gsb-bar-segment gsb-bar-win-b" style="width:${pctB}%;">${showLabelB}</div>` : ''}
+                    </div>
+                    <div class="gsb-chart-stats">${r.aWins}胜 / ${r.same}平 / ${r.bWins}负 (N=${r.total})</div>
+                </div>`;
+
+                // Separator after overall
+                if (isOverall) {
+                    html += `<div style="border-top:1px solid #e2e8f0;margin:0.75rem 0;"></div>`;
+                }
+            }
+
+            container.innerHTML = html;
+        }
+
+        function initGSBSection(data) {
+            const selectA = document.getElementById('gsb-model-a');
+            const selectB = document.getElementById('gsb-model-b');
+            if (!selectA || !selectB) return;
+
+            function updateGSB() {
+                const filteredIds = getFilteredTaskIds(data);
+                renderGSBChart(data, selectA.value, selectB.value, filteredIds);
+            }
+
+            selectA.addEventListener('change', updateGSB);
+            selectB.addEventListener('change', updateGSB);
+
+            // Store updateGSB for filter panel to call
+            window.__updateGSB = updateGSB;
+
+            // Initial render
+            updateGSB();
         }
 
         loadReport();
