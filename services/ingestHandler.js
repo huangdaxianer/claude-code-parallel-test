@@ -72,6 +72,14 @@ class IngestHandler {
             // ---- 正常模式 ----
             this.lineNumber = 0;
 
+            // 清理旧的 log_entries（防止重试时产生重复）
+            try {
+                const deleted = db.prepare('DELETE FROM log_entries WHERE run_id = ?').run(this.runId);
+                if (deleted.changes > 0) {
+                    console.log(`[IngestHandler] Cleaned ${deleted.changes} old log entries for runId: ${this.runId}`);
+                }
+            } catch (e) { /* ignore */ }
+
             // 检查当前状态
             const currentStatus = db.prepare('SELECT status FROM model_runs WHERE id = ?').get(this.runId);
             this.wasStoppedByUser = currentStatus && currentStatus.status === 'stopped';

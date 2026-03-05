@@ -439,6 +439,7 @@ function executeModel(taskId, modelId, modelConfig) {
     }
 
     // 使用 FileTailer 替代 readline 消费 stdout 文件
+    let lastOffsetSaveTime = Date.now();
     const fileTailer = new FileTailer(stdoutFile, 0, (line) => {
         const sanitized = sanitizeLine(line);
         logStream.write(sanitized + '\n');
@@ -446,6 +447,15 @@ function executeModel(taskId, modelId, modelConfig) {
         // 更新最后活动时间，供 watchdog 检测卡死
         const entry = activeProcesses.get(subtaskKey);
         if (entry) entry.lastActivityTime = Date.now();
+        // 定期保存 stdout_offset 到 DB（每 10 秒），防止服务重启后从头重读
+        const now = Date.now();
+        if (now - lastOffsetSaveTime > 10000) {
+            try {
+                db.prepare('UPDATE model_runs SET stdout_offset = ? WHERE task_id = ? AND model_id = ?')
+                    .run(fileTailer.getOffset(), taskId, modelId);
+            } catch (e) { /* ignore */ }
+            lastOffsetSaveTime = now;
+        }
     });
     fileTailer.start();
 

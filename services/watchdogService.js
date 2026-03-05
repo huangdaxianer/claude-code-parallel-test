@@ -320,13 +320,34 @@ function reattachProcess(run) {
         // 获取模型超时配置
         const timeoutConfig = db.prepare("SELECT activity_timeout_seconds, task_timeout_seconds FROM model_configs WHERE model_id = ?").get(run.model_id);
 
+        // 计算安全起始偏移量：如果 DB 中 offset=0 但已有日志条目，说明 offset 丢失
+        // 此时从文件末尾开始读取（已有内容已经被摄入过），避免重复
+        let startOffset = run.stdout_offset || 0;
+        if (startOffset === 0 && ingestHandler.lineNumber > 0) {
+            try {
+                const stat = fs.statSync(run.stdout_file);
+                startOffset = stat.size; // 跳过已处理的内容
+                console.log(`[Watchdog] Offset was 0 but ${ingestHandler.lineNumber} objects already ingested, jumping to file end (${startOffset} bytes)`);
+            } catch (e) { /* use 0 */ }
+        }
+
         // FileTailer 从断点续读
-        const fileTailer = new FileTailer(run.stdout_file, run.stdout_offset || 0, (line) => {
+        let lastOffsetSaveTime = Date.now();
+        const fileTailer = new FileTailer(run.stdout_file, startOffset, (line) => {
             const sanitized = sanitizeLine(line);
             logStream.write(sanitized + '\n');
             ingestHandler.processLine(sanitized);
             const entry = executorService.activeProcesses.get(key);
             if (entry) entry.lastActivityTime = Date.now();
+            // 定期保存 stdout_offset 到 DB（每 10 秒），防止服务重启后从头重读
+            const now = Date.now();
+            if (now - lastOffsetSaveTime > 10000) {
+                try {
+                    db.prepare('UPDATE model_runs SET stdout_offset = ? WHERE task_id = ? AND model_id = ?')
+                        .run(fileTailer.getOffset(), run.task_id, run.model_id);
+                } catch (e) { /* ignore */ }
+                lastOffsetSaveTime = now;
+            }
         });
         fileTailer.start();
 
@@ -380,7 +401,21 @@ function processRemainingOutput(run) {
         if (!run.stdout_file || !fs.existsSync(run.stdout_file)) return;
 
         const stat = fs.statSync(run.stdout_file);
-        const offset = run.stdout_offset || 0;
+        let offset = run.stdout_offset || 0;
+
+        // 安全检查：如果 offset=0 但已有日志条目，说明 offset 丢失
+        // 检查 DB 中是否已有条目来判断是否需要跳过
+        if (offset === 0) {
+            const runRecord = db.prepare('SELECT id FROM model_runs WHERE task_id = ? AND model_id = ?').get(run.task_id, run.model_id);
+            if (runRecord) {
+                const maxLine = db.prepare('SELECT MAX(line_number) as maxLine FROM log_entries WHERE run_id = ?').get(runRecord.id);
+                if (maxLine && maxLine.maxLine > 0) {
+                    offset = stat.size; // 跳过已处理的内容
+                    console.log(`[Watchdog] Offset was 0 but entries exist (maxLine: ${maxLine.maxLine}), jumping to file end (${offset} bytes)`);
+                }
+            }
+        }
+
         if (stat.size <= offset) return; // 没有新数据
 
         console.log(`[Watchdog] Processing remaining output for ${key} (${stat.size - offset} bytes)`);
