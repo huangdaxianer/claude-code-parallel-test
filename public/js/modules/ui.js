@@ -142,12 +142,37 @@ export const UI = {
             userOptionsHTML += `<button class="filter-option${sel}" data-action="user-filter" data-value="${u.id}">${escapeHtml(u.username)}</button>`;
         });
 
+        // Source type filter options
+        const sourceTypeFilter = AppState.sourceTypeFilter || '';
+        const hasSourceTypeFilter = !!sourceTypeFilter;
+        const sourceTypeOptions = [
+            { value: '', label: '全部' },
+            { value: 'prompt', label: 'Prompt' },
+            { value: 'upload', label: '项目' }
+        ];
+        let sourceTypeOptionsHTML = '';
+        sourceTypeOptions.forEach(opt => {
+            const sel = (sourceTypeFilter === opt.value) ? ' selected' : '';
+            sourceTypeOptionsHTML += `<button class="filter-option${sel}" data-action="source-type-filter" data-value="${opt.value}">${opt.label}</button>`;
+        });
+
         let headerHTML = `
             <tr>
                 <th class="checkbox-cell">
                     <input type="checkbox" class="task-checkbox" id="select-all">
                 </th>
                 <th class="task-cell">任务</th>
+                <th class="source-type-cell">
+                    <div class="col-filter-wrap">
+                        <span>类型</span>
+                        <button class="col-filter-btn${hasSourceTypeFilter ? ' active' : ''}" data-action="toggle-filter-popup" data-target="source-type-filter-popup">
+                            ${filterIconHTML(hasSourceTypeFilter)}
+                        </button>
+                        <div class="col-filter-popup" id="source-type-filter-popup">
+                            ${sourceTypeOptionsHTML}
+                        </div>
+                    </div>
+                </th>
                 <th class="user-cell">
                     <div class="col-filter-wrap">
                         <span>用户</span>
@@ -210,7 +235,7 @@ export const UI = {
     renderTasks() {
         const tbody = Elements.tbody();
         const filteredTasks = AppState.filteredTasks;
-        const totalCols = 5 + AppState.allModelNames.length;
+        const totalCols = 6 + AppState.allModelNames.length;
 
         if (filteredTasks.length === 0) {
             tbody.innerHTML = `
@@ -296,9 +321,11 @@ export const UI = {
             <td class="task-cell">
                 <div class="task-title" title="${escapeHtml(task.title || 'Untitled')}" data-action="view" data-id="${task.taskId}" data-username="${escapeHtml(task.username || '')}">
                     ${escapeHtml(task.title || 'Untitled')}
-                    <span class="source-badge ${task.sourceType === 'upload' ? 'upload' : 'prompt'}">${task.sourceType === 'upload' ? '项目' : 'Prompt'}</span>
                 </div>
                 <div class="task-id">${task.taskId}</div>
+            </td>
+            <td class="source-type-cell">
+                <span class="source-badge ${task.sourceType === 'upload' ? 'upload' : 'prompt'}">${task.sourceType === 'upload' ? '项目' : 'Prompt'}</span>
             </td>
             <td class="user-cell">
                 <span class="user-badge">${escapeHtml(task.username)}</span>

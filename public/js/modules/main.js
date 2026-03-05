@@ -196,6 +196,18 @@ async function handleGlobalClick(e) {
                 break;
             }
 
+            // Source type filter option clicked
+            case 'source-type-filter': {
+                const value = actionBtn.dataset.value;
+                AppState.sourceTypeFilter = value || '';
+                AppState.pagination.page = 1;
+                document.querySelectorAll('.col-filter-popup.show').forEach(p => p.classList.remove('show'));
+                AppState.prevModelNamesKey = '';
+                UI.updateTableHeader(true);
+                refreshTasks();
+                break;
+            }
+
             // Model filter option clicked
             case 'model-filter': {
                 const modelId = actionBtn.dataset.modelId;
@@ -494,7 +506,8 @@ async function refreshTasks() {
             pageSize: AppState.pagination.pageSize,
             userId: AppState.userFilter,
             search: searchFilter,
-            modelFilters: AppState.modelFilters
+            modelFilters: AppState.modelFilters,
+            sourceType: AppState.sourceTypeFilter
         });
 
         AppState.setTasks(result.tasks);

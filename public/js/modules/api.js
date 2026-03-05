@@ -7,12 +7,13 @@ export function getAuthHeaders() {
 }
 
 export const TaskAPI = {
-    async fetchTasks({ page = 1, pageSize = 20, userId = '', search = '', modelFilters = {} } = {}) {
+    async fetchTasks({ page = 1, pageSize = 20, userId = '', search = '', modelFilters = {}, sourceType = '' } = {}) {
         const params = new URLSearchParams();
         params.set('page', page);
         params.set('pageSize', pageSize);
         if (userId) params.set('userId', userId);
         if (search) params.set('search', search);
+        if (sourceType) params.set('sourceType', sourceType);
         // Per-model status filters
         for (const [modelId, filterStatus] of Object.entries(modelFilters)) {
             if (filterStatus) params.set(`modelFilter_${modelId}`, filterStatus);

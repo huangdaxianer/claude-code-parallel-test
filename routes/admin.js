@@ -16,6 +16,7 @@ router.get('/tasks', (req, res) => {
         const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize) || 20));
         const userId = req.query.userId || '';
         const search = req.query.search || '';
+        const sourceType = req.query.sourceType || '';
 
         // Parse per-model status filters: modelFilter_MODELID=status
         const modelFilters = {};
@@ -38,6 +39,10 @@ router.get('/tasks', (req, res) => {
             conditions.push('(t.title LIKE ? OR t.prompt LIKE ? OR t.task_id LIKE ?)');
             const searchPattern = `%${search}%`;
             params.push(searchPattern, searchPattern, searchPattern);
+        }
+        if (sourceType) {
+            conditions.push('t.source_type = ?');
+            params.push(sourceType);
         }
 
         // Per-model status filters: task must have a model_run matching each filter

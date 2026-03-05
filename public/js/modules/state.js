@@ -61,6 +61,9 @@ export const AppState = {
     // User filter: userId string or ''
     userFilter: '',
 
+    // Source type filter: 'prompt' | 'upload' | ''
+    sourceTypeFilter: '',
+
     // Track previous model names to avoid unnecessary header rebuilds
     prevModelNamesKey: '',
 
