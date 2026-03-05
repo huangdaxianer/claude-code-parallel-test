@@ -983,18 +983,15 @@ window.openConfigModal = function () {
     UI.openConfigModal(AppState.queueStatus.maxParallelSubtasks);
 };
 
-window.toggleSubtaskDistribution = async function (type) {
-    const distEl = document.getElementById(`dist-${type}`);
-    if (!distEl) return;
+window.openDistributionModal = async function (type) {
+    const titleMap = { completed: '已完成任务 - 子任务分布', feedbacked: '已反馈任务 - 子任务分布' };
+    const titleEl = document.getElementById('distribution-modal-title');
+    const contentEl = document.getElementById('distribution-modal-content');
+    if (!titleEl || !contentEl) return;
 
-    // Toggle visibility
-    if (distEl.classList.contains('show')) {
-        distEl.classList.remove('show');
-        return;
-    }
-
-    distEl.innerHTML = '<div style="font-size: 0.8rem; color: #94a3b8; padding: 0.25rem 0;">加载中...</div>';
-    distEl.classList.add('show');
+    titleEl.textContent = titleMap[type] || '子任务分布';
+    contentEl.innerHTML = '<div style="text-align:center; padding:1rem; color:#94a3b8;">加载中...</div>';
+    document.getElementById('distribution-modal').classList.add('active');
 
     try {
         const res = await fetch(`/api/admin/subtask-distribution?type=${type}`);
@@ -1002,12 +999,12 @@ window.toggleSubtaskDistribution = async function (type) {
         const dist = data.distribution || [];
 
         if (dist.length === 0) {
-            distEl.innerHTML = '<div style="font-size: 0.8rem; color: #94a3b8; padding: 0.25rem 0;">暂无数据</div>';
+            contentEl.innerHTML = '<div style="text-align:center; padding:1rem; color:#94a3b8;">暂无数据</div>';
             return;
         }
 
         const label = type === 'feedbacked' ? '反馈' : '完成';
-        distEl.innerHTML = dist.map(d =>
+        contentEl.innerHTML = dist.map(d =>
             `<div class="subtask-distribution-item">
                 <span>${label}了 ${d.subtask_count} 条子任务</span>
                 <span class="count">${d.task_count} 个任务</span>
@@ -1015,7 +1012,7 @@ window.toggleSubtaskDistribution = async function (type) {
         ).join('');
     } catch (e) {
         console.error('Error fetching subtask distribution:', e);
-        distEl.innerHTML = '<div style="font-size: 0.8rem; color: #ef4444; padding: 0.25rem 0;">加载失败</div>';
+        contentEl.innerHTML = '<div style="text-align:center; padding:1rem; color:#ef4444;">加载失败</div>';
     }
 };
 

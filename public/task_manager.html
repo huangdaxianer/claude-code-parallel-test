@@ -1220,15 +1220,13 @@
                     <div class="stat-card-label">总任务数</div>
                     <div class="stat-card-value" id="stat-total">0</div>
                 </div>
-                <div class="stat-card clickable" onclick="toggleSubtaskDistribution('completed')">
-                    <div class="stat-card-label">已完成任务</div>
-                    <div class="stat-card-value completed" id="stat-completed">0</div>
-                    <div class="subtask-distribution" id="dist-completed"></div>
-                </div>
-                <div class="stat-card clickable" onclick="toggleSubtaskDistribution('feedbacked')">
+                <div class="stat-card clickable" onclick="openDistributionModal('feedbacked')">
                     <div class="stat-card-label">已反馈任务</div>
                     <div class="stat-card-value feedbacked" id="stat-feedbacked">0</div>
-                    <div class="subtask-distribution" id="dist-feedbacked"></div>
+                </div>
+                <div class="stat-card clickable" onclick="openDistributionModal('completed')">
+                    <div class="stat-card-label">已完成任务</div>
+                    <div class="stat-card-value completed" id="stat-completed">0</div>
                 </div>
                 <div class="stat-card clickable" onclick="openTaskListModal('running')">
                     <div class="stat-card-label">进行中任务</div>
@@ -1651,6 +1649,19 @@
                     <button class="btn" data-action="close-modal" data-modal-id="config-modal">取消</button>
                     <button class="btn btn-primary" id="config-save-btn">保存设置</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Distribution Modal (Completed / Feedbacked) -->
+    <div class="modal-overlay" id="distribution-modal">
+        <div class="modal" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3 id="distribution-modal-title">子任务分布</h3>
+                <button class="modal-close" data-action="close-modal" data-modal-id="distribution-modal">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 1rem 1.5rem;">
+                <div id="distribution-modal-content"></div>
             </div>
         </div>
     </div>
