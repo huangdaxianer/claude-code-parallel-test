@@ -1220,7 +1220,10 @@ let reportState = {
     selectedQuestionIds: [],
     questionWeights: {},
     availableTasks: [],
+    filteredTasks: [],
     selectedTaskIds: [],
+    availableUsers: [],
+    selectedUsernames: [],
     reportsList: []
 };
 
@@ -1232,6 +1235,10 @@ async function openCreateReportModal() {
     reportState.currentStep = 1;
     reportState.selectedQuestionIds = [];
     reportState.questionWeights = {};
+    reportState.availableTasks = [];
+    reportState.filteredTasks = [];
+    reportState.availableUsers = [];
+    reportState.selectedUsernames = [];
     updateReportStepUI(1);
     document.getElementById('report-modal')?.classList.add('show');
     try {
@@ -1264,7 +1271,7 @@ function renderReportModels() {
 
 function renderReportTasks() {
     const container = document.getElementById('report-tasks-list');
-    const tasks = reportState.availableTasks;
+    const tasks = reportState.filteredTasks;
     if (!tasks.length) {
         container.innerHTML = '<p style="color: #94a3b8;">没有符合条件的任务</p>';
         return;
@@ -1398,9 +1405,12 @@ function updateReportStepUI(step) {
     document.querySelectorAll('.report-step-abilities, .report-step-line-abilities').forEach(el => {
         el.style.display = isScore ? '' : 'none';
     });
+    // Update users step number display
+    const usersStepNum = document.querySelector('#report-step-indicator .report-step[data-step="4"] .step-num-text');
+    if (usersStepNum) usersStepNum.textContent = isScore ? '4' : '3';
     // Update tasks step number display
-    const tasksStepNum = document.querySelector('#report-step-indicator .report-step[data-step="4"] .step-num-text');
-    if (tasksStepNum) tasksStepNum.textContent = isScore ? '4' : '3';
+    const tasksStepNum = document.querySelector('#report-step-indicator .report-step[data-step="5"] .step-num-text-tasks');
+    if (tasksStepNum) tasksStepNum.textContent = isScore ? '5' : '4';
 
     document.querySelectorAll('.report-step-content').forEach(el => el.classList.remove('active'));
     const stepEl = document.getElementById(`report-step-${step}`);
@@ -1432,7 +1442,7 @@ async function handleReportNextStep(current) {
             renderReportQuestions();
             updateReportStepUI(3);
         } else {
-            await loadTasksStep(checkedModels);
+            await loadUsersStep(checkedModels);
         }
     } else if (current === 3) {
         const checkedQuestions = Array.from(document.querySelectorAll('.report-question-checkbox:checked')).map(cb => parseInt(cb.value));
@@ -1457,34 +1467,93 @@ async function handleReportNextStep(current) {
         }
         reportState.selectedQuestionIds = checkedQuestions;
         reportState.questionWeights = questionWeights;
-        await loadTasksStep(reportState.selectedModelIds);
+        await loadUsersStep(reportState.selectedModelIds);
+    } else if (current === 4) {
+        const checkedUsers = Array.from(document.querySelectorAll('.report-user-checkbox:checked')).map(cb => cb.value);
+        if (checkedUsers.length === 0) {
+            alert('请至少选择一个用户');
+            return;
+        }
+        reportState.selectedUsernames = checkedUsers;
+        reportState.filteredTasks = reportState.availableTasks.filter(
+            t => checkedUsers.includes(t.username)
+        );
+        loadFilteredTasksStep();
     }
 }
 
-async function loadTasksStep(checkedModels) {
+async function loadUsersStep(checkedModels) {
+    const usersContainer = document.getElementById('report-users-list');
+    usersContainer.innerHTML = '<p style="color: #94a3b8;">加载中...</p>';
+    updateReportStepUI(4);
+
+    try {
+        reportState.availableTasks = await TaskAPI.fetchAvailableTasks(reportState.reportType, reportState.selectedModelIds);
+
+        // Extract unique users with task counts
+        const userMap = new Map();
+        reportState.availableTasks.forEach(t => {
+            userMap.set(t.username, (userMap.get(t.username) || 0) + 1);
+        });
+        reportState.availableUsers = Array.from(userMap.entries()).map(
+            ([username, taskCount]) => ({ username, taskCount })
+        );
+
+        renderReportUsers();
+    } catch (e) {
+        usersContainer.innerHTML = '<p style="color: #ef4444;">加载失败，请重试</p>';
+        console.error('[Report] Error loading users:', e);
+    }
+}
+
+function renderReportUsers() {
+    const container = document.getElementById('report-users-list');
+    const users = reportState.availableUsers;
+    if (!users.length) {
+        container.innerHTML = '<p style="color: #94a3b8;">没有符合条件的用户</p>';
+        return;
+    }
+    container.innerHTML = users.map(u => `
+        <label class="report-user-item">
+            <input type="checkbox" value="${escapeHtml(u.username)}" class="report-user-checkbox" checked>
+            <span class="report-item-label">${escapeHtml(u.username)}</span>
+            <span class="report-item-meta">${u.taskCount} 个任务</span>
+        </label>
+    `).join('');
+
+    const selectAll = document.getElementById('report-select-all-users');
+    if (selectAll) {
+        selectAll.checked = true;
+        selectAll.onchange = () => {
+            document.querySelectorAll('.report-user-checkbox').forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+        };
+    }
+}
+
+function loadFilteredTasksStep() {
     const hint = document.getElementById('report-task-hint');
+    const checkedModels = reportState.selectedModelIds;
     if (reportState.reportType === 'trace_only') {
         hint.textContent = `仅展示所选 ${checkedModels.length} 个模型的子任务全部为「已完成」或「已反馈」的任务`;
     } else {
         hint.textContent = `仅展示所选 ${checkedModels.length} 个模型的子任务全部为「已反馈」的任务`;
     }
 
-    const tasksContainer = document.getElementById('report-tasks-list');
-    tasksContainer.innerHTML = '<p style="color: #94a3b8;">加载中...</p>';
-    updateReportStepUI(4);
-
-    try {
-        reportState.availableTasks = await TaskAPI.fetchAvailableTasks(reportState.reportType, reportState.selectedModelIds);
-        renderReportTasks();
-    } catch (e) {
-        tasksContainer.innerHTML = '<p style="color: #ef4444;">加载失败，请重试</p>';
-        console.error('[Report] Error loading tasks:', e);
-    }
+    updateReportStepUI(5);
+    renderReportTasks();
 }
 
 function handleReportPrevStep(current) {
-    if (current === 4 && reportState.reportType === 'trace_only') {
-        updateReportStepUI(2);
+    if (current === 5) {
+        updateReportStepUI(4);
+    } else if (current === 4) {
+        if (reportState.reportType === 'trace_and_score') {
+            updateReportStepUI(3);
+        } else {
+            updateReportStepUI(2);
+        }
     } else if (current > 1) {
         updateReportStepUI(current - 1);
     }

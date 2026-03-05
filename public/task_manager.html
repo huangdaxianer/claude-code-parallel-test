@@ -1060,7 +1060,7 @@
             border-top: 1px solid #e2e8f0;
         }
 
-        .report-model-item, .report-task-item {
+        .report-model-item, .report-task-item, .report-user-item {
             display: flex;
             align-items: center;
             gap: 0.75rem;
@@ -1072,13 +1072,14 @@
             transition: all 0.15s;
         }
 
-        .report-model-item:hover, .report-task-item:hover {
+        .report-model-item:hover, .report-task-item:hover, .report-user-item:hover {
             background: #f1f5f9;
             border-color: #cbd5e1;
         }
 
         .report-model-item input:checked ~ .report-item-label,
-        .report-task-item input:checked ~ .report-item-label {
+        .report-task-item input:checked ~ .report-item-label,
+        .report-user-item input:checked ~ .report-item-label {
             color: #1e293b;
             font-weight: 500;
         }
@@ -1414,7 +1415,9 @@
                         <div class="report-step-line report-step-line-abilities" style="display:none;"></div>
                         <div class="report-step report-step-abilities" data-step="3" style="display:none;"><span class="step-num">3</span><span class="step-label">选择能力</span></div>
                         <div class="report-step-line"></div>
-                        <div class="report-step" data-step="4"><span class="step-num"><span class="step-num-text">3</span></span><span class="step-label">选择任务</span></div>
+                        <div class="report-step" data-step="4"><span class="step-num"><span class="step-num-text">3</span></span><span class="step-label">选择用户</span></div>
+                        <div class="report-step-line"></div>
+                        <div class="report-step" data-step="5"><span class="step-num"><span class="step-num-text-tasks">4</span></span><span class="step-label">选择任务</span></div>
                     </div>
 
                     <!-- Step 1: Report Type -->
@@ -1477,8 +1480,26 @@
                         </div>
                     </div>
 
-                    <!-- Step 4: Select Tasks -->
+                    <!-- Step 4: Select Users -->
                     <div class="report-step-content" id="report-step-4">
+                        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">选择用户</h3>
+                        <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1rem;">仅展示有符合条件任务的用户，取消选择后该用户的任务将不会出现在下一步</p>
+                        <div style="margin-bottom: 0.75rem;">
+                            <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                                <input type="checkbox" id="report-select-all-users" checked> 全选
+                            </label>
+                        </div>
+                        <div id="report-users-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 300px; overflow-y: auto;">
+                            <p style="color: #94a3b8;">加载中...</p>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 1.5rem;">
+                            <button class="btn" data-action="report-prev-step" data-current="4">上一步</button>
+                            <button class="btn btn-primary" data-action="report-next-step" data-current="4">下一步</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 5: Select Tasks -->
+                    <div class="report-step-content" id="report-step-5">
                         <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">选择待分析任务</h3>
                         <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1rem;" id="report-task-hint"></p>
                         <div style="margin-bottom: 0.75rem;">
@@ -1494,7 +1515,7 @@
                             <input type="text" id="report-title-input" class="filter-input" placeholder="留空将自动生成" style="margin-top: 0.25rem; width: 100%;">
                         </div>
                         <div style="display: flex; justify-content: space-between; margin-top: 1.5rem;">
-                            <button class="btn" data-action="report-prev-step" data-current="4">上一步</button>
+                            <button class="btn" data-action="report-prev-step" data-current="5">上一步</button>
                             <button class="btn btn-primary" data-action="report-create" id="report-create-btn">创建报告</button>
                         </div>
                     </div>
