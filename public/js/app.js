@@ -416,6 +416,12 @@
             App.comments.init();
         }
 
+        // 外部众测用户：隐藏下载产物按钮
+        if (App.state.currentUser?.group_name === '外部众测用户') {
+            const downloadFilesBtn = document.getElementById('download-files-btn');
+            if (downloadFilesBtn) downloadFilesBtn.style.display = 'none';
+        }
+
         // 显示 GSB 入口按钮（仅 internal 角色）
         const gsbBtn = document.getElementById('gsb-entry-btn');
         if (gsbBtn && App.state.currentUser?.role === 'internal') {

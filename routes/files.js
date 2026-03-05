@@ -249,6 +249,9 @@ router.get('/file_content', (req, res) => {
 
 // 下载文件夹 ZIP（流式下载，避免代理超时）
 router.get('/download_zip', (req, res) => {
+    if (req.user.group_name === '外部众测用户') {
+        return res.status(403).json({ error: '您的用户组没有下载轨迹的权限' });
+    }
     const { folderName } = req.query;
     console.log(`[ZIP Request] Request for folder: ${folderName}`);
 

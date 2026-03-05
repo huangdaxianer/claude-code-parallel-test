@@ -56,6 +56,13 @@
                         return;
                     }
 
+                    // 外部众测用户隐藏删除和下载菜单项
+                    const isExternalCrowdTest = App.state.currentUser && App.state.currentUser.group_name === '外部众测用户';
+                    const deleteItem = document.getElementById('delete-task-menu-item');
+                    const downloadItem = document.getElementById('download-task-menu-item');
+                    if (deleteItem) deleteItem.style.display = isExternalCrowdTest ? 'none' : '';
+                    if (downloadItem) downloadItem.style.display = isExternalCrowdTest ? 'none' : '';
+
                     App.state.activeMenuTaskId = task.taskId;
                     menu.style.top = `${rect.bottom + 5}px`;
                     menu.style.left = `${rect.right - 120}px`;

@@ -32,7 +32,11 @@ router.post('/login', (req, res) => {
     }
 
     try {
-        const user = db.prepare('SELECT id, username, role, group_id, password_hash FROM users WHERE username = ?').get(trimmedUsername);
+        const user = db.prepare(
+            `SELECT u.id, u.username, u.role, u.group_id, u.password_hash, ug.name as group_name
+             FROM users u LEFT JOIN user_groups ug ON u.group_id = ug.id
+             WHERE u.username = ?`
+        ).get(trimmedUsername);
 
         if (!user) {
             // 用户不存在，检查是否允许注册
@@ -52,7 +56,7 @@ router.post('/login', (req, res) => {
         console.log(`[Auth] User logged in: ${trimmedUsername} (ID: ${user.id}, Role: ${user.role})`);
         return res.json({
             success: true,
-            user: { id: user.id, username: user.username, role: user.role, group_id: user.group_id }
+            user: { id: user.id, username: user.username, role: user.role, group_id: user.group_id, group_name: user.group_name }
         });
     } catch (e) {
         console.error('Login error:', e);
@@ -104,7 +108,11 @@ router.post('/register', (req, res) => {
             "INSERT INTO users (username, role, group_id, password_hash) VALUES (?, 'external', ?, ?)"
         ).run(trimmedUsername, groupId, passwordHash);
 
-        const user = db.prepare('SELECT id, username, role, group_id FROM users WHERE id = ?').get(result.lastInsertRowid);
+        const user = db.prepare(
+            `SELECT u.id, u.username, u.role, u.group_id, ug.name as group_name
+             FROM users u LEFT JOIN user_groups ug ON u.group_id = ug.id
+             WHERE u.id = ?`
+        ).get(result.lastInsertRowid);
         console.log(`[Auth] New user registered: ${trimmedUsername} (ID: ${user.id})`);
 
         return res.json({ success: true, user });
@@ -170,7 +178,11 @@ router.get('/users/verify', (req, res) => {
             return res.json({ exists: false, user: null });
         }
 
-        const user = db.prepare('SELECT id, username, role, group_id FROM users WHERE username = ?').get(username);
+        const user = db.prepare(
+            `SELECT u.id, u.username, u.role, u.group_id, ug.name as group_name
+             FROM users u LEFT JOIN user_groups ug ON u.group_id = ug.id
+             WHERE u.username = ?`
+        ).get(username);
 
         res.json({
             exists: !!user,

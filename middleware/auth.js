@@ -9,7 +9,11 @@ const db = require('../db');
 function getCurrentUser(req) {
     const username = req.cookies?.username;
     if (!username) return null;
-    return db.prepare('SELECT id, username, role, group_id FROM users WHERE username = ?').get(username);
+    return db.prepare(
+        `SELECT u.id, u.username, u.role, u.group_id, ug.name as group_name
+         FROM users u LEFT JOIN user_groups ug ON u.group_id = ug.id
+         WHERE u.username = ?`
+    ).get(username);
 }
 
 /**
