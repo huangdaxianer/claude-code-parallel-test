@@ -50,6 +50,11 @@ export const AppState = {
     feedbackStatsData: [],
     activeQuestions: [], // For feedback table headers
 
+    // Comment Stats (评价统计)
+    commentStatsData: [],
+    commentStatsPagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
+    commentStatsTaskOwners: [],
+
     // Per-model status filters: { modelId: 'completed' | 'stopped' | ... | '' }
     modelFilters: {},
 

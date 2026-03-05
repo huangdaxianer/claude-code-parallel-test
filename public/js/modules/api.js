@@ -316,5 +316,16 @@ export const TaskAPI = {
             headers: getAuthHeaders()
         });
         return await res.json();
+    },
+
+    async fetchCommentStats({ page = 1, pageSize = 50, taskOwner = '', commentType = 'all', commenterType = '' } = {}) {
+        const params = new URLSearchParams();
+        params.set('page', page);
+        params.set('pageSize', pageSize);
+        if (taskOwner) params.set('taskOwner', taskOwner);
+        if (commentType && commentType !== 'all') params.set('commentType', commentType);
+        if (commenterType) params.set('commenterType', commenterType);
+        const res = await fetch(`/api/admin/comment-stats?${params.toString()}`, { headers: getAuthHeaders() });
+        return await res.json();
     }
 };

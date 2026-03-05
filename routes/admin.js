@@ -914,6 +914,153 @@ router.delete('/models/:id', (req, res) => {
     }
 });
 
+// 获取评价统计（所有评论汇总）
+router.get('/comment-stats', (req, res) => {
+    try {
+        const { taskOwner, commentType, commenterType, page: pageStr, pageSize: pageSizeStr } = req.query;
+        const page = Math.max(1, parseInt(pageStr) || 1);
+        const pageSize = Math.min(100, Math.max(1, parseInt(pageSizeStr) || 50));
+
+        // Build a UNION ALL query across three comment sources
+        const conditions = [];
+        const params = [];
+
+        // Build WHERE fragments for each source
+        let taskOwnerCondition = '';
+        if (taskOwner) {
+            taskOwnerCondition = 'AND t.user_id = ?';
+        }
+        let commenterTypeCondition = '';
+        if (commenterType === 'admin') {
+            commenterTypeCondition = "AND commenter.role = 'admin'";
+        } else if (commenterType === 'user') {
+            commenterTypeCondition = "AND commenter.role != 'admin'";
+        }
+
+        // Source 1: feedback_responses comments (打分评论)
+        const src1 = `
+            SELECT
+                fr.id as comment_id,
+                fr.task_id,
+                t.title as task_title,
+                fr.model_id,
+                mc.endpoint_name as model_name,
+                'scoring' as comment_type,
+                fr.comment as content,
+                fr.created_at,
+                COALESCE(commenter.username, task_owner.username) as commenter_name,
+                COALESCE(commenter.role, task_owner.role) as commenter_role,
+                task_owner.username as task_owner_name
+            FROM feedback_responses fr
+            JOIN tasks t ON fr.task_id = t.task_id
+            JOIN users task_owner ON t.user_id = task_owner.id
+            LEFT JOIN users commenter ON fr.user_id = commenter.id
+            LEFT JOIN model_configs mc ON mc.model_id = fr.model_id
+            WHERE fr.comment IS NOT NULL AND fr.comment != ''
+            ${taskOwnerCondition}
+            ${commenterTypeCondition}
+        `;
+
+        // Source 2: user_feedback (主动反馈)
+        const src2 = `
+            SELECT
+                uf.id as comment_id,
+                uf.task_id,
+                t.title as task_title,
+                uf.model_id,
+                mc.endpoint_name as model_name,
+                'user_feedback' as comment_type,
+                uf.content,
+                uf.created_at,
+                COALESCE(commenter.username, task_owner.username) as commenter_name,
+                COALESCE(commenter.role, task_owner.role) as commenter_role,
+                task_owner.username as task_owner_name
+            FROM user_feedback uf
+            JOIN tasks t ON uf.task_id = t.task_id
+            JOIN users task_owner ON t.user_id = task_owner.id
+            LEFT JOIN users commenter ON uf.user_id = commenter.id
+            LEFT JOIN model_configs mc ON mc.model_id = uf.model_id
+            WHERE uf.content IS NOT NULL AND uf.content != ''
+            ${taskOwnerCondition}
+            ${commenterTypeCondition}
+        `;
+
+        // Source 3: feedback_comments (轨迹/产物评论)
+        const src3 = `
+            SELECT
+                fc.id as comment_id,
+                fc.task_id,
+                t.title as task_title,
+                fc.model_id,
+                mc.endpoint_name as model_name,
+                CASE fc.target_type WHEN 'trajectory' THEN 'trajectory' ELSE 'artifact' END as comment_type,
+                fc.content,
+                fc.created_at,
+                COALESCE(commenter.username, task_owner.username) as commenter_name,
+                COALESCE(commenter.role, task_owner.role) as commenter_role,
+                task_owner.username as task_owner_name
+            FROM feedback_comments fc
+            JOIN tasks t ON fc.task_id = t.task_id
+            JOIN users task_owner ON t.user_id = task_owner.id
+            LEFT JOIN users commenter ON fc.user_id = commenter.id
+            LEFT JOIN model_configs mc ON mc.model_id = fc.model_id
+            WHERE fc.content IS NOT NULL AND fc.content != ''
+            ${taskOwnerCondition}
+            ${commenterTypeCondition}
+        `;
+
+        // Build source list based on commentType filter
+        let sources = [];
+        if (!commentType || commentType === 'all') {
+            sources = [src1, src2, src3];
+        } else if (commentType === 'scoring') {
+            sources = [src1];
+        } else if (commentType === 'user_feedback') {
+            sources = [src2];
+        } else if (commentType === 'trajectory') {
+            sources = [src3];
+        }
+
+        const unionQuery = sources.join(' UNION ALL ');
+
+        // Build params — each source that is included needs taskOwner param if set
+        const allParams = [];
+        sources.forEach(() => {
+            if (taskOwner) allParams.push(taskOwner);
+        });
+
+        // Count total
+        const countSql = `SELECT COUNT(*) as total FROM (${unionQuery})`;
+        const { total } = db.prepare(countSql).get(...allParams);
+
+        // Get paginated data
+        const offset = (page - 1) * pageSize;
+        const dataSql = `${unionQuery} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+        const data = db.prepare(dataSql).all(...allParams, pageSize, offset);
+
+        // Get all task owners for filter dropdown
+        const taskOwners = db.prepare(`
+            SELECT DISTINCT u.id, u.username
+            FROM users u
+            JOIN tasks t ON t.user_id = u.id
+            ORDER BY u.username
+        `).all();
+
+        res.json({
+            success: true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages: Math.ceil(total / pageSize),
+            taskOwners
+        });
+    } catch (e) {
+        console.error('Error fetching comment stats:', e);
+        res.status(500).json({ error: 'Failed to fetch comment statistics' });
+    }
+});
+
 // 挂载报告子路由
 const reportRoutes = require('./reports');
 router.use('/report', reportRoutes);

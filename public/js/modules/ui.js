@@ -26,6 +26,8 @@ const Elements = {
     modelsTbody: () => document.getElementById('models-tbody'),
     feedbackTbody: () => document.getElementById('feedback-stats-tbody'),
     feedbackThead: () => document.getElementById('feedback-stats-thead'),
+    commentStatsTbody: () => document.getElementById('comment-stats-tbody'),
+    commentStatsPagination: () => document.getElementById('comment-stats-pagination'),
 
     stats: {
         total: () => document.getElementById('stat-total'),
@@ -1015,5 +1017,70 @@ export const UI = {
                 </tr>
             `;
         }).join('');
+    },
+
+    renderCommentStats(data, pagination) {
+        const tbody = Elements.commentStatsTbody();
+        const paginationEl = Elements.commentStatsPagination();
+        if (!tbody) return;
+
+        const commentTypeLabels = {
+            'scoring': '打分评论',
+            'user_feedback': '主动反馈',
+            'trajectory': '轨迹评论',
+            'artifact': '产物评论'
+        };
+
+        const commentTypeBadgeColors = {
+            'scoring': '#3b82f6',
+            'user_feedback': '#f59e0b',
+            'trajectory': '#8b5cf6',
+            'artifact': '#10b981'
+        };
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="empty-state"><p>暂无评论数据</p></td></tr>`;
+            if (paginationEl) paginationEl.innerHTML = '';
+            return;
+        }
+
+        tbody.innerHTML = data.map(row => {
+            const typeLabel = commentTypeLabels[row.comment_type] || row.comment_type;
+            const typeBadgeColor = commentTypeBadgeColors[row.comment_type] || '#94a3b8';
+            const roleLabel = row.commenter_role === 'admin' ? '管理员' : '普通用户';
+            const roleBadgeColor = row.commenter_role === 'admin' ? '#ef4444' : '#64748b';
+            const contentPreview = row.content.length > 200 ? row.content.substring(0, 200) + '...' : row.content;
+
+            return `
+                <tr>
+                    <td><div class="task-id" data-action="view" data-id="${escapeHtml(row.task_id)}" data-username="${escapeHtml(row.task_owner_name || '')}" style="cursor: pointer;" title="${escapeHtml(row.task_title || '')}">${escapeHtml(row.task_id)}</div></td>
+                    <td><span style="font-size: 0.85rem; color: #475569;">${escapeHtml(row.model_name || row.model_id || '-')}</span></td>
+                    <td><span style="display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; color: white; background: ${typeBadgeColor};">${typeLabel}</span></td>
+                    <td style="max-width: 400px; word-break: break-word;"><span style="font-size: 0.85rem;" title="${escapeHtml(row.content)}">${escapeHtml(contentPreview)}</span></td>
+                    <td><span class="timestamp">${formatDateTime(row.created_at)}</span></td>
+                    <td><span class="user-badge">${escapeHtml(row.commenter_name || '-')}</span></td>
+                    <td><span style="display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; color: white; background: ${roleBadgeColor};">${roleLabel}</span></td>
+                </tr>
+            `;
+        }).join('');
+
+        // Render pagination
+        if (paginationEl && pagination) {
+            if (pagination.totalPages <= 1) {
+                paginationEl.innerHTML = `<span style="font-size: 0.85rem; color: #94a3b8;">共 ${pagination.total} 条</span>`;
+                return;
+            }
+            let html = `<div style="display: flex; align-items: center; gap: 0.5rem; justify-content: center;">`;
+            html += `<span style="font-size: 0.85rem; color: #94a3b8;">共 ${pagination.total} 条</span>`;
+            if (pagination.page > 1) {
+                html += `<button class="btn" data-action="comment-stats-page" data-page="${pagination.page - 1}" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">上一页</button>`;
+            }
+            html += `<span style="font-size: 0.85rem;">第 ${pagination.page} / ${pagination.totalPages} 页</span>`;
+            if (pagination.page < pagination.totalPages) {
+                html += `<button class="btn" data-action="comment-stats-page" data-page="${pagination.page + 1}" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">下一页</button>`;
+            }
+            html += `</div>`;
+            paginationEl.innerHTML = html;
+        }
     }
 };

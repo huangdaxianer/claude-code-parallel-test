@@ -471,6 +471,8 @@
             padding: 4px 0;
             min-width: 90px;
             margin-top: 4px;
+            max-height: 320px;
+            overflow-y: auto;
         }
 
         .col-filter-popup.show {
@@ -1147,6 +1149,7 @@
             <button class="tab-btn" data-tab="models">模型管理</button>
             <button class="tab-btn" data-tab="eval">评测配置</button>
             <button class="tab-btn" data-tab="feedback-stats">反馈统计</button>
+            <button class="tab-btn" data-tab="comment-stats">评价统计</button>
             <button class="tab-btn" data-tab="reports">统计报告</button>
             <button class="tab-btn" data-tab="users">用户管理</button>
             <div class="tabs-nav-right">
@@ -1318,6 +1321,67 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+
+        <!-- Comment Statistics Tab (评价统计) -->
+        <div id="tab-comment-stats" class="tab-pane">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h2 style="font-size: 1.25rem; font-weight: 600;">评价统计</h2>
+                <button class="btn" data-action="refresh-comment-stats">刷新</button>
+            </div>
+
+            <!-- Filters -->
+            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <label style="font-size: 0.85rem; color: #64748b;">任务所属用户:</label>
+                    <select id="comment-stats-owner-filter" style="padding: 0.4rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.85rem;">
+                        <option value="">全部</option>
+                    </select>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <label style="font-size: 0.85rem; color: #64748b;">评论类型:</label>
+                    <select id="comment-stats-type-filter" style="padding: 0.4rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.85rem;">
+                        <option value="all">全部</option>
+                        <option value="scoring">打分评论</option>
+                        <option value="user_feedback">主动反馈</option>
+                        <option value="trajectory">轨迹/产物评论</option>
+                    </select>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <label style="font-size: 0.85rem; color: #64748b;">评论人类型:</label>
+                    <select id="comment-stats-role-filter" style="padding: 0.4rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.85rem;">
+                        <option value="">全部</option>
+                        <option value="admin">管理员</option>
+                        <option value="user">普通用户</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="table-container" style="overflow-x: auto;">
+                <table class="tasks-table" id="comment-stats-table">
+                    <thead>
+                        <tr>
+                            <th>任务ID</th>
+                            <th>模型</th>
+                            <th>评论类型</th>
+                            <th style="min-width: 300px;">评论内容</th>
+                            <th>评论时间</th>
+                            <th>评论人</th>
+                            <th>评论人类型</th>
+                        </tr>
+                    </thead>
+                    <tbody id="comment-stats-tbody">
+                        <tr>
+                            <td colspan="7" class="empty-state">
+                                <p>加载中...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div id="comment-stats-pagination" style="margin-top: 1rem;"></div>
         </div>
 
         <!-- Reports Tab -->

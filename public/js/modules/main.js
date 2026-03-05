@@ -76,7 +76,7 @@ function initTabFromURL() {
     const tabParam = urlParams.get('tab');
 
     // Valid tab names
-    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'reports', 'users'];
+    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'comment-stats', 'reports', 'users'];
 
     // Default to 'tasks' if no valid tab parameter
     const tabId = validTabs.includes(tabParam) ? tabParam : 'tasks';
@@ -91,7 +91,7 @@ function initTabFromURL() {
 function handlePopState(e) {
     const urlParams = new URLSearchParams(window.location.search);
     const tabParam = urlParams.get('tab');
-    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'reports', 'users'];
+    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'comment-stats', 'reports', 'users'];
     const tabId = validTabs.includes(tabParam) ? tabParam : 'tasks';
 
     activateTab(tabId, false);
@@ -143,6 +143,14 @@ function setupEventListeners() {
 
     // Specific change listeners
     document.getElementById('q-type')?.addEventListener('change', () => UI.toggleOptionsContainer());
+
+    // Comment stats filters
+    ['comment-stats-owner-filter', 'comment-stats-type-filter', 'comment-stats-role-filter'].forEach(id => {
+        document.getElementById(id)?.addEventListener('change', () => {
+            AppState.commentStatsPagination.page = 1;
+            fetchCommentStats();
+        });
+    });
 }
 
 async function handleGlobalClick(e) {
@@ -252,6 +260,15 @@ async function handleGlobalClick(e) {
 
             case 'refresh-feedback-stats':
                 fetchFeedbackStats();
+                break;
+
+            case 'refresh-comment-stats':
+                fetchCommentStats();
+                break;
+
+            case 'comment-stats-page':
+                AppState.commentStatsPagination.page = parseInt(actionBtn.dataset.page) || 1;
+                fetchCommentStats();
                 break;
 
             case 'refresh-reports':
@@ -637,6 +654,45 @@ async function fetchFeedbackStats() {
     } catch (e) { console.error(e); }
 }
 
+async function fetchCommentStats() {
+    try {
+        const taskOwner = document.getElementById('comment-stats-owner-filter')?.value || '';
+        const commentType = document.getElementById('comment-stats-type-filter')?.value || 'all';
+        const commenterType = document.getElementById('comment-stats-role-filter')?.value || '';
+
+        const result = await TaskAPI.fetchCommentStats({
+            page: AppState.commentStatsPagination.page,
+            pageSize: AppState.commentStatsPagination.pageSize,
+            taskOwner,
+            commentType,
+            commenterType
+        });
+
+        if (result.success) {
+            AppState.commentStatsData = result.data;
+            AppState.commentStatsPagination = {
+                page: result.page,
+                pageSize: result.pageSize,
+                total: result.total,
+                totalPages: result.totalPages
+            };
+            AppState.commentStatsTaskOwners = result.taskOwners || [];
+
+            // Populate task owner dropdown (preserve current selection)
+            const ownerSelect = document.getElementById('comment-stats-owner-filter');
+            if (ownerSelect) {
+                const currentVal = ownerSelect.value;
+                ownerSelect.innerHTML = '<option value="">全部</option>' +
+                    AppState.commentStatsTaskOwners.map(u =>
+                        `<option value="${u.id}" ${String(u.id) === currentVal ? 'selected' : ''}>${escapeHtml(u.username)}</option>`
+                    ).join('');
+            }
+
+            UI.renderCommentStats(AppState.commentStatsData, AppState.commentStatsPagination);
+        }
+    } catch (e) { console.error('Error fetching comment stats:', e); }
+}
+
 // --- Logic ---
 
 function applyFilters() {
@@ -879,6 +935,7 @@ function activateTab(tabId, updateURL = true) {
 
     // Load tab-specific data
     if (tabId === 'feedback-stats') fetchFeedbackStats();
+    if (tabId === 'comment-stats') fetchCommentStats();
     if (tabId === 'users') fetchUserManagementData();
     if (tabId === 'models') fetchModels();
     if (tabId === 'reports') initReportTab();
