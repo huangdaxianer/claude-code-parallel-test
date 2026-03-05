@@ -164,9 +164,11 @@ function executeSubtask(taskId, modelId, modelConfig) {
                     db.prepare("UPDATE model_runs SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
 
                     // 如果子任务成功完成，立即生成预览文件夹（隔离环境）并在后台进行 Preparation
-                    previewService.preparePreview(taskId, modelId).catch(err => {
-                        console.error(`[Queue] Failed to trigger preview prep for ${taskId}/${modelId}:`, err);
-                    });
+                    if (config.getAppConfig().enablePreview !== false) {
+                        previewService.preparePreview(taskId, modelId).catch(err => {
+                            console.error(`[Queue] Failed to trigger preview prep for ${taskId}/${modelId}:`, err);
+                        });
+                    }
                 } else {
                     // 非零退出码 = 中止，尝试自动重试
                     if (!tryAutoRetry(taskId, modelId)) {
