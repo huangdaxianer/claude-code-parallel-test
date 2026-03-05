@@ -610,8 +610,41 @@ router.post('/:taskId/start', (req, res) => {
 
             const modelRun = db.prepare("SELECT id, status FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId);
             if (!modelRun) {
-                console.log(`[Control] Model ${modelId} not found`);
-                return res.status(404).json({ error: `Model ${modelId} not found for task ${taskId}` });
+                // 新模型：验证用户组权限后创建 model_run
+                console.log(`[Control] Model ${modelId} not found for task ${taskId}, attempting to add new model`);
+
+                const enabledModel = db.prepare(`
+                    SELECT mc.model_id
+                    FROM model_configs mc
+                    LEFT JOIN model_group_settings mgs ON mc.id = mgs.model_id AND mgs.group_id = ?
+                    WHERE mc.model_id = ? AND COALESCE(mgs.is_enabled, 1) = 1
+                `).get(req.user.group_id, modelId);
+
+                if (!enabledModel) {
+                    console.log(`[Control] Model ${modelId} not enabled for group ${req.user.group_id}`);
+                    return res.status(403).json({ error: `Model ${modelId} is not available for your user group` });
+                }
+
+                try {
+                    db.prepare('INSERT INTO model_runs (task_id, model_id, status) VALUES (?, ?, ?)').run(taskId, modelId, 'pending');
+                    console.log(`[Control] Created new model_run for ${taskId}/${modelId}`);
+                } catch (insertErr) {
+                    if (insertErr.message && insertErr.message.includes('UNIQUE constraint')) {
+                        return res.status(409).json({ error: `Model ${modelId} already exists for task ${taskId}` });
+                    }
+                    throw insertErr;
+                }
+
+                // 确保 task_queue 处于活跃状态
+                const queueEntry = db.prepare("SELECT status FROM task_queue WHERE task_id = ?").get(taskId);
+                if (queueEntry) {
+                    db.prepare("UPDATE task_queue SET status = 'pending', started_at = NULL, completed_at = NULL WHERE task_id = ?").run(taskId);
+                } else {
+                    db.prepare("INSERT INTO task_queue (task_id, status) VALUES (?, 'pending')").run(taskId);
+                }
+
+                processQueue();
+                return res.json({ success: true, action: 'added' });
             }
 
             if (modelRun.status === 'running') {

@@ -189,7 +189,7 @@
         return `<span class="stop-reason-icon" data-tooltip="${tooltipText.replace(/"/g, '&quot;')}">&#8505;</span>`;
     }
 
-    App.stats.renderStatisticsView = function () {
+    App.stats.renderStatisticsView = async function () {
         const tbody = document.getElementById('stats-table-body');
         tbody.innerHTML = '';
 
@@ -202,7 +202,8 @@
                 'running': '运行中',
                 'completed': '已完成',
                 'evaluated': '已反馈',
-                'stopped': '已中止'
+                'stopped': '已中止',
+                'not_started': '未启动'
             };
             return map[status] || status;
         };
@@ -273,6 +274,35 @@
         // 如果有运行中的任务，启动计时器
         if (hasRunning) {
             startDurationTimer();
+        }
+
+        // 获取启用模型，显示未启动的模型
+        try {
+            const enabledModels = await App.api.getEnabledModels();
+            const existingModelIds = new Set(App.state.currentRuns.map(r => r.modelId));
+            const unstartedModels = enabledModels.filter(m => !existingModelIds.has(m.id));
+
+            // 更新 modelDisplayNames 缓存
+            enabledModels.forEach(model => {
+                App.state.modelDisplayNames[model.name] = model.displayName || model.name;
+            });
+
+            unstartedModels.forEach(model => {
+                const tr = document.createElement('tr');
+                tr.style.opacity = '0.6';
+                const displayName = model.displayName || model.name;
+
+                tr.innerHTML = `
+                    <td style="font-weight:600">${displayName}</td>
+                    <td><span class="status-badge status-not-started">${translateStatus('not_started')}</span></td>
+                    <td><button class="btn-xs action-btn" data-action="start" data-model-id="${model.id}"
+                        style="background: #dbeafe; color: #1e40af; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">启动</button></td>
+                    <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (e) {
+            console.error('[Stats] Failed to fetch enabled models:', e);
         }
     };
 
