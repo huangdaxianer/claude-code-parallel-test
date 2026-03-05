@@ -1125,8 +1125,8 @@ async function updateMaxParallel() {
     // ... implemented in previous step, kept same logic
     const input = document.getElementById('max-parallel-input');
     const value = parseInt(input.value, 10);
-    if (isNaN(value) || value < 1 || value > 50) {
-        alert('并行数必须在 1-50 之间');
+    if (isNaN(value) || value < 1 || value > 200) {
+        alert('并行数必须在 1-200 之间');
         return;
     }
     try {
