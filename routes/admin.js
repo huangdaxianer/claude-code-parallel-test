@@ -1035,7 +1035,7 @@ router.get('/comment-stats', (req, res) => {
 
         // Get paginated data
         const offset = (page - 1) * pageSize;
-        const dataSql = `${unionQuery} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+        const dataSql = `SELECT * FROM (${unionQuery}) ORDER BY created_at DESC LIMIT ? OFFSET ?`;
         const data = db.prepare(dataSql).all(...allParams, pageSize, offset);
 
         // Get all task owners for filter dropdown
