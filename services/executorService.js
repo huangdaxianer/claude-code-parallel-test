@@ -11,9 +11,10 @@ const { FileTailer } = require('../utils/fileTailer');
 const activeProcesses = new Map();
 
 // firejail CPU 核心轮转分配计数器
+// firejail 0.9.72 硬编码最多支持 32 核 (0-31)，需要 cap 到 32
 let sandboxCounter = 0;
 const CPU_CORES_PER_SANDBOX = 4;
-const TOTAL_CPU_CORES = os.cpus().length;
+const TOTAL_CPU_CORES = Math.min(os.cpus().length, 32);
 
 // 环境配置（启动时初始化）
 let executorConfig = {
