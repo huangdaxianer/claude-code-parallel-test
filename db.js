@@ -453,6 +453,11 @@ try {
     console.error('[DB] Password migration error:', e.message);
 }
 
+// Migration: Add process persistence columns to model_runs (for process re-attach on server restart)
+try { db.exec("ALTER TABLE model_runs ADD COLUMN pid INTEGER"); } catch (e) { }
+try { db.exec("ALTER TABLE model_runs ADD COLUMN stdout_file TEXT"); } catch (e) { }
+try { db.exec("ALTER TABLE model_runs ADD COLUMN stdout_offset INTEGER DEFAULT 0"); } catch (e) { }
+
 // Migration: Add user_id to feedback_responses to track who actually submitted the score
 try {
     db.exec("ALTER TABLE feedback_responses ADD COLUMN user_id INTEGER REFERENCES users(id)");

@@ -5,6 +5,7 @@ const os = require('os');
 const db = require('../db');
 const config = require('../config');
 const { buildSafeEnv } = require('../utils/envWhitelist');
+const { FileTailer } = require('../utils/fileTailer');
 
 // 活跃进程 Map<"taskId/modelId", ChildProcess>
 const activeProcesses = new Map();
@@ -282,6 +283,12 @@ function executeModel(taskId, modelId, modelConfig) {
     const logFile = path.join(logsDir, `${modelId}.txt`);
     const logStream = fs.createWriteStream(logFile, { flags: 'a' });
 
+    // stdout/stderr 输出到文件（替代管道，使子进程在父进程死亡后仍可写入）
+    const stdoutFile = path.join(logsDir, `${modelId}.stdout`);
+    const stderrFile = path.join(logsDir, `${modelId}.stderr`);
+    const stdoutFd = fs.openSync(stdoutFile, 'w');
+    const stderrFd = fs.openSync(stderrFile, 'w');
+
     // 选择执行方式
     let child;
 
@@ -313,14 +320,14 @@ function executeModel(taskId, modelId, modelConfig) {
             ], {
                 cwd: folderPath,
                 env: envVars,
-                stdio: ['pipe', 'pipe', 'pipe'],
+                stdio: ['pipe', stdoutFd, stderrFd],
                 detached: true
             });
         } else {
             child = spawn('firejail', fullArgs, {
                 cwd: folderPath,
                 env: envVars,
-                stdio: ['pipe', 'pipe', 'pipe'],
+                stdio: ['pipe', stdoutFd, stderrFd],
                 detached: true
             });
         }
@@ -348,26 +355,40 @@ function executeModel(taskId, modelId, modelConfig) {
             ], {
                 cwd: folderPath,
                 env: envVars,
-                stdio: ['pipe', 'pipe', 'pipe'],
+                stdio: ['pipe', stdoutFd, stderrFd],
                 detached: true
             });
         } else {
             child = spawn(executorConfig.claudeBin, claudeArgs, {
                 cwd: folderPath,
                 env: envVars,
-                stdio: ['pipe', 'pipe', 'pipe'],
+                stdio: ['pipe', stdoutFd, stderrFd],
                 detached: true
             });
         }
     }
 
+    // 关闭父进程端的 fd（子进程已通过继承的 fd 写入文件）
+    fs.closeSync(stdoutFd);
+    fs.closeSync(stderrFd);
+
+    // 让子进程在父进程退出后继续运行
+    child.unref();
+
     // 写入 prompt 到 stdin
     child.stdin.write(prompt);
     child.stdin.end();
 
+    // PID + stdout_file 写入 DB
+    try {
+        db.prepare('UPDATE model_runs SET pid = ?, stdout_file = ?, stdout_offset = 0 WHERE task_id = ? AND model_id = ?')
+            .run(child.pid, stdoutFile, taskId, modelId);
+    } catch (e) {
+        console.error(`[Executor] Failed to persist PID for ${subtaskKey}:`, e.message);
+    }
+
     // 使用 IngestHandler 直接处理输出（不再 spawn 独立进程）
     const { IngestHandler } = require('./ingestHandler');
-    const readline = require('readline');
 
     let ingestHandler;
     try {
@@ -395,13 +416,8 @@ function executeModel(taskId, modelId, modelConfig) {
         return result;
     }
 
-    // 创建 readline 接口处理 stdout
-    const rl = readline.createInterface({
-        input: child.stdout,
-        terminal: false
-    });
-
-    rl.on('line', (line) => {
+    // 使用 FileTailer 替代 readline 消费 stdout 文件
+    const fileTailer = new FileTailer(stdoutFile, 0, (line) => {
         const sanitized = sanitizeLine(line);
         logStream.write(sanitized + '\n');
         ingestHandler.processLine(sanitized);
@@ -409,34 +425,51 @@ function executeModel(taskId, modelId, modelConfig) {
         const entry = activeProcesses.get(subtaskKey);
         if (entry) entry.lastActivityTime = Date.now();
     });
+    fileTailer.start();
 
-    child.stderr.on('data', (data) => {
-        const sanitized = sanitizeLine(data.toString());
-        logStream.write(sanitized);
+    // stderr tailer
+    const stderrTailer = new FileTailer(stderrFile, 0, (line) => {
+        const sanitized = sanitizeLine(line);
+        logStream.write(sanitized + '\n');
         console.error(`[Executor ${subtaskKey} STDERR] ${sanitized.slice(0, 200)}`);
-    });
+    }, { pollInterval: 1000 });
+    stderrTailer.start();
 
+    // 进程结束时：延迟 500ms 等文件刷新完毕，再做最终处理
     child.on('close', () => {
-        logStream.end();
-        rl.close();
-        if (!ingestHandler.isFinished()) {
-            ingestHandler.finish();
-        }
+        setTimeout(() => {
+            if (fileTailer) { fileTailer.pollOnce(); fileTailer.stop(); }
+            if (stderrTailer) { stderrTailer.pollOnce(); stderrTailer.stop(); }
+            logStream.end();
+            if (!ingestHandler.isFinished()) {
+                ingestHandler.finish();
+            }
+        }, 500);
     });
 
     // 保存进程引用（包含每模型超时配置，供 watchdog 使用）
     activeProcesses.set(subtaskKey, {
         child,
         ingestHandler,
+        fileTailer,
+        stderrTailer,
+        logStream,
         lastActivityTime: Date.now(),
         activityTimeoutSeconds: modelConfig.activityTimeoutSeconds ?? null,
-        taskTimeoutSeconds: modelConfig.taskTimeoutSeconds ?? null
+        taskTimeoutSeconds: modelConfig.taskTimeoutSeconds ?? null,
+        pid: child.pid,
+        isReattached: false
     });
 
     // 清理完成时的回调
     child.on('exit', (code, signal) => {
         console.log(`[Executor ${subtaskKey}] Exited with code ${code}, signal ${signal}`);
         activeProcesses.delete(subtaskKey);
+
+        // 清除 DB 中的 pid（进程已死，pid 不再有效）
+        try {
+            db.prepare('UPDATE model_runs SET pid = NULL WHERE task_id = ? AND model_id = ?').run(taskId, modelId);
+        } catch (e) { /* ignore */ }
 
         // 恢复权限
         if (executorConfig.useIsolation) {
@@ -612,23 +645,39 @@ function cleanup(taskId, modelId) {
 }
 
 /**
- * 清理所有活跃进程
+ * 清理所有活跃进程 — 优雅分离模式
+ * 不杀死子进程，只保存状态并断开连接，让子进程继续运行
+ * 重启后由 watchdogService.recoverOrphanedTasks() 重连
  */
 function cleanupAll() {
-    console.log('[Executor] Cleaning up all processes...');
-    for (const [key, processes] of activeProcesses) {
+    console.log('[Executor] Graceful shutdown - detaching processes...');
+    for (const [key, entry] of activeProcesses) {
         try {
-            processes.child.kill('SIGTERM');
-            if (processes.ingestHandler && !processes.ingestHandler.isFinished()) {
-                processes.ingestHandler.finish();
+            // 保存 stdout offset 到 DB（用于重启后续读）
+            if (entry.fileTailer) {
+                const offset = entry.fileTailer.getOffset();
+                const [taskId, modelId] = key.split('/');
+                try {
+                    db.prepare('UPDATE model_runs SET stdout_offset = ? WHERE task_id = ? AND model_id = ?')
+                        .run(offset, taskId, modelId);
+                } catch (e) { /* DB may already be closing */ }
+                entry.fileTailer.stop();
             }
-        } catch (e) { }
+            if (entry.stderrTailer) entry.stderrTailer.stop();
+            if (entry.logStream) entry.logStream.end();
+            // flush 统计但不 finish（进程还活着）
+            if (entry.ingestHandler && !entry.ingestHandler.isFinished()) {
+                try { entry.ingestHandler.flush(); } catch (e) { /* ignore */ }
+            }
+        } catch (e) {
+            console.error(`[Executor] Detach error for ${key}:`, e.message);
+        }
     }
     activeProcesses.clear();
+    console.log('[Executor] All processes detached, server can safely exit');
 }
 
-// 进程退出时清理
-process.on('exit', cleanupAll);
+// 信号处理：优雅分离后退出
 process.on('SIGTERM', () => { cleanupAll(); process.exit(0); });
 process.on('SIGINT', () => { cleanupAll(); process.exit(0); });
 
@@ -640,5 +689,6 @@ module.exports = {
     cleanup,
     cleanupAll,
     activeProcesses,
-    getConfig: () => executorConfig
+    getConfig: () => executorConfig,
+    snapshotAgentTeamFiles
 };

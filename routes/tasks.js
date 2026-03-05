@@ -501,8 +501,41 @@ router.post('/:taskId/stop', async (req, res) => {
         const folderName = modelId;
         console.log(`[Control] Stopping model ${modelId} for task ${taskId}`);
 
-        const modelDir = path.join(config.TASKS_DIR, taskId, folderName);
-        try {
+        const subtaskKey = `${taskId}/${modelId}`;
+        let killed = false;
+
+        // 优先使用 PID-based kill（从 activeSubtaskProcesses 或 DB 获取 PID）
+        const activeEntry = activeSubtaskProcesses[subtaskKey];
+        let pid = null;
+        if (activeEntry) {
+            // 兼容 ChildProcess 对象和 { pid } 对象（重连条目）
+            pid = activeEntry.pid || (activeEntry.child && activeEntry.child.pid);
+        }
+        if (!pid) {
+            // 从 DB 查询 PID
+            try {
+                const dbRun = db.prepare("SELECT pid FROM model_runs WHERE task_id = ? AND model_id = ? AND pid IS NOT NULL").get(taskId, modelId);
+                if (dbRun) pid = dbRun.pid;
+            } catch (e) { /* ignore */ }
+        }
+
+        if (pid) {
+            console.log(`[Control] Killing model ${modelId} by PID ${pid}`);
+            try {
+                process.kill(-pid, 'SIGTERM');
+                killed = true;
+                // 5 秒后强制 SIGKILL 兜底
+                setTimeout(() => {
+                    try { process.kill(-pid, 'SIGKILL'); } catch (e) { /* already dead */ }
+                }, 5000);
+            } catch (e) {
+                try { process.kill(pid, 'SIGKILL'); killed = true; } catch (e2) { /* already dead */ }
+            }
+        }
+
+        // Fallback: pkill 模式匹配（兼容旧进程）
+        if (!killed) {
+            const modelDir = path.join(config.TASKS_DIR, taskId, folderName);
             try {
                 execSync(`pkill -9 -f "${modelDir}" 2>/dev/null || true`, { timeout: 5000 });
             } catch (e) { /* ignore */ }
@@ -510,23 +543,30 @@ router.post('/:taskId/stop', async (req, res) => {
             try {
                 const pids = execSync(`ps aux | grep -E "claude.*${taskId}.*${folderName}" | grep -v grep | awk '{print $2}'`, { timeout: 5000 }).toString().trim();
                 if (pids) {
-                    pids.split('\n').forEach(pid => {
-                        if (pid) {
-                            try { execSync(`kill -9 ${pid} 2>/dev/null || true`); } catch (e) { /* ignore */ }
+                    pids.split('\n').forEach(p => {
+                        if (p) {
+                            try { execSync(`kill -9 ${p} 2>/dev/null || true`); } catch (e) { /* ignore */ }
                         }
                     });
                 }
             } catch (e) { /* ignore */ }
+        }
 
-            console.log(`[Control] Kill commands executed for model ${modelId}`);
-        } catch (e) {
-            console.log(`[Control] pkill for model ${modelId} completed (may have found no processes)`);
+        console.log(`[Control] Kill commands executed for model ${modelId}`);
+
+        // 停止 FileTailer（如果有 activeProcesses 条目）
+        const executorService = require('../services/executorService');
+        const procEntry = executorService.activeProcesses.get(subtaskKey);
+        if (procEntry) {
+            if (procEntry.fileTailer) { try { procEntry.fileTailer.stop(); } catch (e) { /* ignore */ } }
+            if (procEntry.stderrTailer) { try { procEntry.stderrTailer.stop(); } catch (e) { /* ignore */ } }
+            if (procEntry.logStream) { try { procEntry.logStream.end(); } catch (e) { /* ignore */ } }
+            executorService.activeProcesses.delete(subtaskKey);
         }
 
         try {
-            db.prepare("UPDATE model_runs SET status = 'stopped', stop_reason = 'manual_stop' WHERE task_id = ? AND model_id = ? AND status = 'running'").run(taskId, modelId);
+            db.prepare("UPDATE model_runs SET status = 'stopped', stop_reason = 'manual_stop', pid = NULL WHERE task_id = ? AND model_id = ? AND status = 'running'").run(taskId, modelId);
 
-            const subtaskKey = `${taskId}/${modelId}`;
             delete activeSubtaskProcesses[subtaskKey];
 
             checkAndUpdateTaskStatus(taskId);
@@ -537,24 +577,49 @@ router.post('/:taskId/stop', async (req, res) => {
     } else {
         console.log(`[Control] Stopping entire task ${taskId}`);
 
+        const executorService = require('../services/executorService');
         const taskDir = path.join(config.TASKS_DIR, taskId);
-        for (const [key, child] of Object.entries(activeSubtaskProcesses)) {
+        const killedPids = new Set();
+
+        // 从 activeSubtaskProcesses 获取 PID（兼容 ChildProcess 对象和 { pid } 对象）
+        for (const [key, entry] of Object.entries(activeSubtaskProcesses)) {
             if (key.startsWith(`${taskId}/`)) {
-                try {
-                    const pid = child.pid;
+                const pid = entry.pid || (entry.child && entry.child.pid);
+                if (pid) {
                     console.log(`[Control] Killing subtask process ${key} (PID ${pid})`);
                     try {
                         process.kill(-pid, 'SIGTERM');
+                        killedPids.add(pid);
                     } catch (e) {
-                        try { process.kill(-pid, 'SIGKILL'); } catch (e2) { }
+                        try { process.kill(pid, 'SIGKILL'); killedPids.add(pid); } catch (e2) { }
                     }
-                } catch (e) {
-                    console.error(`[Control] Error killing subtask ${key}:`, e);
-                    try { child.kill('SIGKILL'); } catch (e2) { }
+                } else if (entry.kill) {
+                    try { entry.kill('SIGKILL'); } catch (e2) { }
+                }
+                // 停止 FileTailer
+                const procEntry = executorService.activeProcesses.get(key);
+                if (procEntry) {
+                    if (procEntry.fileTailer) { try { procEntry.fileTailer.stop(); } catch (e) { /* ignore */ } }
+                    if (procEntry.stderrTailer) { try { procEntry.stderrTailer.stop(); } catch (e) { /* ignore */ } }
+                    if (procEntry.logStream) { try { procEntry.logStream.end(); } catch (e) { /* ignore */ } }
+                    executorService.activeProcesses.delete(key);
                 }
                 delete activeSubtaskProcesses[key];
             }
         }
+
+        // 从 DB 补杀 activeSubtaskProcesses 中漏掉的进程
+        try {
+            const dbRuns = db.prepare("SELECT model_id, pid FROM model_runs WHERE task_id = ? AND status = 'running' AND pid IS NOT NULL").all(taskId);
+            for (const run of dbRuns) {
+                if (!killedPids.has(run.pid)) {
+                    console.log(`[Control] Killing DB-tracked process ${taskId}/${run.model_id} (PID ${run.pid})`);
+                    try { process.kill(-run.pid, 'SIGTERM'); } catch (e) {
+                        try { process.kill(run.pid, 'SIGKILL'); } catch (e2) { /* ignore */ }
+                    }
+                }
+            }
+        } catch (e) { /* ignore */ }
 
         try {
             execSync(`pkill -f "claude.*${taskDir}" 2>/dev/null || true`, { timeout: 5000 });
@@ -565,7 +630,7 @@ router.post('/:taskId/stop', async (req, res) => {
 
         try {
             db.prepare("UPDATE task_queue SET status = 'stopped', completed_at = CURRENT_TIMESTAMP WHERE task_id = ?").run(taskId);
-            db.prepare("UPDATE model_runs SET status = 'stopped', stop_reason = 'manual_stop' WHERE task_id = ? AND status IN ('running', 'pending')").run(taskId);
+            db.prepare("UPDATE model_runs SET status = 'stopped', stop_reason = 'manual_stop', pid = NULL WHERE task_id = ? AND status IN ('running', 'pending')").run(taskId);
         } catch (e) {
             console.error('Error updating DB for stop:', e);
             return res.status(500).json({ error: 'Failed to update task status' });
@@ -697,6 +762,9 @@ router.post('/:taskId/start', (req, res) => {
                     count_write = NULL,
                     count_bash = NULL,
                     previewable = NULL,
+                    pid = NULL,
+                    stdout_file = NULL,
+                    stdout_offset = 0,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE task_id = ? AND model_id = ?
             `).run(taskId, modelId);
@@ -721,6 +789,12 @@ router.post('/:taskId/start', (req, res) => {
             } else {
                 console.log(`[Control] Log file does not exist: ${logFile}`);
             }
+
+            // 清理 stdout/stderr 文件
+            const stdoutFile = path.join(config.TASKS_DIR, taskId, 'logs', `${folderName}.stdout`);
+            const stderrFile = path.join(config.TASKS_DIR, taskId, 'logs', `${folderName}.stderr`);
+            try { if (fs.existsSync(stdoutFile)) fs.unlinkSync(stdoutFile); } catch (e) { /* ignore */ }
+            try { if (fs.existsSync(stderrFile)) fs.unlinkSync(stderrFile); } catch (e) { /* ignore */ }
 
             // 清理 Agent Teams 残留数据
             cleanupAgentTeamsData(taskId, modelId);
@@ -748,6 +822,12 @@ router.post('/:taskId/start', (req, res) => {
                     fs.unlinkSync(logFile);
                 }
 
+                // 清理 stdout/stderr 文件
+                const stdoutFile = path.join(config.TASKS_DIR, taskId, 'logs', `${run.model_id}.stdout`);
+                const stderrFile = path.join(config.TASKS_DIR, taskId, 'logs', `${run.model_id}.stderr`);
+                try { if (fs.existsSync(stdoutFile)) fs.unlinkSync(stdoutFile); } catch (e) { /* ignore */ }
+                try { if (fs.existsSync(stderrFile)) fs.unlinkSync(stderrFile); } catch (e) { /* ignore */ }
+
                 // 清理 Agent Teams 残留数据
                 cleanupAgentTeamsData(taskId, run.model_id);
             }
@@ -769,6 +849,9 @@ router.post('/:taskId/start', (req, res) => {
                     count_bash = NULL,
                     previewable = NULL,
                     retry_count = 0,
+                    pid = NULL,
+                    stdout_file = NULL,
+                    stdout_offset = 0,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE task_id = ? AND status != 'completed'
             `).run(taskId);

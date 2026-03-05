@@ -102,7 +102,8 @@ function tryAutoRetry(taskId, modelId) {
                     started_at = NULL, duration = NULL, turns = NULL,
                     input_tokens = NULL, output_tokens = NULL, cache_read_tokens = NULL,
                     count_todo_write = NULL, count_read = NULL, count_write = NULL, count_bash = NULL,
-                    previewable = NULL
+                    previewable = NULL,
+                    pid = NULL, stdout_file = NULL, stdout_offset = 0
                 WHERE task_id = ? AND model_id = ?
             `).run(newRetryCount, taskId, modelId);
 
@@ -154,31 +155,35 @@ function executeSubtask(taskId, modelId, modelConfig) {
         console.log(`[Subtask ${subtaskKey} EXIT] Process exited with code ${code} and signal ${signal}`);
         delete activeSubtaskProcesses[subtaskKey];
 
-        const currentStatus = db.prepare("SELECT status, stop_reason FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId);
-        if (currentStatus && currentStatus.status === 'running') {
-            if (code === 0) {
-                db.prepare("UPDATE model_runs SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+        // 延迟 1000ms 等待 executorService 的 close handler（500ms 延迟）完成
+        // FileTailer 最终刷新和 IngestHandler finish 需要时间
+        setTimeout(() => {
+            const currentStatus = db.prepare("SELECT status, stop_reason FROM model_runs WHERE task_id = ? AND model_id = ?").get(taskId, modelId);
+            if (currentStatus && currentStatus.status === 'running') {
+                if (code === 0) {
+                    db.prepare("UPDATE model_runs SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
 
-                // 如果子任务成功完成，立即生成预览文件夹（隔离环境）并在后台进行 Preparation
-                previewService.preparePreview(taskId, modelId).catch(err => {
-                    console.error(`[Queue] Failed to trigger preview prep for ${taskId}/${modelId}:`, err);
-                });
-            } else {
-                // 非零退出码 = 中止，尝试自动重试
-                if (!tryAutoRetry(taskId, modelId)) {
-                    db.prepare("UPDATE model_runs SET status = 'stopped', stop_reason = 'non_zero_exit', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+                    // 如果子任务成功完成，立即生成预览文件夹（隔离环境）并在后台进行 Preparation
+                    previewService.preparePreview(taskId, modelId).catch(err => {
+                        console.error(`[Queue] Failed to trigger preview prep for ${taskId}/${modelId}:`, err);
+                    });
+                } else {
+                    // 非零退出码 = 中止，尝试自动重试
+                    if (!tryAutoRetry(taskId, modelId)) {
+                        db.prepare("UPDATE model_runs SET status = 'stopped', stop_reason = 'non_zero_exit', updated_at = CURRENT_TIMESTAMP WHERE task_id = ? AND model_id = ?").run(taskId, modelId);
+                    }
                 }
+            } else if (currentStatus && currentStatus.status === 'stopped' && currentStatus.stop_reason
+                       && currentStatus.stop_reason !== 'manual_stop') {
+                // IngestHandler 已将状态设为 stopped（is_error / abnormal_completion 等情况）
+                // 进程正常退出（code=0）但 ingestHandler 检测到内容异常，需要尝试自动重试
+                console.log(`[Queue] IngestHandler marked ${subtaskKey} as stopped (reason: ${currentStatus.stop_reason}), attempting auto-retry`);
+                tryAutoRetry(taskId, modelId);
             }
-        } else if (currentStatus && currentStatus.status === 'stopped' && currentStatus.stop_reason
-                   && currentStatus.stop_reason !== 'manual_stop') {
-            // IngestHandler 已将状态设为 stopped（is_error / abnormal_completion 等情况）
-            // 进程正常退出（code=0）但 ingestHandler 检测到内容异常，需要尝试自动重试
-            console.log(`[Queue] IngestHandler marked ${subtaskKey} as stopped (reason: ${currentStatus.stop_reason}), attempting auto-retry`);
-            tryAutoRetry(taskId, modelId);
-        }
 
-        checkAndUpdateTaskStatus(taskId);
-        setTimeout(processQueue, 100);
+            checkAndUpdateTaskStatus(taskId);
+            setTimeout(processQueue, 100);
+        }, 1000);
     });
 }
 
@@ -206,5 +211,6 @@ module.exports = {
     activeSubtaskProcesses,
     processQueue,
     executeSubtask,
-    checkAndUpdateTaskStatus
+    checkAndUpdateTaskStatus,
+    tryAutoRetry
 };

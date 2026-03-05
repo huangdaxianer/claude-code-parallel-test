@@ -5,10 +5,15 @@
 const db = require('../db');
 
 class IngestHandler {
-    constructor(taskId, modelId) {
+    /**
+     * @param {string} taskId
+     * @param {string} modelId
+     * @param {object} [opts]
+     * @param {boolean} [opts.resume] - true = 从 DB 恢复状态（重连模式），不重置 status 为 running
+     */
+    constructor(taskId, modelId, opts = {}) {
         this.taskId = taskId;
         this.modelId = modelId;
-        this.lineNumber = 0;
         this.lastFlush = Date.now();
         this.finished = false;
 
@@ -19,36 +24,87 @@ class IngestHandler {
         }
         this.runId = run.id;
 
-        // 检查当前状态
-        const currentStatus = db.prepare('SELECT status FROM model_runs WHERE id = ?').get(this.runId);
-        this.wasStoppedByUser = currentStatus && currentStatus.status === 'stopped';
+        if (opts.resume) {
+            // ---- Resume 模式：从 DB 加载统计数据，不修改 status ----
+            const dbRun = db.prepare(`
+                SELECT duration, turns, input_tokens, output_tokens, cache_read_tokens,
+                       count_todo_write, count_read, count_write, count_bash, stop_reason
+                FROM model_runs WHERE id = ?
+            `).get(this.runId);
 
-        // 只有未手动停止时才更新为 running
-        if (!this.wasStoppedByUser) {
-            db.prepare('UPDATE model_runs SET status = ? WHERE id = ?').run('running', this.runId);
+            this.wasStoppedByUser = false;
+            this.lastAssistantEndType = null;
+            this.stats = {
+                status: 'running',
+                stopReason: dbRun ? dbRun.stop_reason : null,
+                duration: dbRun ? (dbRun.duration || 0) : 0,
+                turns: dbRun ? (dbRun.turns || 0) : 0,
+                inputTokens: dbRun ? (dbRun.input_tokens || 0) : 0,
+                outputTokens: dbRun ? (dbRun.output_tokens || 0) : 0,
+                cacheReadTokens: dbRun ? (dbRun.cache_read_tokens || 0) : 0,
+                toolCounts: {
+                    TodoWrite: dbRun ? (dbRun.count_todo_write || 0) : 0,
+                    Read: dbRun ? (dbRun.count_read || 0) : 0,
+                    Write: dbRun ? (dbRun.count_write || 0) : 0,
+                    Bash: dbRun ? (dbRun.count_bash || 0) : 0
+                }
+            };
+
+            // 恢复 lineNumber：从 log_entries 中获取最大行号
+            const maxLine = db.prepare('SELECT MAX(line_number) as maxLine FROM log_entries WHERE run_id = ?').get(this.runId);
+            this.lineNumber = maxLine && maxLine.maxLine ? maxLine.maxLine : 0;
+
+            // 恢复 lastAssistantEndType：查最近的 assistant 类型 log entry
+            const lastAssistant = db.prepare(`
+                SELECT content FROM log_entries
+                WHERE run_id = ? AND type = 'TXT'
+                ORDER BY id DESC LIMIT 1
+            `).get(this.runId);
+            if (lastAssistant && lastAssistant.content) {
+                try {
+                    const block = JSON.parse(lastAssistant.content);
+                    if (block.type) this.lastAssistantEndType = block.type;
+                } catch (e) { /* ignore parse error */ }
+            }
+
+            console.log(`[IngestHandler] Resumed for ${taskId}/${modelId} (runId: ${this.runId}, lineNumber: ${this.lineNumber})`);
+        } else {
+            // ---- 正常模式 ----
+            this.lineNumber = 0;
+
+            // 检查当前状态
+            const currentStatus = db.prepare('SELECT status FROM model_runs WHERE id = ?').get(this.runId);
+            this.wasStoppedByUser = currentStatus && currentStatus.status === 'stopped';
+
+            // 只有未手动停止时才更新为 running
+            if (!this.wasStoppedByUser) {
+                db.prepare('UPDATE model_runs SET status = ? WHERE id = ?').run('running', this.runId);
+            }
+
+            // 追踪最后一条 assistant 消息的末尾内容类型（text / tool_use / thought 等）
+            this.lastAssistantEndType = null;
+
+            // 统计数据
+            this.stats = {
+                status: 'running',
+                stopReason: null,
+                duration: 0,
+                turns: 0,
+                inputTokens: 0,
+                outputTokens: 0,
+                cacheReadTokens: 0,
+                toolCounts: {
+                    TodoWrite: 0,
+                    Read: 0,
+                    Write: 0,
+                    Bash: 0
+                }
+            };
+
+            console.log(`[IngestHandler] Initialized for ${taskId}/${modelId} (runId: ${this.runId})`);
         }
 
-        // 追踪最后一条 assistant 消息的末尾内容类型（text / tool_use / thought 等）
-        this.lastAssistantEndType = null;
-
-        // 统计数据
-        this.stats = {
-            status: 'running',
-            stopReason: null,
-            duration: 0,
-            turns: 0,
-            inputTokens: 0,
-            outputTokens: 0,
-            cacheReadTokens: 0,
-            toolCounts: {
-                TodoWrite: 0,
-                Read: 0,
-                Write: 0,
-                Bash: 0
-            }
-        };
-
-        // 预编译 SQL
+        // 预编译 SQL（正常和 resume 模式共用）
         this.updateStats = db.prepare(`
             UPDATE model_runs SET
                 status = ?,
@@ -74,8 +130,13 @@ class IngestHandler {
         this.updateLogStatus = db.prepare(`
             UPDATE log_entries SET status_class = ? WHERE run_id = ? AND tool_use_id = ?
         `);
+    }
 
-        console.log(`[IngestHandler] Initialized for ${taskId}/${modelId} (runId: ${this.runId})`);
+    /**
+     * 静态工厂方法：创建 resume 模式的 IngestHandler
+     */
+    static resume(taskId, modelId) {
+        return new IngestHandler(taskId, modelId, { resume: true });
     }
 
     /**
