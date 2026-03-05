@@ -138,6 +138,13 @@ router.get('/tasks', (req, res) => {
             FROM model_runs mr
         `).get();
 
+        // Count tasks that have at least one feedback response
+        const feedbackedResult = db.prepare(`
+            SELECT COUNT(DISTINCT fr.task_id) as feedbacked
+            FROM feedback_responses fr
+        `).get();
+        stats.feedbacked = feedbackedResult.feedbacked;
+
         return res.json({
             tasks: tasksWithRuns,
             total,
@@ -149,6 +156,44 @@ router.get('/tasks', (req, res) => {
     } catch (e) {
         console.error('Error fetching admin tasks:', e);
         return res.status(500).json({ error: 'Failed to fetch tasks' });
+    }
+});
+
+// 子任务完成/反馈分布统计
+router.get('/subtask-distribution', (req, res) => {
+    try {
+        const { type } = req.query; // 'completed' or 'feedbacked'
+        let rows;
+        if (type === 'feedbacked') {
+            // Distribution: how many tasks have X feedbacked model runs
+            rows = db.prepare(`
+                SELECT subtask_count, COUNT(*) as task_count
+                FROM (
+                    SELECT fr.task_id, COUNT(DISTINCT fr.model_id) as subtask_count
+                    FROM feedback_responses fr
+                    GROUP BY fr.task_id
+                ) sub
+                GROUP BY subtask_count
+                ORDER BY subtask_count ASC
+            `).all();
+        } else {
+            // Distribution: how many tasks have X completed model runs
+            rows = db.prepare(`
+                SELECT subtask_count, COUNT(*) as task_count
+                FROM (
+                    SELECT mr.task_id, COUNT(*) as subtask_count
+                    FROM model_runs mr
+                    WHERE mr.status IN ('completed', 'evaluated')
+                    GROUP BY mr.task_id
+                ) sub
+                GROUP BY subtask_count
+                ORDER BY subtask_count ASC
+            `).all();
+        }
+        return res.json({ distribution: rows });
+    } catch (e) {
+        console.error('Error fetching subtask distribution:', e);
+        return res.status(500).json({ error: 'Failed to fetch subtask distribution' });
     }
 });
 
@@ -662,10 +707,9 @@ router.get('/feedback-stats', (req, res) => {
     }
 });
 
-// 获取所有模型配置 (Admin) - 只返回对当前管理员用户组启用的模型
+// 获取所有模型配置 (Admin) - 返回所有模型，不按用户组过滤（模型管理页面需要看到全部模型）
 router.get('/models', (req, res) => {
     try {
-        const adminGroupId = req.user.group_id;
         const models = db.prepare('SELECT id as internal_id, model_id as id, endpoint_name as name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, is_preview_model, always_thinking_enabled, provider, created_at FROM model_configs ORDER BY created_at DESC').all();
         const groups = db.prepare('SELECT * FROM user_groups ORDER BY is_default DESC, name ASC').all();
 
@@ -677,15 +721,8 @@ router.get('/models', (req, res) => {
             settingsMap[s.model_id][s.group_id] = s;
         });
 
-        // Filter models: only include models enabled for the admin's user group
-        const enabledModels = models.filter(model => {
-            const setting = settingsMap[model.internal_id]?.[adminGroupId];
-            const isEnabled = setting ? setting.is_enabled : 1;
-            return isEnabled === 1;
-        });
-
         // Attach group settings to each model
-        const modelsWithGroupSettings = enabledModels.map(model => {
+        const modelsWithGroupSettings = models.map(model => {
             const groupSettings = groups.map(group => {
                 const setting = settingsMap[model.internal_id]?.[group.id];
                 return {

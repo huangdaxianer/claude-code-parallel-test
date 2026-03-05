@@ -48,15 +48,17 @@ function getTValue(df) {
     return 1.96;
 }
 
-// GET /api/admin/report/models - all enabled models for admin
+// GET /api/admin/report/models - 只返回对当前用户组启用的模型
 router.get('/models', (req, res) => {
     try {
+        const groupId = req.user.group_id;
         const models = db.prepare(`
-            SELECT mc.model_id as id, mc.endpoint_name as name, mc.description
+            SELECT mc.model_id as id, COALESCE(mc.description, mc.endpoint_name) as name, mc.description
             FROM model_configs mc
-            WHERE mc.model_id IS NOT NULL
+            LEFT JOIN model_group_settings mgs ON mc.id = mgs.model_id AND mgs.group_id = ?
+            WHERE mc.model_id IS NOT NULL AND COALESCE(mgs.is_enabled, 1) = 1
             ORDER BY mc.endpoint_name ASC
-        `).all();
+        `).all(groupId);
         res.json(models);
     } catch (e) {
         console.error('[Report] Error fetching models:', e);
@@ -131,12 +133,12 @@ router.post('/create', (req, res) => {
         const taskPlaceholders = taskIds.map(() => '?').join(',');
 
         const models = db.prepare(`
-            SELECT model_id as id, endpoint_name as name, description
+            SELECT model_id as id, COALESCE(description, endpoint_name) as name, description
             FROM model_configs WHERE model_id IN (${modelPlaceholders})
         `).all(...modelIds);
 
         const tasks = db.prepare(`
-            SELECT t.task_id, t.title, u.username
+            SELECT t.task_id, t.title, u.username, t.source_type
             FROM tasks t JOIN users u ON t.user_id = u.id
             WHERE t.task_id IN (${taskPlaceholders})
         `).all(...taskIds);
@@ -193,6 +195,15 @@ router.post('/create', (req, res) => {
             };
         }
 
+        // Map score for 3-point scale: 1→1, 2→3, 3→5 (align with 5-point)
+        function mapScore(rawScore, scoringType) {
+            if (scoringType === 'stars_3') {
+                const map = { 1: 1, 2: 3, 3: 5 };
+                return map[rawScore] || rawScore;
+            }
+            return rawScore;
+        }
+
         let scoreStats = null;
         let scoreQuestionMeta = null;
         if (reportType === 'trace_and_score') {
@@ -213,15 +224,6 @@ router.post('/create', (req, res) => {
                     SELECT id, stem, short_name, scoring_type, options_json, display_order
                     FROM feedback_questions WHERE is_active = 1 ORDER BY display_order, id
                 `).all();
-            }
-
-            // Map score for 3-point scale: 1→1, 2→3, 3→5 (align with 5-point)
-            function mapScore(rawScore, scoringType) {
-                if (scoringType === 'stars_3') {
-                    const map = { 1: 1, 2: 3, 3: 5 };
-                    return map[rawScore] || rawScore;
-                }
-                return rawScore;
             }
 
             // Build question metadata (for tooltip in report page)
@@ -382,7 +384,7 @@ router.post('/create', (req, res) => {
 
         const scoringComments = db.prepare(`
             SELECT fr.task_id, fr.model_id, fr.question_id, fr.comment, fr.score,
-                   mc.endpoint_name as model_name, t.title as task_title,
+                   COALESCE(mc.description, mc.endpoint_name) as model_name, t.title as task_title,
                    COALESCE(u_resp.username, u_task.username) as username
             FROM feedback_responses fr
             JOIN model_configs mc ON mc.model_id = fr.model_id
@@ -410,7 +412,7 @@ router.post('/create', (req, res) => {
         // 2) Voluntary feedback (user_feedback)
         const voluntaryFeedback = db.prepare(`
             SELECT uf.task_id, uf.model_id, uf.content,
-                   mc.endpoint_name as model_name, t.title as task_title, u.username
+                   COALESCE(mc.description, mc.endpoint_name) as model_name, t.title as task_title, u.username
             FROM user_feedback uf
             JOIN model_configs mc ON mc.model_id = uf.model_id
             JOIN tasks t ON t.task_id = uf.task_id
@@ -435,7 +437,7 @@ router.post('/create', (req, res) => {
         // 3) Inline comments (feedback_comments)
         const inlineComments = db.prepare(`
             SELECT fc.task_id, fc.model_id, fc.content, fc.target_type,
-                   mc.endpoint_name as model_name, t.title as task_title, u2.username
+                   COALESCE(mc.description, mc.endpoint_name) as model_name, t.title as task_title, u2.username
             FROM feedback_comments fc
             JOIN model_configs mc ON mc.model_id = fc.model_id
             JOIN tasks t ON t.task_id = fc.task_id
@@ -457,14 +459,64 @@ router.post('/create', (req, res) => {
             });
         }
 
+        // Build raw per-task data for frontend filtering
+        const allRunsRaw = db.prepare(`
+            SELECT task_id, model_id, duration, turns, input_tokens, output_tokens, cache_read_tokens,
+                   count_todo_write, count_read, count_write, count_bash
+            FROM model_runs WHERE task_id IN (${taskPlaceholders}) AND model_id IN (${modelPlaceholders})
+        `).all(...taskIds, ...modelIds);
+
+        const rawTaskData = {};
+        for (const t of tasks) {
+            rawTaskData[t.task_id] = {
+                sourceType: t.source_type || 'prompt',
+                models: {}
+            };
+        }
+        for (const run of allRunsRaw) {
+            if (!rawTaskData[run.task_id]) continue;
+            rawTaskData[run.task_id].models[run.model_id] = {
+                duration: run.duration || 0,
+                turns: run.turns || 0,
+                inputTokens: run.input_tokens || 0,
+                outputTokens: run.output_tokens || 0,
+                cacheReadTokens: run.cache_read_tokens || 0,
+                countTodoWrite: run.count_todo_write || 0,
+                countRead: run.count_read || 0,
+                countWrite: run.count_write || 0,
+                countBash: run.count_bash || 0,
+            };
+        }
+
+        // Add raw scores for frontend filtering (trace_and_score only)
+        if (reportType === 'trace_and_score') {
+            const allScoreRaw = db.prepare(`
+                SELECT fr.task_id, fr.model_id, fr.question_id, fr.score, fq.scoring_type
+                FROM feedback_responses fr
+                JOIN feedback_questions fq ON fq.id = fr.question_id
+                WHERE fr.task_id IN (${taskPlaceholders}) AND fr.model_id IN (${modelPlaceholders})
+                  AND fr.score IS NOT NULL AND fr.score > 0
+            `).all(...taskIds, ...modelIds);
+
+            for (const tid of taskIds) {
+                if (rawTaskData[tid]) rawTaskData[tid].scores = {};
+            }
+            for (const r of allScoreRaw) {
+                if (!rawTaskData[r.task_id]) continue;
+                if (!rawTaskData[r.task_id].scores[r.model_id]) rawTaskData[r.task_id].scores[r.model_id] = {};
+                rawTaskData[r.task_id].scores[r.model_id][r.question_id] = mapScore(r.score, r.scoring_type);
+            }
+        }
+
         const reportData = {
             type: reportType,
             models: models.map(m => ({ ...m, stats: modelStats[m.id] })),
-            tasks,
+            tasks: tasks.map(t => ({ task_id: t.task_id, title: t.title, username: t.username, sourceType: t.source_type || 'prompt' })),
             scoreStats,
             scoreQuestionMeta,
             questionWeights: questionWeights || null,
             userVoices,
+            rawTaskData,
         };
 
         let reportId;

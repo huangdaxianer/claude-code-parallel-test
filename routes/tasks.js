@@ -805,7 +805,7 @@ router.post('/:taskId/start', (req, res) => {
             }
 
             // 获取所有需要重启的 model_runs，清理旧日志和文件
-            const runsToRestart = db.prepare("SELECT id, model_id FROM model_runs WHERE task_id = ? AND status != 'completed'").all(taskId);
+            const runsToRestart = db.prepare("SELECT id, model_id FROM model_runs WHERE task_id = ? AND status NOT IN ('completed', 'evaluated')").all(taskId);
             for (const run of runsToRestart) {
                 // 删除旧日志
                 db.prepare("DELETE FROM log_entries WHERE run_id = ?").run(run.id);
@@ -853,7 +853,7 @@ router.post('/:taskId/start', (req, res) => {
                     stdout_file = NULL,
                     stdout_offset = 0,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE task_id = ? AND status != 'completed'
+                WHERE task_id = ? AND status NOT IN ('completed', 'evaluated')
             `).run(taskId);
         }
 

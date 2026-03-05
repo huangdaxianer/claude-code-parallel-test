@@ -23,7 +23,8 @@ export const AppState = {
         completed: 0,
         running: 0,
         pending: 0,
-        stopped: 0
+        stopped: 0,
+        feedbacked: 0
     },
 
     // Status

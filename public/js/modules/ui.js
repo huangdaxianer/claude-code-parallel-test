@@ -35,6 +35,7 @@ const Elements = {
         pending: () => document.getElementById('stat-pending'),
         completed: () => document.getElementById('stat-completed'),
         stopped: () => document.getElementById('stat-stopped'),
+        feedbacked: () => document.getElementById('stat-feedbacked'),
     },
 
     lastRefresh: () => document.getElementById('last-refresh')
@@ -114,6 +115,7 @@ export const UI = {
         if (Elements.stats.pending()) Elements.stats.pending().textContent = s.pending;
         if (Elements.stats.completed()) Elements.stats.completed().textContent = s.completed;
         if (Elements.stats.stopped()) Elements.stats.stopped().textContent = s.stopped;
+        if (Elements.stats.feedbacked()) Elements.stats.feedbacked().textContent = s.feedbacked;
     },
 
     // --- Tasks Table ---

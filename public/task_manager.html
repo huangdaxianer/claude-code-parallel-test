@@ -186,6 +186,34 @@
             color: #1e293b;
         }
 
+        .stat-card-value.feedbacked {
+            color: #8b5cf6;
+        }
+
+        .subtask-distribution {
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid #e2e8f0;
+            display: none;
+        }
+
+        .subtask-distribution.show {
+            display: block;
+        }
+
+        .subtask-distribution-item {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: #475569;
+            padding: 0.2rem 0;
+        }
+
+        .subtask-distribution-item .count {
+            font-weight: 600;
+            color: #0f172a;
+        }
+
         /* Table */
         .table-container {
             background: white;
@@ -1192,9 +1220,15 @@
                     <div class="stat-card-label">总任务数</div>
                     <div class="stat-card-value" id="stat-total">0</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card clickable" onclick="toggleSubtaskDistribution('completed')">
                     <div class="stat-card-label">已完成任务</div>
                     <div class="stat-card-value completed" id="stat-completed">0</div>
+                    <div class="subtask-distribution" id="dist-completed"></div>
+                </div>
+                <div class="stat-card clickable" onclick="toggleSubtaskDistribution('feedbacked')">
+                    <div class="stat-card-label">已反馈任务</div>
+                    <div class="stat-card-value feedbacked" id="stat-feedbacked">0</div>
+                    <div class="subtask-distribution" id="dist-feedbacked"></div>
                 </div>
                 <div class="stat-card clickable" onclick="openTaskListModal('running')">
                     <div class="stat-card-label">进行中任务</div>

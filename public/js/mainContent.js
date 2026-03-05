@@ -161,11 +161,9 @@
                             summary.className = 'json-summary';
                             var safePreview = event.preview_text.length > 200 ? event.preview_text.slice(0, 200) + '...' : event.preview_text;
 
-                            var standardTypes = ['TXT', 'USER', 'ERROR', 'SUBAGENT', 'SUBAGENT_RESULT', 'Bash', 'Write', 'Edit', 'Read', 'ExitPlanMode', 'EnterPlanMode', 'AskUserQuestion', 'TodoWrite', 'SendMessage', 'TeamCreate', 'TeamDelete', 'TaskCreate', 'TaskUpdate', 'TaskList'];
-                            var isStandard = standardTypes.includes(event.type);
-                            var displayType = isStandard ? event.type : 'ERROR';
-                            var displayClass = isStandard ? (event.status_class || 'type-tool') : 'type-error';
-                            var displayPreview = isStandard ? App.utils.escapeHtml(safePreview) : '';
+                            var displayType = event.type;
+                            var displayClass = event.status_class || 'type-tool';
+                            var displayPreview = App.utils.escapeHtml(safePreview);
 
                             summary.innerHTML =
                                 '<span class="json-type-badge ' + displayClass + '">' + displayType + '</span>' +

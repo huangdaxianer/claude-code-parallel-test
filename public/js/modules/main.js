@@ -983,6 +983,42 @@ window.openConfigModal = function () {
     UI.openConfigModal(AppState.queueStatus.maxParallelSubtasks);
 };
 
+window.toggleSubtaskDistribution = async function (type) {
+    const distEl = document.getElementById(`dist-${type}`);
+    if (!distEl) return;
+
+    // Toggle visibility
+    if (distEl.classList.contains('show')) {
+        distEl.classList.remove('show');
+        return;
+    }
+
+    distEl.innerHTML = '<div style="font-size: 0.8rem; color: #94a3b8; padding: 0.25rem 0;">加载中...</div>';
+    distEl.classList.add('show');
+
+    try {
+        const res = await fetch(`/api/admin/subtask-distribution?type=${type}`);
+        const data = await res.json();
+        const dist = data.distribution || [];
+
+        if (dist.length === 0) {
+            distEl.innerHTML = '<div style="font-size: 0.8rem; color: #94a3b8; padding: 0.25rem 0;">暂无数据</div>';
+            return;
+        }
+
+        const label = type === 'feedbacked' ? '反馈' : '完成';
+        distEl.innerHTML = dist.map(d =>
+            `<div class="subtask-distribution-item">
+                <span>${label}了 ${d.subtask_count} 条子任务</span>
+                <span class="count">${d.task_count} 个任务</span>
+            </div>`
+        ).join('');
+    } catch (e) {
+        console.error('Error fetching subtask distribution:', e);
+        distEl.innerHTML = '<div style="font-size: 0.8rem; color: #ef4444; padding: 0.25rem 0;">加载失败</div>';
+    }
+};
+
 window.openTaskListModal = async function (status) {
     const titleMap = { running: '进行中任务', stopped: '已中止任务' };
     const titleEl = document.getElementById('task-list-modal-title');
@@ -1023,26 +1059,84 @@ window.openTaskListModal = async function (status) {
 
         const showBatchRestart = status === 'stopped';
 
-        const rows = runs.map((r, i) => {
-            const title = escapeHtml(r.title || r.prompt?.substring(0, 60) || '-');
-            const time = r.created_at ? formatDateTime(r.created_at) : '-';
-            const reason = r.stop_reason ? (stopReasonMap[r.stop_reason] || r.stop_reason) : '-';
-            const retries = r.retry_count != null ? r.retry_count : 0;
-            const taskUrl = `/task.html?view_user=${encodeURIComponent(r.username || '')}&task=${encodeURIComponent(r.task_id)}`;
-            const checkboxHtml = showBatchRestart
-                ? `<td style="padding: 0.6rem 0.5rem; text-align: center;"><input type="checkbox" class="task-list-cb" data-task-id="${escapeHtml(r.task_id)}" /></td>`
-                : '';
-            return `<tr style="border-bottom: 1px solid #f1f5f9;">
-                ${checkboxHtml}
-                <td style="padding: 0.6rem 0.75rem; font-family: Menlo, monospace; font-size: 0.8rem;"><a href="${taskUrl}" target="_blank" style="color: #3b82f6; text-decoration: none;">${escapeHtml(r.task_id)}</a></td>
-                <td style="padding: 0.6rem 0.75rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${title}</td>
-                <td style="padding: 0.6rem 0.75rem; color: #64748b; font-size: 0.85rem;">${escapeHtml(r.username || '-')}</td>
-                <td style="padding: 0.6rem 0.75rem; color: #64748b; font-size: 0.85rem;">${escapeHtml(r.model_name || r.model_id || '-')}</td>
-                <td style="padding: 0.6rem 0.75rem; color: ${r.stop_reason ? '#ef4444' : '#64748b'}; font-size: 0.85rem;">${reason}</td>
-                <td style="padding: 0.6rem 0.75rem; color: #64748b; font-size: 0.85rem; text-align: center;">${retries}</td>
-                <td style="padding: 0.6rem 0.75rem; color: #64748b; font-size: 0.85rem; white-space: nowrap;">${time}</td>
-            </tr>`;
-        }).join('');
+        // Collect unique values for filters
+        const uniqueUsers = [...new Set(runs.map(r => r.username || '-'))].sort();
+        const uniqueModels = [...new Set(runs.map(r => r.model_name || r.model_id || '-'))].sort();
+        const uniqueReasons = [...new Set(runs.map(r => r.stop_reason || ''))].sort();
+
+        const filters = { user: '', model: '', reason: '' };
+
+        const buildFilterOption = (value, label) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+
+        const filterSelectStyle = 'padding: 0.3rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.8rem; color: #334155; background: #fff; min-width: 80px; max-width: 160px;';
+
+        const filterBarHtml = `<div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap;">
+            <span style="font-size: 0.8rem; color: #64748b;">筛选:</span>
+            <select id="tlm-filter-user" style="${filterSelectStyle}">
+                <option value="">全部用户</option>
+                ${uniqueUsers.map(u => buildFilterOption(u, u)).join('')}
+            </select>
+            <select id="tlm-filter-model" style="${filterSelectStyle}">
+                <option value="">全部模型</option>
+                ${uniqueModels.map(m => buildFilterOption(m, m)).join('')}
+            </select>
+            <select id="tlm-filter-reason" style="${filterSelectStyle}">
+                <option value="">全部原因</option>
+                ${uniqueReasons.filter(r => r).map(r => buildFilterOption(r, stopReasonMap[r] || r)).join('')}
+            </select>
+            <span id="tlm-filter-count" style="font-size: 0.8rem; color: #94a3b8; margin-left: auto;"></span>
+        </div>`;
+
+        function renderRows(filteredRuns) {
+            return filteredRuns.map(r => {
+                const title = escapeHtml(r.title || r.prompt?.substring(0, 60) || '-');
+                const time = r.created_at ? formatDateTime(r.created_at) : '-';
+                const reason = r.stop_reason ? (stopReasonMap[r.stop_reason] || r.stop_reason) : '-';
+                const retries = r.retry_count != null ? r.retry_count : 0;
+                const taskUrl = `/task.html?view_user=${encodeURIComponent(r.username || '')}&task=${encodeURIComponent(r.task_id)}`;
+                const checkboxHtml = showBatchRestart
+                    ? `<td style="padding: 0.6rem 0.5rem; text-align: center;"><input type="checkbox" class="task-list-cb" data-task-id="${escapeHtml(r.task_id)}" /></td>`
+                    : '';
+                return `<tr style="border-bottom: 1px solid #f1f5f9;">
+                    ${checkboxHtml}
+                    <td style="padding: 0.6rem 0.75rem; font-family: Menlo, monospace; font-size: 0.8rem;"><a href="${taskUrl}" target="_blank" style="color: #3b82f6; text-decoration: none;">${escapeHtml(r.task_id)}</a></td>
+                    <td style="padding: 0.6rem 0.75rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${title}</td>
+                    <td style="padding: 0.6rem 0.75rem; color: #64748b; font-size: 0.85rem;">${escapeHtml(r.username || '-')}</td>
+                    <td style="padding: 0.6rem 0.75rem; color: #64748b; font-size: 0.85rem;">${escapeHtml(r.model_name || r.model_id || '-')}</td>
+                    <td style="padding: 0.6rem 0.75rem; color: ${r.stop_reason ? '#ef4444' : '#64748b'}; font-size: 0.85rem;">${reason}</td>
+                    <td style="padding: 0.6rem 0.75rem; color: #64748b; font-size: 0.85rem; text-align: center;">${retries}</td>
+                    <td style="padding: 0.6rem 0.75rem; color: #64748b; font-size: 0.85rem; white-space: nowrap;">${time}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function applyFilters() {
+            const filtered = runs.filter(r => {
+                if (filters.user && (r.username || '-') !== filters.user) return false;
+                if (filters.model && (r.model_name || r.model_id || '-') !== filters.model) return false;
+                if (filters.reason && (r.stop_reason || '') !== filters.reason) return false;
+                return true;
+            });
+            const tbody = contentEl.querySelector('#tlm-tbody');
+            if (tbody) tbody.innerHTML = renderRows(filtered);
+            const countEl = document.getElementById('tlm-filter-count');
+            if (countEl) {
+                countEl.textContent = filtered.length < runs.length ? `${filtered.length} / ${runs.length} 条` : `共 ${runs.length} 条`;
+            }
+            // Reset select-all and update count
+            const selectAllCb = document.getElementById('task-list-select-all');
+            if (selectAllCb) selectAllCb.checked = false;
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            const countEl = document.getElementById('task-list-selected-count');
+            const batchBtn = document.getElementById('task-list-batch-restart-btn');
+            if (!countEl) return;
+            const checked = contentEl.querySelectorAll('.task-list-cb:checked');
+            countEl.textContent = checked.length;
+            if (batchBtn) batchBtn.disabled = checked.length === 0;
+        }
 
         const checkAllHtml = showBatchRestart
             ? `<th style="padding: 0.5rem 0.5rem; width: 36px; text-align: center;"><input type="checkbox" id="task-list-select-all" /></th>`
@@ -1055,7 +1149,7 @@ window.openTaskListModal = async function (status) {
                </div>`
             : '';
 
-        contentEl.innerHTML = `${batchBarHtml}<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+        contentEl.innerHTML = `${filterBarHtml}${batchBarHtml}<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
             <thead><tr style="border-bottom: 2px solid #e2e8f0; text-align: left;">
                 ${checkAllHtml}
                 <th style="padding: 0.5rem 0.75rem; font-weight: 600; color: #475569;">ID</th>
@@ -1066,28 +1160,30 @@ window.openTaskListModal = async function (status) {
                 <th style="padding: 0.5rem 0.75rem; font-weight: 600; color: #475569;">重试</th>
                 <th style="padding: 0.5rem 0.75rem; font-weight: 600; color: #475569;">创建时间</th>
             </tr></thead>
-            <tbody>${rows}</tbody>
+            <tbody id="tlm-tbody">${renderRows(runs)}</tbody>
         </table>`;
+
+        // Show initial count
+        const filterCountEl = document.getElementById('tlm-filter-count');
+        if (filterCountEl) filterCountEl.textContent = `共 ${runs.length} 条`;
+
+        // Filter event listeners
+        document.getElementById('tlm-filter-user')?.addEventListener('change', (e) => { filters.user = e.target.value; applyFilters(); });
+        document.getElementById('tlm-filter-model')?.addEventListener('change', (e) => { filters.model = e.target.value; applyFilters(); });
+        document.getElementById('tlm-filter-reason')?.addEventListener('change', (e) => { filters.reason = e.target.value; applyFilters(); });
 
         // Batch restart event bindings for stopped tasks
         if (showBatchRestart) {
             const selectAllCb = document.getElementById('task-list-select-all');
             const batchBtn = document.getElementById('task-list-batch-restart-btn');
-            const countEl = document.getElementById('task-list-selected-count');
-
-            const updateSelected = () => {
-                const checked = contentEl.querySelectorAll('.task-list-cb:checked');
-                countEl.textContent = checked.length;
-                batchBtn.disabled = checked.length === 0;
-            };
 
             selectAllCb?.addEventListener('change', () => {
                 contentEl.querySelectorAll('.task-list-cb').forEach(cb => { cb.checked = selectAllCb.checked; });
-                updateSelected();
+                updateSelectedCount();
             });
 
             contentEl.addEventListener('change', (e) => {
-                if (e.target.classList.contains('task-list-cb')) updateSelected();
+                if (e.target.classList.contains('task-list-cb')) updateSelectedCount();
             });
 
             batchBtn?.addEventListener('click', async () => {

@@ -193,8 +193,9 @@ function executeSubtask(taskId, modelId, modelConfig) {
 function checkAndUpdateTaskStatus(taskId) {
     const subtasks = db.prepare("SELECT status FROM model_runs WHERE task_id = ?").all(taskId);
 
-    const allCompleted = subtasks.every(s => s.status === 'completed');
-    const allStopped = subtasks.every(s => s.status === 'stopped' || s.status === 'completed');
+    const terminalSuccess = ['completed', 'evaluated'];
+    const allCompleted = subtasks.every(s => terminalSuccess.includes(s.status));
+    const allStopped = subtasks.every(s => s.status === 'stopped' || terminalSuccess.includes(s.status));
     const hasRunning = subtasks.some(s => s.status === 'running');
     const hasPending = subtasks.some(s => s.status === 'pending');
 

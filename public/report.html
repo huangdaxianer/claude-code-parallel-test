@@ -333,6 +333,61 @@
             color: white;
             border-color: #3b82f6;
         }
+
+        .filter-panel {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.75rem 1.5rem;
+        }
+        .filter-panel .filter-label {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #475569;
+            white-space: nowrap;
+        }
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .filter-group label {
+            font-size: 0.8rem;
+            color: #64748b;
+            white-space: nowrap;
+        }
+        .filter-group select,
+        .filter-group input[type="number"] {
+            padding: 0.3rem 0.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.4rem;
+            font-size: 0.8rem;
+            color: #334155;
+            background: #f8fafc;
+            outline: none;
+        }
+        .filter-group select:focus,
+        .filter-group input[type="number"]:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+        }
+        .filter-group input[type="number"] {
+            width: 60px;
+            text-align: center;
+        }
+        .filter-result {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-left: auto;
+        }
+        .filter-result strong {
+            color: #3b82f6;
+        }
     </style>
 </head>
 <body>
@@ -441,7 +496,33 @@
                 }
                 const qIds = Array.from(questionIds);
 
-                html += `<div class="section"><h2>评分统计</h2>`;
+                html += `<div class="section"><div class="section-header-row"><h2>评分统计</h2></div>`;
+
+                // Filter panel
+                if (data.rawTaskData && Object.keys(data.rawTaskData).length > 0) {
+                    html += `<div class="filter-panel" id="report-filter-panel">
+                        <span class="filter-label">筛选</span>
+                        <div class="filter-group">
+                            <label>任务类型</label>
+                            <select id="filter-source-type">
+                                <option value="all">全部</option>
+                                <option value="prompt">从零到一</option>
+                                <option value="upload">基于现有项目</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>最短轨迹 &ge;</label>
+                            <input type="number" id="filter-min-turns" min="0" placeholder="-">
+                            <label>轮</label>
+                        </div>
+                        <div class="filter-group">
+                            <label>最长轨迹 &le;</label>
+                            <input type="number" id="filter-max-turns" min="0" placeholder="-">
+                            <label>轮</label>
+                        </div>
+                        <span class="filter-result" id="filter-result-info"></span>
+                    </div>`;
+                }
 
                 // Chart container (rendered dynamically by initScoreSection)
                 html += `<div class="chart-container" id="score-chart-container"></div>`;
@@ -549,6 +630,34 @@
                 window.__scoreRows = scoreRows;
                 window.__scoreColumns = scoreColumns;
                 window.__scoreQIds = qIds;
+                window.__weightFracs = weightFracs;
+                window.__qMeta = qMeta;
+            }
+
+            // Filter panel for trace_only reports (when score section doesn't exist)
+            if (!isScoreReport && data.rawTaskData) {
+                html += `<div class="filter-panel" id="report-filter-panel">
+                    <span class="filter-label">筛选</span>
+                    <div class="filter-group">
+                        <label>任务类型</label>
+                        <select id="filter-source-type">
+                            <option value="all">全部</option>
+                            <option value="prompt">从零到一</option>
+                            <option value="upload">基于现有项目</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>最短轨迹 &ge;</label>
+                        <input type="number" id="filter-min-turns" min="0" placeholder="-">
+                        <label>轮</label>
+                    </div>
+                    <div class="filter-group">
+                        <label>最长轨迹 &le;</label>
+                        <input type="number" id="filter-max-turns" min="0" placeholder="-">
+                        <label>轮</label>
+                    </div>
+                    <span class="filter-result" id="filter-result-info"></span>
+                </div>`;
             }
 
             // Trace Stats Table (sortable) — after score section
@@ -587,18 +696,25 @@
             window.__traceColumns = traceColumns;
 
             // User Voices
+            html += `<div class="section" id="voices-section"`;
+            if (!data.userVoices || data.userVoices.length === 0) html += ` style="display:none"`;
+            html += `>`;
             if (data.userVoices && data.userVoices.length > 0) {
-                html += renderUserVoices(data.userVoices, data.models);
+                html += renderUserVoicesInner(data.userVoices, data.models);
             }
+            html += `</div>`;
 
             // Tasks List
-            html += `<div class="section"><h2>分析任务列表</h2><div class="task-list">`;
+            html += `<div class="section"><h2>分析任务列表</h2><div class="task-list" id="task-list-chips">`;
             for (const t of data.tasks) {
                 html += `<span class="task-chip">${esc(t.title || 'Untitled')} (${esc(t.username)}) [${t.task_id}]</span>`;
             }
             html += `</div></div>`;
 
             document.getElementById('report-content').innerHTML = html;
+
+            // Store full report data for filtering
+            window.__reportData = data;
 
             // Initialize trace table rows and sorting
             if (window.__traceRows) {
@@ -618,6 +734,9 @@
             if (window.__scoreRows) {
                 initScoreSection();
             }
+
+            // Initialize filter panel
+            initFilterPanel(data);
         }
 
         function renderTraceRows(rows) {
@@ -706,7 +825,9 @@
             let currentSortDir = null; // 'asc' | 'desc' | null
 
             table.querySelectorAll('th.sortable').forEach(th => {
-                th.addEventListener('click', () => {
+                // Remove old handler if re-initializing
+                if (th._sortHandler) th.removeEventListener('click', th._sortHandler);
+                const handler = () => {
                     const key = th.dataset.sortKey;
 
                     if (descOnly) {
@@ -753,14 +874,15 @@
                         });
                     }
                     renderFn(sorted);
-                });
+                };
+                th._sortHandler = handler;
+                th.addEventListener('click', handler);
             });
         }
 
-        function renderUserVoices(voices, models) {
+        function renderUserVoicesInner(voices, models) {
             const catClass = { score: 'voice-cat-score', voluntary: 'voice-cat-voluntary', inline: 'voice-cat-inline' };
 
-            // Group by model, then by category
             const modelOrder = models.map(m => m.id);
             const modelNameMap = {};
             models.forEach(m => { modelNameMap[m.id] = m.name; });
@@ -772,7 +894,7 @@
                 grouped[v.modelId][v.category].push(v);
             }
 
-            let html = `<div class="section"><h2>用户之声</h2>`;
+            let html = `<h2>用户之声</h2>`;
             html += `<table class="data-table">
                 <thead><tr>
                     <th style="width:140px;">模型</th>
@@ -818,7 +940,7 @@
                 }
             }
 
-            html += `</tbody></table></div>`;
+            html += `</tbody></table>`;
             return html;
         }
 
@@ -941,28 +1063,273 @@
             const table = document.getElementById('score-table');
             if (table) {
                 table.querySelectorAll('th.sortable').forEach(th => {
-                    th.addEventListener('click', () => {
+                    if (th._scoreSortHandler) th.removeEventListener('click', th._scoreSortHandler);
+                    const handler = () => {
                         const key = th.dataset.sortKey;
                         if (key === 'name') {
                             sortAndRender(key);
                         } else {
                             setDimension(key);
                         }
-                    });
+                    };
+                    th._scoreSortHandler = handler;
+                    th.addEventListener('click', handler);
                 });
-                table.addEventListener('click', (e) => {
-                    const cell = e.target.closest('.score-cell-link');
-                    if (!cell) return;
-                    const modelId = cell.dataset.modelId;
-                    const targetCat = cell.dataset.targetCategory;
-                    if (!modelId || !targetCat) return;
-                    const id = `voice-${slugForId(modelId)}-${slugForId(targetCat)}`;
-                    const el = document.getElementById(id);
-                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                });
+                if (!table._voiceClickHandler) {
+                    table._voiceClickHandler = (e) => {
+                        const cell = e.target.closest('.score-cell-link');
+                        if (!cell) return;
+                        const modelId = cell.dataset.modelId;
+                        const targetCat = cell.dataset.targetCategory;
+                        if (!modelId || !targetCat) return;
+                        const id = `voice-${slugForId(modelId)}-${slugForId(targetCat)}`;
+                        const el = document.getElementById(id);
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    };
+                    table.addEventListener('click', table._voiceClickHandler);
+                }
             }
 
             setDimension('avg');
+        }
+
+        // --- Filter logic ---
+
+        function getTValueFront(df) {
+            const tTable = {
+                1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571,
+                6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
+                11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145, 15: 2.131,
+                16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093, 20: 2.086,
+                25: 2.060, 30: 2.042
+            };
+            if (tTable[df]) return tTable[df];
+            const keys = Object.keys(tTable).map(Number).sort((a, b) => a - b);
+            for (let i = 0; i < keys.length - 1; i++) {
+                if (df > keys[i] && df < keys[i + 1]) {
+                    const ratio = (df - keys[i]) / (keys[i + 1] - keys[i]);
+                    return tTable[keys[i]] * (1 - ratio) + tTable[keys[i + 1]] * ratio;
+                }
+            }
+            return 1.96;
+        }
+
+        function computeCI95Front(values) {
+            if (values.length === 0) return { mean: 0, lower: 0, upper: 0 };
+            const n = values.length;
+            const mean = values.reduce((a, b) => a + b, 0) / n;
+            if (n === 1) return { mean, lower: mean, upper: mean };
+            const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / (n - 1);
+            const stdErr = Math.sqrt(variance / n);
+            const tValue = n <= 30 ? getTValueFront(n - 1) : 1.96;
+            const margin = tValue * stdErr;
+            return {
+                mean: Math.round(mean * 100) / 100,
+                lower: Math.round((mean - margin) * 100) / 100,
+                upper: Math.round((mean + margin) * 100) / 100
+            };
+        }
+
+        function getFilteredTaskIds(data) {
+            const raw = data.rawTaskData;
+            if (!raw) return data.tasks.map(t => t.task_id);
+
+            const sourceType = document.getElementById('filter-source-type')?.value || 'all';
+            const minTurnsVal = document.getElementById('filter-min-turns')?.value;
+            const maxTurnsVal = document.getElementById('filter-max-turns')?.value;
+            const minTurns = minTurnsVal !== '' && minTurnsVal !== undefined ? parseInt(minTurnsVal) : null;
+            const maxTurns = maxTurnsVal !== '' && maxTurnsVal !== undefined ? parseInt(maxTurnsVal) : null;
+
+            const modelIds = data.models.map(m => m.id);
+
+            return data.tasks.filter(t => {
+                const taskRaw = raw[t.task_id];
+                if (!taskRaw) return true;
+
+                // Filter by source type
+                if (sourceType !== 'all' && taskRaw.sourceType !== sourceType) return false;
+
+                // Filter by turns (across all selected models)
+                if (minTurns !== null || maxTurns !== null) {
+                    const turnsArr = modelIds
+                        .map(mid => taskRaw.models[mid]?.turns)
+                        .filter(t => t != null && t > 0);
+                    if (turnsArr.length === 0) return true; // no turns data, keep
+
+                    const shortest = Math.min(...turnsArr);
+                    const longest = Math.max(...turnsArr);
+
+                    // 最短轨迹 >= minTurns → complex tasks
+                    if (minTurns !== null && shortest < minTurns) return false;
+                    // 最长轨迹 <= maxTurns → simple tasks
+                    if (maxTurns !== null && longest > maxTurns) return false;
+                }
+
+                return true;
+            }).map(t => t.task_id);
+        }
+
+        function recomputeFromRawData(data, filteredTaskIds) {
+            const raw = data.rawTaskData;
+            if (!raw) return;
+
+            const modelIds = data.models.map(m => m.id);
+            const filteredSet = new Set(filteredTaskIds);
+
+            // Recompute trace stats
+            const round2 = (v) => Math.round(v * 100) / 100;
+            const avg = (arr) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
+            const newTraceRows = [];
+            for (const model of data.models) {
+                const runs = filteredTaskIds
+                    .map(tid => raw[tid]?.models[model.id])
+                    .filter(r => r != null);
+                if (runs.length === 0) continue;
+
+                const durations = runs.map(r => r.duration);
+                const turnsList = runs.map(r => r.turns);
+                const inputTokens = runs.map(r => r.inputTokens);
+                const outputTokens = runs.map(r => r.outputTokens);
+                const todoWrites = runs.map(r => r.countTodoWrite);
+                const reads = runs.map(r => r.countRead);
+                const writes = runs.map(r => r.countWrite);
+                const bashes = runs.map(r => r.countBash);
+
+                newTraceRows.push({
+                    name: model.name,
+                    taskCount: runs.length,
+                    avgDuration: round2(avg(durations)),
+                    avgTurns: round2(avg(turnsList)),
+                    avgInputTokens: round2(avg(inputTokens)),
+                    avgOutputTokens: round2(avg(outputTokens)),
+                    avgTodoWrite: round2(avg(todoWrites)),
+                    avgRead: round2(avg(reads)),
+                    avgWrite: round2(avg(writes)),
+                    avgBash: round2(avg(bashes)),
+                    duration: computeCI95Front(durations),
+                    turns: computeCI95Front(turnsList),
+                    inputTokens: computeCI95Front(inputTokens),
+                    outputTokens: computeCI95Front(outputTokens),
+                    todoWrite: computeCI95Front(todoWrites),
+                    read: computeCI95Front(reads),
+                    write: computeCI95Front(writes),
+                    bash: computeCI95Front(bashes),
+                });
+            }
+            window.__traceRows = newTraceRows;
+            renderTraceRows(newTraceRows);
+            initSortableTable('trace-table', newTraceRows, window.__traceColumns, renderTraceRows, { descOnly: true });
+
+            // Recompute score stats (if applicable)
+            const qIds = window.__scoreQIds;
+            const weightFracs = window.__weightFracs;
+            if (!qIds || !weightFracs) return;
+
+            const newScoreRows = [];
+            for (const model of data.models) {
+                const row = { name: model.name, modelId: model.id };
+                let weightedSum = 0, totalWeight = 0;
+
+                for (const qId of qIds) {
+                    // Collect scores for filtered tasks where ALL models have scores
+                    const scores = [];
+                    for (const tid of filteredTaskIds) {
+                        const taskScores = raw[tid]?.scores;
+                        if (!taskScores) continue;
+                        // Check all models have score for this question on this task
+                        const allHave = modelIds.every(mid => taskScores[mid]?.[qId] != null);
+                        if (!allHave) continue;
+                        scores.push(taskScores[model.id][qId]);
+                    }
+
+                    if (scores.length > 0) {
+                        const ci = computeCI95Front(scores);
+                        row['q_' + qId] = ci.mean;
+                        row['q_' + qId + '_ci'] = `[${fmtNum(ci.lower)}, ${fmtNum(ci.upper)}]`;
+                        row['q_' + qId + '_lower'] = ci.lower;
+                        row['q_' + qId + '_upper'] = ci.upper;
+                        const w = weightFracs[qId] || 0;
+                        weightedSum += ci.mean * w;
+                        totalWeight += w;
+                    } else {
+                        row['q_' + qId] = null;
+                    }
+                }
+
+                row.avg = totalWeight > 0 ? Math.round(weightedSum * 100) / 100 : null;
+
+                // Recompute avg CI from per-task weighted sums
+                const perTaskWeightedSums = [];
+                for (const tid of filteredTaskIds) {
+                    const taskScores = raw[tid]?.scores;
+                    if (!taskScores) continue;
+                    const allHave = qIds.every(qId => {
+                        return modelIds.every(mid => taskScores[mid]?.[qId] != null);
+                    });
+                    if (!allHave) continue;
+                    let ws = 0;
+                    for (const qId of qIds) {
+                        ws += (taskScores[model.id][qId] || 0) * (weightFracs[qId] || 0);
+                    }
+                    perTaskWeightedSums.push(ws);
+                }
+                if (perTaskWeightedSums.length > 0) {
+                    const avgCI = computeCI95Front(perTaskWeightedSums);
+                    row.avg_lower = avgCI.lower;
+                    row.avg_upper = avgCI.upper;
+                }
+
+                newScoreRows.push(row);
+            }
+
+            window.__scoreRows = newScoreRows;
+            // Re-init score section with new data
+            initScoreSection();
+
+            // Update task list
+            const taskListEl = document.getElementById('task-list-chips');
+            if (taskListEl) {
+                taskListEl.innerHTML = data.tasks
+                    .filter(t => filteredSet.has(t.task_id))
+                    .map(t => `<span class="task-chip">${esc(t.title || 'Untitled')} (${esc(t.username)}) [${t.task_id}]</span>`)
+                    .join('');
+            }
+
+            // Update user voices
+            if (data.userVoices) {
+                const filteredVoices = data.userVoices.filter(v => filteredSet.has(v.taskId));
+                const voicesSection = document.getElementById('voices-section');
+                if (voicesSection) {
+                    if (filteredVoices.length > 0) {
+                        voicesSection.innerHTML = renderUserVoicesInner(filteredVoices, data.models);
+                        voicesSection.style.display = '';
+                    } else {
+                        voicesSection.style.display = 'none';
+                    }
+                }
+            }
+        }
+
+        function initFilterPanel(data) {
+            if (!data.rawTaskData) return;
+
+            const panel = document.getElementById('report-filter-panel');
+            if (!panel) return;
+
+            const totalTasks = data.tasks.length;
+            const infoEl = document.getElementById('filter-result-info');
+            if (infoEl) infoEl.innerHTML = `<strong>${totalTasks}</strong> / ${totalTasks} 个任务`;
+
+            function onFilterChange() {
+                const filteredIds = getFilteredTaskIds(data);
+                if (infoEl) infoEl.innerHTML = `<strong>${filteredIds.length}</strong> / ${totalTasks} 个任务`;
+                recomputeFromRawData(data, filteredIds);
+            }
+
+            document.getElementById('filter-source-type')?.addEventListener('change', onFilterChange);
+            document.getElementById('filter-min-turns')?.addEventListener('input', onFilterChange);
+            document.getElementById('filter-max-turns')?.addEventListener('input', onFilterChange);
         }
 
         loadReport();

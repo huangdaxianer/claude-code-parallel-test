@@ -389,6 +389,18 @@ class IngestHandler {
             previewText = input.status ? `#${input.task_id || ''} → ${input.status}` : JSON.stringify(input);
         } else if (toolName === 'TaskList') {
             previewText = input.team_name || 'list tasks';
+        } else if (toolName === 'Glob') {
+            previewText = input.pattern || '';
+        } else if (toolName === 'Grep') {
+            previewText = input.pattern || '';
+        } else if (toolName === 'WebSearch') {
+            previewText = input.query || '';
+        } else if (toolName === 'WebFetch') {
+            previewText = input.url || '';
+        } else if (toolName === 'NotebookEdit') {
+            previewText = input.notebook_path ? input.notebook_path.split('/').pop() : '';
+        } else if (toolName === 'Skill') {
+            previewText = input.skill || '';
         } else {
             previewText = JSON.stringify(input);
         }
