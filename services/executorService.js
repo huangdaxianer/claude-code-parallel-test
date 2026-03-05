@@ -10,6 +10,11 @@ const { FileTailer } = require('../utils/fileTailer');
 // 活跃进程 Map<"taskId/modelId", ChildProcess>
 const activeProcesses = new Map();
 
+// firejail CPU 核心轮转分配计数器
+let sandboxCounter = 0;
+const CPU_CORES_PER_SANDBOX = 4;
+const TOTAL_CPU_CORES = os.cpus().length;
+
 // 环境配置（启动时初始化）
 let executorConfig = {
     useIsolation: false,
@@ -172,6 +177,15 @@ function buildFirejailArgs(taskDir, modelId) {
 
     // 资源限制：降低调度优先级，防止沙箱内进程抢占过多 CPU
     args.push('--nice=10');
+
+    // 限制每个沙箱可用的 CPU 核心数，防止单个任务吃满所有核心
+    const startCore = (sandboxCounter * CPU_CORES_PER_SANDBOX) % TOTAL_CPU_CORES;
+    const cores = [];
+    for (let i = 0; i < CPU_CORES_PER_SANDBOX; i++) {
+        cores.push((startCore + i) % TOTAL_CPU_CORES);
+    }
+    args.push(`--cpu=${cores.join(',')}`);
+    sandboxCounter++;
 
     return args;
 }
