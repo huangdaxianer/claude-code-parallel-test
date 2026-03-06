@@ -109,7 +109,7 @@
             logEl.innerHTML = '';
         }
 
-        const lastRenderedCount = parseInt(logEl.dataset.lineCount || '0', 10);
+        let lastRenderedCount = parseInt(logEl.dataset.lineCount || '0', 10);
         const lastRenderedFolder = logEl.dataset.renderedFolder;
 
         if (lastRenderedFolder !== App.state.activeFolder) {
@@ -123,6 +123,17 @@
                 const events = data.events || [];
                 const currentCount = events.length;
                 const isFirstRenderForFolder = logEl.innerHTML.includes('正在加载');
+
+                // 检测事件数量减少（任务重启导致旧日志被清除），强制全量重新渲染
+                if (currentCount < lastRenderedCount) {
+                    logEl.dataset.lineCount = '0';
+                    lastRenderedCount = 0;
+                    if (currentCount === 0) {
+                        logEl.innerHTML = '<div class="empty-state"><p>暂无执行轨迹</p></div>';
+                        return;
+                    }
+                    logEl.innerHTML = '';
+                }
 
                 if (currentCount > lastRenderedCount || isFirstRenderForFolder) {
                     if (lastRenderedCount === 0 || isFirstRenderForFolder) {
@@ -479,6 +490,10 @@
                 }
 
                 var currentCount = traj.events.length;
+                // 检测事件数量减少（任务重启导致旧日志被清除）
+                if (currentCount < prevCount && prevMember === memberName) {
+                    prevCount = 0;
+                }
                 if (currentCount <= prevCount && prevMember === memberName) return; // 无新事件
 
                 // 分组并渲染
