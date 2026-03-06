@@ -219,6 +219,19 @@ db.exec(`
         FOREIGN KEY(created_by) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS quality_inspections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        question_key TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        note TEXT,
+        admin_username TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(task_id, model_id, question_key),
+        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_gsb_jobs_user_id ON gsb_jobs(user_id);
     CREATE INDEX IF NOT EXISTS idx_gsb_tasks_job_id ON gsb_tasks(job_id);
     CREATE INDEX IF NOT EXISTS idx_model_runs_status ON model_runs(status);

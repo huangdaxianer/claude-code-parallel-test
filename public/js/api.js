@@ -308,6 +308,31 @@
     };
 
     /**
+     * 获取质检数据
+     */
+    App.api.getQualityInspection = async function (taskId, modelId) {
+        const res = await fetch(`/api/quality-inspection?taskId=${encodeURIComponent(taskId)}&modelId=${encodeURIComponent(modelId)}`, {
+            headers: App.api.getAuthHeaders()
+        });
+        return res.json();
+    };
+
+    /**
+     * 提交质检数据
+     */
+    App.api.submitQualityInspection = async function (taskId, modelId, questionKey, answer, note) {
+        const res = await fetch('/api/quality-inspection', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...App.api.getAuthHeaders()
+            },
+            body: JSON.stringify({ taskId, modelId, questionKey, answer, note })
+        });
+        return res.json();
+    };
+
+    /**
      * 修改密码
      */
     App.api.changePassword = async function (oldPassword, newPassword) {

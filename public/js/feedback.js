@@ -347,6 +347,11 @@
                         }
                     }, 0);
                 }
+
+                // If switching to quality inspection, load data
+                if (tabName === 'qc' && App.qualityInspection && App.qualityInspection.load) {
+                    App.qualityInspection.load();
+                }
             } else if (content.id && content.id.startsWith('feedback-body-')) {
                 content.classList.remove('active');
                 content.style.display = 'none';

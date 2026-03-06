@@ -416,6 +416,11 @@
             App.comments.init();
         }
 
+        // 初始化质检模块（仅管理员可见）
+        if (App.qualityInspection && App.qualityInspection.init) {
+            App.qualityInspection.init();
+        }
+
         // 外部众测用户：隐藏下载产物按钮
         if (App.state.currentUser?.group_name === '外部众测用户') {
             const downloadFilesBtn = document.getElementById('download-files-btn');
