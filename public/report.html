@@ -177,6 +177,11 @@
             white-space: nowrap;
         }
         .voice-task-link:hover { text-decoration: underline; }
+        .voice-task-id {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            white-space: nowrap;
+        }
         .voice-user {
             font-size: 0.75rem;
             color: #94a3b8;
@@ -508,6 +513,21 @@
     </div>
 
     <script>
+        // 检测当前用户登录状态和管理员权限
+        function getReportUserInfo() {
+            try {
+                const saved = localStorage.getItem('claude_user');
+                if (saved) {
+                    const user = JSON.parse(saved);
+                    if (user && user.id) {
+                        return { isLoggedIn: true, isAdmin: user.role === 'admin' };
+                    }
+                }
+            } catch (e) { /* ignore */ }
+            return { isLoggedIn: false, isAdmin: false };
+        }
+        const __reportUser = getReportUserInfo();
+
         async function loadReport() {
             const urlParams = new URLSearchParams(window.location.search);
             const reportId = urlParams.get('id');
@@ -1078,7 +1098,11 @@
                         }
                         html += `<td class="voice-content">${esc(item.content)}</td>`;
                         html += `<td class="voice-user">${esc(item.username)}</td>`;
-                        html += `<td><a class="voice-task-link" href="/task.html?task=${item.taskId}&view_user=${encodeURIComponent(item.username)}" target="_blank" title="${esc(item.taskTitle || '')}">${item.taskId}</a></td>`;
+                        if (__reportUser.isLoggedIn && __reportUser.isAdmin) {
+                            html += `<td><a class="voice-task-link" href="/task.html?task=${item.taskId}&model=${encodeURIComponent(item.modelId)}&view_user=${encodeURIComponent(item.username)}" target="_blank" title="${esc(item.taskTitle || '')}">${item.taskId}</a></td>`;
+                        } else {
+                            html += `<td class="voice-task-id" title="${esc(item.taskTitle || '')}">${item.taskId}</td>`;
+                        }
                         html += `</tr>`;
                     }
                 }
