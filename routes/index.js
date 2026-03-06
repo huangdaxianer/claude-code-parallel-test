@@ -16,6 +16,15 @@ const filesRoutes = require('./files');
 const usersRoutes = require('./users');
 const reportRoutes = require('./reports');
 
+// 获取公开系统配置（登录用户可用，用于前端功能开关判断）
+router.get('/config/public', requireLogin, (req, res) => {
+    const config = require('../config');
+    const appConfig = config.getAppConfig();
+    res.json({
+        allowNewTaskSubmission: appConfig.allowNewTaskSubmission !== false
+    });
+});
+
 // 获取对当前用户组启用的模型 (Public/User) — 不需要管理员权限，但需要登录
 router.get('/models/enabled', requireLogin, (req, res) => {
     try {

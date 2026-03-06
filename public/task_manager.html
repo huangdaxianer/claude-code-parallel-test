@@ -1662,7 +1662,7 @@
             </div>
 
             <!-- Registration Toggle -->
-            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; padding: 1rem 1.25rem; background: white; border-radius: 0.75rem; border: 1px solid #e2e8f0;">
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: 1rem 1.25rem; background: white; border-radius: 0.75rem; border: 1px solid #e2e8f0;">
                 <div style="flex: 1;">
                     <div style="font-weight: 600; font-size: 0.95rem; color: #1e293b;">允许新用户注册</div>
                     <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem;">关闭后，未在系统中的用户名将无法登录。需要管理员手动创建用户。</div>
@@ -1670,6 +1670,19 @@
                 <label class="toggle-switch" title="允许新用户注册">
                     <input type="checkbox" id="allow-registration-toggle" checked
                            data-action="toggle-allow-registration">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <!-- Task Submission Toggle -->
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; padding: 1rem 1.25rem; background: white; border-radius: 0.75rem; border: 1px solid #e2e8f0;">
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; font-size: 0.95rem; color: #1e293b;">允许新任务提交</div>
+                    <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem;">关闭后，非管理员用户将无法创建新任务。管理员不受影响。</div>
+                </div>
+                <label class="toggle-switch" title="允许新任务提交">
+                    <input type="checkbox" id="allow-task-submission-toggle" checked
+                           data-action="toggle-allow-task-submission">
                     <span class="slider"></span>
                 </label>
             </div>

@@ -433,6 +433,22 @@
             gsbBtn.style.display = 'flex';
         }
 
+        // 检查是否允许非管理员提交新任务
+        if (App.state.currentUser?.role !== 'admin') {
+            try {
+                const configRes = await fetch('/api/config/public', { headers: App.api.getAuthHeaders() });
+                if (configRes.ok) {
+                    const publicConfig = await configRes.json();
+                    if (!publicConfig.allowNewTaskSubmission) {
+                        const newTaskBtn = document.getElementById('new-task-btn');
+                        if (newTaskBtn) newTaskBtn.style.display = 'none';
+                    }
+                }
+            } catch (e) {
+                console.error('[App] Failed to check task submission config:', e);
+            }
+        }
+
     };
 
 })();

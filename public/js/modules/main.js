@@ -508,6 +508,18 @@ async function handleGlobalChange(e) {
         }
     }
 
+    // Handle task submission toggle
+    if (target.dataset.action === 'toggle-allow-task-submission') {
+        const isAllowed = target.checked;
+        try {
+            await TaskAPI.updateConfig({ allowNewTaskSubmission: isAllowed });
+            UI.showToast(isAllowed ? '已开启新任务提交' : '已关闭新任务提交');
+        } catch (e) {
+            UI.showToast('更新失败: ' + e.message, 'error');
+            target.checked = !isAllowed; // revert
+        }
+    }
+
     // Handle model group setting toggle (is_enabled or is_default_checked)
     if (target.dataset.action === 'update-model-group-setting') {
         const modelId = target.dataset.modelId;
@@ -644,6 +656,10 @@ async function fetchUserManagementData() {
         const toggle = document.getElementById('allow-registration-toggle');
         if (toggle) {
             toggle.checked = configData.allowNewRegistration !== false;
+        }
+        const taskToggle = document.getElementById('allow-task-submission-toggle');
+        if (taskToggle) {
+            taskToggle.checked = configData.allowNewTaskSubmission !== false;
         }
     } catch (e) { console.error(e); }
 }

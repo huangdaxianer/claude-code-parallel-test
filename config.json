@@ -1,3 +1,4 @@
 {
-  "maxParallelSubtasks": 5
+  "maxParallelSubtasks": 5,
+  "allowNewTaskSubmission": true
 }

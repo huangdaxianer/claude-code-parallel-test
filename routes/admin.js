@@ -513,6 +513,11 @@ router.post('/config', (req, res) => {
         config.updateAppConfig({ allowNewRegistration: !!allowNewRegistration });
     }
 
+    const { allowNewTaskSubmission } = req.body;
+    if (allowNewTaskSubmission !== undefined) {
+        config.updateAppConfig({ allowNewTaskSubmission: !!allowNewTaskSubmission });
+    }
+
     config.saveConfig(config.getAppConfig());
     console.log(`[Config] Updated config:`, config.getAppConfig());
 

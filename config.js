@@ -14,6 +14,7 @@ const CONFIG_FILE = path.join(__dirname, 'config.json');
 const defaultConfig = {
     maxParallelSubtasks: 5,       // 最大并行子任务数
     allowNewRegistration: true,   // 是否允许新用户自动注册
+    allowNewTaskSubmission: true, // 是否允许非管理员用户提交新任务
     activityTimeoutMinutes: 10,   // stdout 无输出超时（分钟），超时后标记为 stopped
     subtaskTimeoutMinutes: 60,    // 单个子任务最大执行时间（分钟），超时后标记为 stopped
     enablePreview: true           // 是否在子任务完成后自动生成预览
