@@ -76,7 +76,7 @@ function initTabFromURL() {
     const tabParam = urlParams.get('tab');
 
     // Valid tab names
-    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'comment-stats', 'reports', 'users'];
+    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'comment-stats', 'reports', 'users', 'qc-mgmt'];
 
     // Default to 'tasks' if no valid tab parameter
     const tabId = validTabs.includes(tabParam) ? tabParam : 'tasks';
@@ -91,7 +91,7 @@ function initTabFromURL() {
 function handlePopState(e) {
     const urlParams = new URLSearchParams(window.location.search);
     const tabParam = urlParams.get('tab');
-    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'comment-stats', 'reports', 'users'];
+    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'comment-stats', 'reports', 'users', 'qc-mgmt'];
     const tabId = validTabs.includes(tabParam) ? tabParam : 'tasks';
 
     activateTab(tabId, false);
@@ -167,6 +167,14 @@ function setupEventListeners() {
         document.getElementById(id)?.addEventListener('change', () => {
             AppState.commentStatsPagination.page = 1;
             fetchCommentStats();
+        });
+    });
+
+    // QC stats filters
+    ['qc-filter-user', 'qc-filter-inspector', 'qc-filter-task-quality', 'qc-filter-feedback-quality'].forEach(id => {
+        document.getElementById(id)?.addEventListener('change', () => {
+            AppState.qcStatsPagination.page = 1;
+            fetchQCStats();
         });
     });
 }
@@ -346,6 +354,24 @@ async function handleGlobalClick(e) {
             case 'comment-stats-page':
                 AppState.commentStatsPagination.page = parseInt(actionBtn.dataset.page) || 1;
                 fetchCommentStats();
+                break;
+
+            case 'refresh-qc-stats':
+                fetchQCStats();
+                break;
+
+            case 'qc-sub-tab': {
+                const val = actionBtn.dataset.value;
+                AppState.qcStatsStatus = val;
+                AppState.qcStatsPagination.page = 1;
+                document.querySelectorAll('.qc-sub-tab').forEach(b => b.classList.toggle('active', b.dataset.value === val));
+                fetchQCStats();
+                break;
+            }
+
+            case 'qc-stats-page':
+                AppState.qcStatsPagination.page = parseInt(actionBtn.dataset.page) || 1;
+                fetchQCStats();
                 break;
 
             case 'refresh-reports':
@@ -788,6 +814,63 @@ async function fetchCommentStats() {
     } catch (e) { console.error('Error fetching comment stats:', e); }
 }
 
+async function fetchQCStats() {
+    try {
+        const userId = document.getElementById('qc-filter-user')?.value || '';
+        const inspector = document.getElementById('qc-filter-inspector')?.value || '';
+        const taskQuality = document.getElementById('qc-filter-task-quality')?.value || '';
+        const feedbackQuality = document.getElementById('qc-filter-feedback-quality')?.value || '';
+
+        const result = await TaskAPI.fetchQCStats({
+            page: AppState.qcStatsPagination.page,
+            pageSize: AppState.qcStatsPagination.pageSize,
+            status: AppState.qcStatsStatus,
+            userId,
+            inspector,
+            taskQuality,
+            feedbackQuality
+        });
+
+        if (result.success) {
+            AppState.qcStatsData = result.data;
+            AppState.qcStatsPagination = {
+                page: result.page,
+                pageSize: result.pageSize,
+                total: result.total,
+                totalPages: result.totalPages
+            };
+
+            // Update counts
+            const pendingEl = document.getElementById('qc-count-pending');
+            const completedEl = document.getElementById('qc-count-completed');
+            if (pendingEl) pendingEl.textContent = result.stats?.pending || 0;
+            if (completedEl) completedEl.textContent = result.stats?.completed || 0;
+
+            // Populate user dropdown (preserve selection)
+            const userSelect = document.getElementById('qc-filter-user');
+            if (userSelect && result.submitters) {
+                const currentVal = userSelect.value;
+                userSelect.innerHTML = '<option value="">全部</option>' +
+                    result.submitters.map(u =>
+                        `<option value="${u.id}" ${String(u.id) === currentVal ? 'selected' : ''}>${escapeHtml(u.username)}</option>`
+                    ).join('');
+            }
+
+            // Populate inspector dropdown (preserve selection)
+            const inspectorSelect = document.getElementById('qc-filter-inspector');
+            if (inspectorSelect && result.inspectors) {
+                const currentVal = inspectorSelect.value;
+                inspectorSelect.innerHTML = '<option value="">全部</option>' +
+                    result.inspectors.map(name =>
+                        `<option value="${escapeHtml(name)}" ${name === currentVal ? 'selected' : ''}>${escapeHtml(name)}</option>`
+                    ).join('');
+            }
+
+            UI.renderQCStats(AppState.qcStatsData, AppState.qcStatsPagination);
+        }
+    } catch (e) { console.error('Error fetching QC stats:', e); }
+}
+
 // --- Logic ---
 
 function applyFilters() {
@@ -1031,6 +1114,7 @@ function activateTab(tabId, updateURL = true) {
     // Load tab-specific data
     if (tabId === 'feedback-stats') fetchFeedbackStats();
     if (tabId === 'comment-stats') fetchCommentStats();
+    if (tabId === 'qc-mgmt') fetchQCStats();
     if (tabId === 'users') fetchUserManagementData();
     if (tabId === 'models') fetchModels();
     if (tabId === 'reports') initReportTab();

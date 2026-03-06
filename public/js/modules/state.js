@@ -56,6 +56,11 @@ export const AppState = {
     commentStatsPagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
     commentStatsTaskOwners: [],
 
+    // QC Stats (质检管理)
+    qcStatsData: [],
+    qcStatsPagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
+    qcStatsStatus: 'pending',
+
     // Per-model status filters: { modelId: 'completed' | 'stopped' | ... | '' }
     modelFilters: {},
 

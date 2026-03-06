@@ -1139,6 +1139,132 @@ router.get('/comment-stats', (req, res) => {
     }
 });
 
+// 质检管理统计
+router.get('/qc-stats', (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize) || 50));
+        const status = req.query.status || '';
+        const userId = req.query.userId || '';
+        const inspector = req.query.inspector || '';
+        const taskQuality = req.query.taskQuality || '';
+        const feedbackQuality = req.query.feedbackQuality || '';
+
+        let filterConditions = '';
+        const filterParams = [];
+
+        if (userId) {
+            filterConditions += ' AND t.user_id = ?';
+            filterParams.push(userId);
+        }
+        if (inspector) {
+            filterConditions += ' AND (qi_task.admin_username = ? OR qi_fb.admin_username = ?)';
+            filterParams.push(inspector, inspector);
+        }
+        if (taskQuality) {
+            filterConditions += ' AND qi_task.answer = ?';
+            filterParams.push(taskQuality);
+        }
+        if (feedbackQuality) {
+            filterConditions += ' AND qi_fb.answer = ?';
+            filterParams.push(feedbackQuality);
+        }
+
+        let qcStatusCondition = '';
+        if (status === 'pending') {
+            qcStatusCondition = ' AND (qi_task.id IS NULL OR qi_fb.id IS NULL)';
+        } else if (status === 'completed') {
+            qcStatusCondition = ' AND qi_task.id IS NOT NULL AND qi_fb.id IS NOT NULL';
+        }
+
+        const dataQuery = `
+            WITH fully_evaluated_tasks AS (
+                SELECT task_id FROM model_runs
+                GROUP BY task_id
+                HAVING COUNT(*) = SUM(CASE WHEN status = 'evaluated' THEN 1 ELSE 0 END)
+                   AND COUNT(*) > 0
+            )
+            SELECT
+                mr.task_id,
+                mr.model_id,
+                COALESCE(mc.description, mc.endpoint_name, mr.model_id) as model_name,
+                u.username as submitter,
+                qi_task.answer as task_quality,
+                qi_task.note as task_quality_note,
+                qi_task.admin_username as task_inspector,
+                qi_fb.answer as feedback_quality,
+                qi_fb.note as feedback_quality_note,
+                qi_fb.admin_username as feedback_inspector
+            FROM model_runs mr
+            JOIN fully_evaluated_tasks fet ON mr.task_id = fet.task_id
+            JOIN tasks t ON mr.task_id = t.task_id
+            LEFT JOIN users u ON t.user_id = u.id
+            LEFT JOIN model_configs mc ON mc.model_id = mr.model_id
+            LEFT JOIN quality_inspections qi_task ON qi_task.task_id = mr.task_id AND qi_task.model_id = mr.model_id AND qi_task.question_key = 'task_quality'
+            LEFT JOIN quality_inspections qi_fb ON qi_fb.task_id = mr.task_id AND qi_fb.model_id = mr.model_id AND qi_fb.question_key = 'feedback_quality'
+            WHERE 1=1 ${filterConditions} ${qcStatusCondition}
+            ORDER BY mr.task_id DESC, mr.model_id
+        `;
+
+        const allRows = db.prepare(dataQuery).all(...filterParams);
+        const total = allRows.length;
+        const totalPages = Math.ceil(total / pageSize);
+        const data = allRows.slice((page - 1) * pageSize, page * pageSize);
+
+        const statsQuery = `
+            WITH fully_evaluated_tasks AS (
+                SELECT task_id FROM model_runs
+                GROUP BY task_id
+                HAVING COUNT(*) = SUM(CASE WHEN status = 'evaluated' THEN 1 ELSE 0 END)
+                   AND COUNT(*) > 0
+            )
+            SELECT
+                SUM(CASE WHEN qi_task.id IS NULL OR qi_fb.id IS NULL THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN qi_task.id IS NOT NULL AND qi_fb.id IS NOT NULL THEN 1 ELSE 0 END) as completed
+            FROM model_runs mr
+            JOIN fully_evaluated_tasks fet ON mr.task_id = fet.task_id
+            LEFT JOIN quality_inspections qi_task ON qi_task.task_id = mr.task_id AND qi_task.model_id = mr.model_id AND qi_task.question_key = 'task_quality'
+            LEFT JOIN quality_inspections qi_fb ON qi_fb.task_id = mr.task_id AND qi_fb.model_id = mr.model_id AND qi_fb.question_key = 'feedback_quality'
+        `;
+        const stats = db.prepare(statsQuery).get();
+
+        const submittersQuery = `
+            WITH fully_evaluated_tasks AS (
+                SELECT task_id FROM model_runs
+                GROUP BY task_id
+                HAVING COUNT(*) = SUM(CASE WHEN status = 'evaluated' THEN 1 ELSE 0 END)
+                   AND COUNT(*) > 0
+            )
+            SELECT DISTINCT u.id, u.username
+            FROM model_runs mr
+            JOIN fully_evaluated_tasks fet ON mr.task_id = fet.task_id
+            JOIN tasks t ON mr.task_id = t.task_id
+            JOIN users u ON t.user_id = u.id
+            ORDER BY u.username
+        `;
+        const submitters = db.prepare(submittersQuery).all();
+
+        const inspectors = db.prepare(
+            'SELECT DISTINCT admin_username FROM quality_inspections ORDER BY admin_username'
+        ).all();
+
+        res.json({
+            success: true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages,
+            stats: { pending: stats?.pending || 0, completed: stats?.completed || 0 },
+            submitters,
+            inspectors: inspectors.map(i => i.admin_username)
+        });
+    } catch (e) {
+        console.error('[Admin] QC stats error:', e);
+        res.status(500).json({ error: 'Failed to fetch QC statistics' });
+    }
+});
+
 // 挂载报告子路由
 const reportRoutes = require('./reports');
 router.use('/report', reportRoutes);

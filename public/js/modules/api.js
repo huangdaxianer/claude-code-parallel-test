@@ -323,6 +323,19 @@ export const TaskAPI = {
         return await res.json();
     },
 
+    async fetchQCStats({ page = 1, pageSize = 50, status = '', userId = '', inspector = '', taskQuality = '', feedbackQuality = '' } = {}) {
+        const params = new URLSearchParams();
+        params.set('page', page);
+        params.set('pageSize', pageSize);
+        if (status) params.set('status', status);
+        if (userId) params.set('userId', userId);
+        if (inspector) params.set('inspector', inspector);
+        if (taskQuality) params.set('taskQuality', taskQuality);
+        if (feedbackQuality) params.set('feedbackQuality', feedbackQuality);
+        const res = await fetch(`/api/admin/qc-stats?${params.toString()}`, { headers: getAuthHeaders() });
+        return await res.json();
+    },
+
     async fetchCommentStats({ page = 1, pageSize = 50, taskOwner = '', commentType = 'all', commenterType = '' } = {}) {
         const params = new URLSearchParams();
         params.set('page', page);
