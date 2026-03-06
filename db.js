@@ -20,7 +20,7 @@ try {
         WHERE id NOT IN (
             SELECT MIN(id) 
             FROM feedback_responses 
-            GROUP BY task_id, model_name, question_id
+            GROUP BY task_id, model_id, question_id
         )
     `).run();
 } catch (e) {
