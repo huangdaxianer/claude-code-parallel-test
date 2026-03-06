@@ -1357,7 +1357,7 @@
 
                 const durations = runs.map(r => r.duration);
                 const turnsList = runs.map(r => r.turns);
-                const inputTokens = runs.map(r => r.inputTokens);
+                const inputTokens = runs.map(r => (r.inputTokens || 0) + (r.cacheReadTokens || 0));
                 const outputTokens = runs.map(r => r.outputTokens);
                 const todoWrites = runs.map(r => r.countTodoWrite);
                 const reads = runs.map(r => r.countRead);

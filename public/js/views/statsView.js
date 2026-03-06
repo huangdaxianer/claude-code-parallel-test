@@ -264,7 +264,7 @@
                 <td>${formatVal(stats.toolCounts.Read, '0')}</td>
                 <td>${formatVal(stats.toolCounts.Write, '0')}</td>
                 <td>${formatVal(stats.toolCounts.Bash, '0')}</td>
-                <td>${formatVal(stats.inputTokens)}</td>
+                <td>${formatVal(stats.inputTokens != null ? (stats.inputTokens || 0) + (stats.cacheReadTokens || 0) : null)}</td>
                 <td>${formatVal(stats.outputTokens)}</td>
                 <td>${formatVal(stats.cacheReadTokens)}</td>
             `;

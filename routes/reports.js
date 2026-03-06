@@ -163,7 +163,7 @@ router.post('/create', (req, res) => {
 
             const durations = runs.map(r => r.duration || 0);
             const turnsList = runs.map(r => r.turns || 0);
-            const inputTokens = runs.map(r => r.input_tokens || 0);
+            const inputTokens = runs.map(r => (r.input_tokens || 0) + (r.cache_read_tokens || 0));
             const outputTokens = runs.map(r => r.output_tokens || 0);
             const cacheTokens = runs.map(r => r.cache_read_tokens || 0);
             const todoWrites = runs.map(r => r.count_todo_write || 0);
