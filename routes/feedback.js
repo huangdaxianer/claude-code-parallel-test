@@ -93,4 +93,46 @@ router.post('/submit', (req, res) => {
     }
 });
 
+// 删除单个反馈回答（取消选择）
+router.delete('/response', (req, res) => {
+    const { taskId, modelId, questionId } = req.body;
+
+    if (!taskId || !modelId || !questionId) {
+        return res.status(400).json({ error: 'Missing params' });
+    }
+
+    if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
+
+    try {
+        db.transaction(() => {
+            db.prepare(
+                'DELETE FROM feedback_responses WHERE task_id = ? AND model_id = ? AND question_id = ? AND user_id = ?'
+            ).run(taskId, modelId, questionId, req.user.id);
+
+            // 重新检查必填题是否全部完成
+            const requiredQuestions = db.prepare('SELECT id, has_comment FROM feedback_questions WHERE is_active = 1 AND is_required = 1').all();
+            const currentResponses = db.prepare('SELECT question_id, score, comment FROM feedback_responses WHERE task_id = ? AND model_id = ?').all(taskId, modelId);
+
+            const responseMap = {};
+            currentResponses.forEach(r => { responseMap[r.question_id] = { score: r.score, comment: r.comment }; });
+
+            const allRequiredMet = requiredQuestions.every(q => {
+                const resp = responseMap[q.id];
+                if (!resp || resp.score === undefined || resp.score <= 0) return false;
+                if (q.has_comment && (!resp.comment || resp.comment.trim() === '')) return false;
+                return true;
+            });
+
+            const newStatus = allRequiredMet ? 'evaluated' : 'completed';
+            db.prepare('UPDATE model_runs SET status = ? WHERE task_id = ? AND model_id = ?').run(newStatus, taskId, modelId);
+        })();
+
+        console.log(`[Feedback] Deleted response for ${taskId}/${modelId}/q${questionId}`);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error deleting feedback response:', e);
+        res.status(500).json({ error: 'Failed to delete feedback response' });
+    }
+});
+
 module.exports = router;

@@ -139,6 +139,21 @@
     };
 
     /**
+     * 删除单个反馈回答（取消选择）
+     */
+    App.api.deleteFeedbackResponse = async function (taskId, modelId, questionId) {
+        const res = await fetch('/api/feedback/response', {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                ...App.api.getAuthHeaders()
+            },
+            body: JSON.stringify({ taskId, modelId, questionId })
+        });
+        return res.json();
+    };
+
+    /**
      * 启动预览
      */
     App.api.startPreview = async function (taskId, modelId) {

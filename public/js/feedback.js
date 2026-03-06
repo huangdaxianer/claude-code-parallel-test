@@ -170,8 +170,16 @@
             stars.forEach(star => {
                 star.addEventListener('click', function () {
                     const val = parseInt(this.dataset.val);
-                    App.feedback.updateStars(el, val);
-                    App.feedback.submitFeedback();
+                    const currentVal = parseInt(el.dataset.value) || 0;
+                    if (val === currentVal) {
+                        // 点击已选中的星星，取消选择
+                        App.feedback.updateStars(el, 0);
+                        const qid = parseInt(el.closest('.feedback-item').dataset.qid);
+                        App.feedback.deleteResponse(qid);
+                    } else {
+                        App.feedback.updateStars(el, val);
+                        App.feedback.submitFeedback();
+                    }
                 });
             });
         });
@@ -182,10 +190,19 @@
             options.forEach(opt => {
                 opt.addEventListener('click', function () {
                     const val = parseInt(this.dataset.val);
-                    el.querySelectorAll('.radio-option').forEach(o => o.classList.remove('active'));
-                    this.classList.add('active');
-                    el.dataset.value = val;
-                    App.feedback.submitFeedback();
+                    const currentVal = parseInt(el.dataset.value) || 0;
+                    if (val === currentVal) {
+                        // 点击已选中的选项，取消选择
+                        this.classList.remove('active');
+                        el.dataset.value = 0;
+                        const qid = parseInt(el.closest('.feedback-item').dataset.qid);
+                        App.feedback.deleteResponse(qid);
+                    } else {
+                        el.querySelectorAll('.radio-option').forEach(o => o.classList.remove('active'));
+                        this.classList.add('active');
+                        el.dataset.value = val;
+                        App.feedback.submitFeedback();
+                    }
                 });
             });
         });
@@ -267,6 +284,25 @@
             }
         } catch (e) {
             console.error('Auto-save feedback failed:', e);
+        }
+    };
+
+    /**
+     * 删除单个反馈回答（取消选择）
+     */
+    App.feedback.deleteResponse = async function (questionId) {
+        if (!App.state.currentTaskId || !App.state.activeFolder) return;
+
+        const run = App.state.currentRuns.find(r => r.folderName === App.state.activeFolder);
+        const modelId = run ? run.modelId : (App.state.activeFolder.includes('/') ? App.state.activeFolder.split('/').pop() : App.state.activeFolder);
+
+        try {
+            const data = await App.api.deleteFeedbackResponse(App.state.currentTaskId, modelId, questionId);
+            if (data.success) {
+                App.fetchTaskDetails();
+            }
+        } catch (e) {
+            console.error('Delete feedback response failed:', e);
         }
     };
 

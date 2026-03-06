@@ -1498,15 +1498,45 @@
             const infoEl = document.getElementById('filter-result-info');
             if (infoEl) infoEl.innerHTML = `<strong>${totalTasks}</strong> / ${totalTasks} 个任务`;
 
+            // Restore filter values from URL params
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlMinTurns = urlParams.get('minTurns');
+            const urlMaxTurns = urlParams.get('maxTurns');
+            const urlSourceType = urlParams.get('sourceType');
+            const minTurnsEl = document.getElementById('filter-min-turns');
+            const maxTurnsEl = document.getElementById('filter-max-turns');
+            const sourceTypeEl = document.getElementById('filter-source-type');
+            if (urlMinTurns !== null && minTurnsEl) minTurnsEl.value = urlMinTurns;
+            if (urlMaxTurns !== null && maxTurnsEl) maxTurnsEl.value = urlMaxTurns;
+            if (urlSourceType !== null && sourceTypeEl) sourceTypeEl.value = urlSourceType;
+
+            function updateUrlParams() {
+                const params = new URLSearchParams(window.location.search);
+                const minVal = minTurnsEl?.value;
+                const maxVal = maxTurnsEl?.value;
+                const srcVal = sourceTypeEl?.value;
+                if (minVal !== undefined && minVal !== '') params.set('minTurns', minVal); else params.delete('minTurns');
+                if (maxVal !== undefined && maxVal !== '') params.set('maxTurns', maxVal); else params.delete('maxTurns');
+                if (srcVal && srcVal !== 'all') params.set('sourceType', srcVal); else params.delete('sourceType');
+                const newUrl = window.location.pathname + '?' + params.toString();
+                window.history.replaceState(null, '', newUrl);
+            }
+
             function onFilterChange() {
                 const filteredIds = getFilteredTaskIds(data);
                 if (infoEl) infoEl.innerHTML = `<strong>${filteredIds.length}</strong> / ${totalTasks} 个任务`;
                 recomputeFromRawData(data, filteredIds);
+                updateUrlParams();
             }
 
             document.getElementById('filter-source-type')?.addEventListener('change', onFilterChange);
             document.getElementById('filter-min-turns')?.addEventListener('input', onFilterChange);
             document.getElementById('filter-max-turns')?.addEventListener('input', onFilterChange);
+
+            // Apply initial filter if URL params were set
+            if (urlMinTurns !== null || urlMaxTurns !== null || (urlSourceType !== null && urlSourceType !== 'all')) {
+                onFilterChange();
+            }
         }
 
         // --- GSB Win Rate Logic ---
