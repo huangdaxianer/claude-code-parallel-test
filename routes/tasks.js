@@ -147,6 +147,20 @@ router.post('/upload', upload.any(), (req, res) => {
         const filesToProcess = req.files.filter(f => f.fieldname === 'files');
         const fileCount = filesToProcess.length;
 
+        // Check for PDF files
+        const pdfFiles = filesToProcess.filter(f => /\.pdf$/i.test(f.originalname));
+        if (pdfFiles.length > 0) {
+            console.warn(`[Upload] Rejected: found ${pdfFiles.length} PDF file(s)`);
+            // Clean up all temp files
+            filesToProcess.forEach(f => {
+                try { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); } catch (e) { /* ignore */ }
+            });
+            if (fs.existsSync(targetBase)) {
+                try { fs.rmSync(targetBase, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+            }
+            return res.status(400).json({ error: '暂不支持 PDF 文档，请尝试将 PDF 转换为纯文本重试' });
+        }
+
         let filePaths = req.body.filePaths;
 
         // Handle JSON string for large file counts
@@ -327,11 +341,20 @@ router.post('/upload_zip', upload.single('file'), (req, res) => {
                 console.warn('[Upload ZIP] Failed to flatten directory:', flattenErr.message);
             }
 
-            // Count files
-            exec(`find "${targetBase}" -type f | wc -l`, (err, countBytes) => {
-                const count = parseInt(countBytes ? countBytes.toString().trim() : '0') || 0;
-                console.log(`[Upload ZIP] Success. Extracted to ${targetBase}, ${count} files.`);
-                res.json({ path: targetBase, fileCount: count });
+            // Check for PDF files before counting
+            exec(`find "${targetBase}" -type f -iname "*.pdf" | head -1`, (pdfErr, pdfResult) => {
+                if (pdfResult && pdfResult.toString().trim()) {
+                    console.warn(`[Upload ZIP] Rejected: found PDF file(s) in archive`);
+                    try { fs.rmSync(targetBase, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+                    return res.status(400).json({ error: '暂不支持 PDF 文档，请尝试将 PDF 转换为纯文本重试' });
+                }
+
+                // Count files
+                exec(`find "${targetBase}" -type f | wc -l`, (err, countBytes) => {
+                    const count = parseInt(countBytes ? countBytes.toString().trim() : '0') || 0;
+                    console.log(`[Upload ZIP] Success. Extracted to ${targetBase}, ${count} files.`);
+                    res.json({ path: targetBase, fileCount: count });
+                });
             });
         });
 
@@ -909,6 +932,26 @@ router.get('/:taskId/download', (req, res) => {
     if (!fs.existsSync(taskDir)) {
         return res.status(404).json({ error: 'Task directory not found' });
     }
+
+    // 埋点：记录下载启动
+    const startTime = Date.now();
+    try {
+        db.prepare(`INSERT INTO download_events (event_type, user_id, username, task_id) VALUES (?, ?, ?, ?)`)
+            .run('download_start', req.user.id, req.user.username, taskId);
+    } catch (e) {
+        console.error('[Download Tracking] Failed to log download_start:', e.message);
+    }
+
+    // 埋点：记录下载完成
+    res.on('finish', () => {
+        const durationMs = Date.now() - startTime;
+        try {
+            db.prepare(`INSERT INTO download_events (event_type, user_id, username, task_id, duration_ms) VALUES (?, ?, ?, ?, ?)`)
+                .run('download_complete', req.user.id, req.user.username, taskId, durationMs);
+        } catch (e) {
+            console.error('[Download Tracking] Failed to log download_complete:', e.message);
+        }
+    });
 
     streamZip(taskDir, `task_${taskId}.zip`, req, res);
 });

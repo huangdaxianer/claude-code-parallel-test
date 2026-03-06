@@ -270,7 +270,9 @@ router.get('/download_zip', (req, res) => {
     if (!folderName) return res.status(400).json({ error: 'Missing folderName' });
 
     // folderName 格式通常是 "taskId/modelId"，提取 taskId 校验归属
-    const taskId = folderName.split('/')[0];
+    const parts = folderName.split('/');
+    const taskId = parts[0];
+    const modelId = parts[1] || null;
     if (taskId && !isTaskOwnerOrAdmin(req, res, taskId)) return;
 
     const folderPath = path.resolve(config.TASKS_DIR, folderName);
@@ -285,6 +287,26 @@ router.get('/download_zip', (req, res) => {
         console.error(`[ZIP Error] Folder not found: ${folderPath}`);
         return res.status(404).send('Folder not found');
     }
+
+    // 埋点：记录下载启动
+    const startTime = Date.now();
+    try {
+        db.prepare(`INSERT INTO download_events (event_type, user_id, username, task_id, model_id) VALUES (?, ?, ?, ?, ?)`)
+            .run('download_start', req.user.id, req.user.username, taskId, modelId);
+    } catch (e) {
+        console.error('[Download Tracking] Failed to log download_start:', e.message);
+    }
+
+    // 埋点：记录下载完成
+    res.on('finish', () => {
+        const durationMs = Date.now() - startTime;
+        try {
+            db.prepare(`INSERT INTO download_events (event_type, user_id, username, task_id, model_id, duration_ms) VALUES (?, ?, ?, ?, ?, ?)`)
+                .run('download_complete', req.user.id, req.user.username, taskId, modelId, durationMs);
+        } catch (e) {
+            console.error('[Download Tracking] Failed to log download_complete:', e.message);
+        }
+    });
 
     const downloadName = folderName.replace(/[\/\\]/g, '_') + '.zip';
     streamZip(folderPath, downloadName, req, res);

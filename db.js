@@ -232,6 +232,21 @@ db.exec(`
         FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS download_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL,       -- 'download_start' or 'download_complete'
+        user_id INTEGER,
+        username TEXT,
+        task_id TEXT,
+        model_id TEXT,                  -- 模型子 ID，整个任务下载时为 NULL
+        download_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+        duration_ms INTEGER,            -- 下载耗时（仅 download_complete 时记录）
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_download_events_task_id ON download_events(task_id);
+    CREATE INDEX IF NOT EXISTS idx_download_events_user_id ON download_events(user_id);
+
     CREATE INDEX IF NOT EXISTS idx_gsb_jobs_user_id ON gsb_jobs(user_id);
     CREATE INDEX IF NOT EXISTS idx_gsb_tasks_job_id ON gsb_tasks(job_id);
     CREATE INDEX IF NOT EXISTS idx_model_runs_status ON model_runs(status);
