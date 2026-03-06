@@ -51,6 +51,29 @@ router.get('/tasks', (req, res) => {
             params.push(modelId, filterStatus);
         }
 
+        // Turns filters: minTurnsGte, minTurnsLte, maxTurnsGte, maxTurnsLte
+        const minTurnsGte = parseInt(req.query.minTurnsGte);
+        const minTurnsLte = parseInt(req.query.minTurnsLte);
+        const maxTurnsGte = parseInt(req.query.maxTurnsGte);
+        const maxTurnsLte = parseInt(req.query.maxTurnsLte);
+
+        if (!isNaN(minTurnsGte)) {
+            conditions.push(`(SELECT MIN(mr_t.turns) FROM model_runs mr_t WHERE mr_t.task_id = t.task_id AND mr_t.turns IS NOT NULL AND mr_t.turns > 0) >= ?`);
+            params.push(minTurnsGte);
+        }
+        if (!isNaN(minTurnsLte)) {
+            conditions.push(`(SELECT MIN(mr_t.turns) FROM model_runs mr_t WHERE mr_t.task_id = t.task_id AND mr_t.turns IS NOT NULL AND mr_t.turns > 0) <= ?`);
+            params.push(minTurnsLte);
+        }
+        if (!isNaN(maxTurnsGte)) {
+            conditions.push(`(SELECT MAX(mr_t.turns) FROM model_runs mr_t WHERE mr_t.task_id = t.task_id AND mr_t.turns IS NOT NULL AND mr_t.turns > 0) >= ?`);
+            params.push(maxTurnsGte);
+        }
+        if (!isNaN(maxTurnsLte)) {
+            conditions.push(`(SELECT MAX(mr_t.turns) FROM model_runs mr_t WHERE mr_t.task_id = t.task_id AND mr_t.turns IS NOT NULL AND mr_t.turns > 0) <= ?`);
+            params.push(maxTurnsLte);
+        }
+
         const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
         // Get total count for pagination
@@ -98,11 +121,16 @@ router.get('/tasks', (req, res) => {
 
         const tasksWithRuns = tasks.map(task => {
             const runs = db.prepare(`
-                SELECT mr.model_id, mr.status, mr.duration, mr.input_tokens, mr.output_tokens, mc.endpoint_name
+                SELECT mr.model_id, mr.status, mr.duration, mr.input_tokens, mr.output_tokens, mr.turns, mc.endpoint_name
                 FROM model_runs mr
                 LEFT JOIN model_configs mc ON mc.model_id = mr.model_id
                 WHERE mr.task_id = ?
             `).all(task.task_id).filter(r => enabledModelIds.includes(r.model_id));
+
+            // Compute min/max turns from runs that have valid turns data
+            const turnsValues = runs.map(r => r.turns).filter(t => t != null && t > 0);
+            const minTurns = turnsValues.length > 0 ? Math.min(...turnsValues) : null;
+            const maxTurns = turnsValues.length > 0 ? Math.max(...turnsValues) : null;
 
             return {
                 taskId: task.task_id,
@@ -116,13 +144,16 @@ router.get('/tasks', (req, res) => {
                 queueStatus: task.queue_status || 'unknown',
                 startedAt: task.started_at,
                 completedAt: task.completed_at,
+                minTurns,
+                maxTurns,
                 runs: runs.map(r => ({
                     modelId: r.model_id,
                     modelName: r.endpoint_name || r.model_id,
                     status: r.status,
                     duration: r.duration,
                     inputTokens: r.input_tokens,
-                    outputTokens: r.output_tokens
+                    outputTokens: r.output_tokens,
+                    turns: r.turns
                 }))
             };
         });

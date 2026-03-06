@@ -191,6 +191,56 @@ export const UI = {
                 <th class="actions-header-cell">操作</th>
         `;
 
+        // Min turns filter column
+        const minTurnsGte = (AppState.turnsFilters.minTurnsGte != null && AppState.turnsFilters.minTurnsGte !== '') ? AppState.turnsFilters.minTurnsGte : '';
+        const minTurnsLte = (AppState.turnsFilters.minTurnsLte != null && AppState.turnsFilters.minTurnsLte !== '') ? AppState.turnsFilters.minTurnsLte : '';
+        const hasMinTurnsFilter = minTurnsGte !== '' || minTurnsLte !== '';
+
+        headerHTML += `
+            <th class="turns-col-header">
+                <div class="col-filter-wrap" style="justify-content:center;">
+                    <span>最短轮次</span>
+                    <button class="col-filter-btn${hasMinTurnsFilter ? ' active' : ''}" data-action="toggle-filter-popup" data-target="min-turns-filter-popup">
+                        ${filterIconHTML(hasMinTurnsFilter)}
+                    </button>
+                    <div class="col-filter-popup turns-filter-popup" id="min-turns-filter-popup">
+                        <div class="turns-filter-form">
+                            <label>大于等于</label>
+                            <input type="number" class="turns-filter-input" id="min-turns-gte" min="0" value="${minTurnsGte}" placeholder="不限">
+                            <label>小于等于</label>
+                            <input type="number" class="turns-filter-input" id="min-turns-lte" min="0" value="${minTurnsLte}" placeholder="不限">
+                            <button class="turns-filter-apply" data-action="apply-turns-filter" data-filter-type="min">确定</button>
+                            <button class="turns-filter-clear" data-action="clear-turns-filter" data-filter-type="min">清除</button>
+                        </div>
+                    </div>
+                </div>
+            </th>`;
+
+        // Max turns filter column
+        const maxTurnsGte = (AppState.turnsFilters.maxTurnsGte != null && AppState.turnsFilters.maxTurnsGte !== '') ? AppState.turnsFilters.maxTurnsGte : '';
+        const maxTurnsLte = (AppState.turnsFilters.maxTurnsLte != null && AppState.turnsFilters.maxTurnsLte !== '') ? AppState.turnsFilters.maxTurnsLte : '';
+        const hasMaxTurnsFilter = maxTurnsGte !== '' || maxTurnsLte !== '';
+
+        headerHTML += `
+            <th class="turns-col-header">
+                <div class="col-filter-wrap" style="justify-content:center;">
+                    <span>最长轮次</span>
+                    <button class="col-filter-btn${hasMaxTurnsFilter ? ' active' : ''}" data-action="toggle-filter-popup" data-target="max-turns-filter-popup">
+                        ${filterIconHTML(hasMaxTurnsFilter)}
+                    </button>
+                    <div class="col-filter-popup turns-filter-popup" id="max-turns-filter-popup">
+                        <div class="turns-filter-form">
+                            <label>大于等于</label>
+                            <input type="number" class="turns-filter-input" id="max-turns-gte" min="0" value="${maxTurnsGte}" placeholder="不限">
+                            <label>小于等于</label>
+                            <input type="number" class="turns-filter-input" id="max-turns-lte" min="0" value="${maxTurnsLte}" placeholder="不限">
+                            <button class="turns-filter-apply" data-action="apply-turns-filter" data-filter-type="max">确定</button>
+                            <button class="turns-filter-clear" data-action="clear-turns-filter" data-filter-type="max">清除</button>
+                        </div>
+                    </div>
+                </div>
+            </th>`;
+
         // Status filter options for model columns
         const statusOptions = [
             { value: '', label: '全部' },
@@ -238,7 +288,7 @@ export const UI = {
     renderTasks() {
         const tbody = Elements.tbody();
         const filteredTasks = AppState.filteredTasks;
-        const totalCols = 6 + AppState.allModelNames.length;
+        const totalCols = 8 + AppState.allModelNames.length;
 
         if (filteredTasks.length === 0) {
             tbody.innerHTML = `
@@ -341,6 +391,8 @@ export const UI = {
                     ${actionButtons}
                 </div>
             </td>
+            <td class="turns-cell">${task.minTurns != null ? task.minTurns : '-'}</td>
+            <td class="turns-cell">${task.maxTurns != null ? task.maxTurns : '-'}</td>
             ${modelCells}
         `;
     },
@@ -370,7 +422,14 @@ export const UI = {
             }
         });
 
-        // Actions cell only has delete button now, no dynamic update needed
+        // Update turns cells
+        const turnsCells = row.querySelectorAll('td.turns-cell');
+        if (turnsCells.length >= 2) {
+            const minText = task.minTurns != null ? String(task.minTurns) : '-';
+            const maxText = task.maxTurns != null ? String(task.maxTurns) : '-';
+            if (turnsCells[0].textContent !== minText) turnsCells[0].textContent = minText;
+            if (turnsCells[1].textContent !== maxText) turnsCells[1].textContent = maxText;
+        }
     },
 
     buildActionButtons(taskId) {

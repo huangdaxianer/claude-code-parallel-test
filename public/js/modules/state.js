@@ -65,6 +65,9 @@ export const AppState = {
     // Source type filter: 'prompt' | 'upload' | ''
     sourceTypeFilter: '',
 
+    // Turns filters: { minTurnsGte, minTurnsLte, maxTurnsGte, maxTurnsLte }
+    turnsFilters: {},
+
     // Track previous model names to avoid unnecessary header rebuilds
     prevModelNamesKey: '',
 
@@ -89,7 +92,16 @@ export const AppState = {
     extractAllModelNames() {
         // Prefer model names from allModels config (complete list) over task runs (current page only)
         if (this.allModels && this.allModels.length > 0) {
-            this.allModelNames = this.allModels.map(m => m.name).sort();
+            // Only show models enabled for the current admin's user group
+            const userGroupId = this.currentUser?.group_id;
+            let models = this.allModels;
+            if (userGroupId) {
+                models = this.allModels.filter(m => {
+                    const gs = (m.group_settings || []).find(g => g.group_id === userGroupId);
+                    return gs ? gs.is_enabled === 1 : true;
+                });
+            }
+            this.allModelNames = models.map(m => m.name).sort();
             return;
         }
         const modelSet = new Set();

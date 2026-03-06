@@ -157,12 +157,24 @@ router.get('/task_events/:runId', (req, res) => {
         if (!run) return res.status(404).json({ error: 'Run not found' });
         if (!isTaskOwnerOrAdmin(req, res, run.task_id)) return;
 
-        const events = db.prepare(`
-            SELECT id, type, tool_name, tool_use_id, preview_text, status_class, is_flagged
-            FROM log_entries
-            WHERE run_id = ? AND type NOT LIKE 'HIDDEN_%'
-            ORDER BY line_number ASC
-        `).all(runId);
+        const isAdmin = req.user && req.user.role === 'admin';
+        let events;
+        if (isAdmin) {
+            events = db.prepare(`
+                SELECT id, type, tool_name, tool_use_id, preview_text, status_class, is_flagged
+                FROM log_entries
+                WHERE run_id = ? AND type NOT LIKE 'HIDDEN_%'
+                ORDER BY line_number ASC
+            `).all(runId);
+        } else {
+            // 非管理员用户隐藏 ERROR 类型的日志条目（如 API 报错信息）
+            events = db.prepare(`
+                SELECT id, type, tool_name, tool_use_id, preview_text, status_class, is_flagged
+                FROM log_entries
+                WHERE run_id = ? AND type NOT LIKE 'HIDDEN_%' AND type != 'ERROR'
+                ORDER BY line_number ASC
+            `).all(runId);
+        }
         res.json({ events });
     } catch (e) {
         console.error('Error fetching task events:', e);

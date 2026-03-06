@@ -251,6 +251,46 @@ async function handleGlobalClick(e) {
                 break;
             }
 
+            // Turns filter apply
+            case 'apply-turns-filter': {
+                const filterType = actionBtn.dataset.filterType; // 'min' or 'max'
+                if (filterType === 'min') {
+                    const gteVal = document.getElementById('min-turns-gte')?.value.trim();
+                    const lteVal = document.getElementById('min-turns-lte')?.value.trim();
+                    AppState.turnsFilters.minTurnsGte = gteVal !== '' ? gteVal : '';
+                    AppState.turnsFilters.minTurnsLte = lteVal !== '' ? lteVal : '';
+                } else {
+                    const gteVal = document.getElementById('max-turns-gte')?.value.trim();
+                    const lteVal = document.getElementById('max-turns-lte')?.value.trim();
+                    AppState.turnsFilters.maxTurnsGte = gteVal !== '' ? gteVal : '';
+                    AppState.turnsFilters.maxTurnsLte = lteVal !== '' ? lteVal : '';
+                }
+                AppState.pagination.page = 1;
+                document.querySelectorAll('.col-filter-popup.show').forEach(p => p.classList.remove('show'));
+                AppState.prevModelNamesKey = '';
+                UI.updateTableHeader(true);
+                refreshTasks();
+                break;
+            }
+
+            // Turns filter clear
+            case 'clear-turns-filter': {
+                const filterType = actionBtn.dataset.filterType;
+                if (filterType === 'min') {
+                    delete AppState.turnsFilters.minTurnsGte;
+                    delete AppState.turnsFilters.minTurnsLte;
+                } else {
+                    delete AppState.turnsFilters.maxTurnsGte;
+                    delete AppState.turnsFilters.maxTurnsLte;
+                }
+                AppState.pagination.page = 1;
+                document.querySelectorAll('.col-filter-popup.show').forEach(p => p.classList.remove('show'));
+                AppState.prevModelNamesKey = '';
+                UI.updateTableHeader(true);
+                refreshTasks();
+                break;
+            }
+
             case 'stop': stopTask(id); break;
             case 'delete': deleteTask(id); break;
             case 'view': viewTask(id, actionBtn.dataset.username); break;
@@ -532,7 +572,8 @@ async function refreshTasks() {
             userId: AppState.userFilter,
             search: searchFilter,
             modelFilters: AppState.modelFilters,
-            sourceType: AppState.sourceTypeFilter
+            sourceType: AppState.sourceTypeFilter,
+            turnsFilters: AppState.turnsFilters
         });
 
         AppState.setTasks(result.tasks);

@@ -7,7 +7,7 @@ export function getAuthHeaders() {
 }
 
 export const TaskAPI = {
-    async fetchTasks({ page = 1, pageSize = 20, userId = '', search = '', modelFilters = {}, sourceType = '' } = {}) {
+    async fetchTasks({ page = 1, pageSize = 20, userId = '', search = '', modelFilters = {}, sourceType = '', turnsFilters = {} } = {}) {
         const params = new URLSearchParams();
         params.set('page', page);
         params.set('pageSize', pageSize);
@@ -17,6 +17,10 @@ export const TaskAPI = {
         // Per-model status filters
         for (const [modelId, filterStatus] of Object.entries(modelFilters)) {
             if (filterStatus) params.set(`modelFilter_${modelId}`, filterStatus);
+        }
+        // Turns filters
+        for (const [key, value] of Object.entries(turnsFilters)) {
+            if (value !== '' && value != null) params.set(key, value);
         }
         const res = await fetch(`/api/admin/tasks?${params.toString()}`, { headers: getAuthHeaders() });
         return await res.json();
