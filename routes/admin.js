@@ -1532,6 +1532,32 @@ router.post('/trace-check-start', (req, res) => {
     }
 });
 
+// 启动全部反馈质检（将所有未质检的 model_run 加入队列）
+router.post('/trace-check-start-all', (req, res) => {
+    try {
+        const allPending = db.prepare(`
+            SELECT mr.task_id, mr.model_id
+            FROM model_runs mr
+            JOIN tasks t ON mr.task_id = t.task_id
+            WHERE NOT EXISTS (
+                SELECT 1 FROM ai_quality_inspections aq
+                WHERE aq.task_id = mr.task_id AND aq.model_id = mr.model_id
+            )
+        `).all();
+
+        if (allPending.length === 0) {
+            return res.json({ success: true, enqueued: 0, message: '没有待质检的记录' });
+        }
+
+        const aiQcService = require('../services/aiQcService');
+        const count = aiQcService.enqueueForTraceCheck(allPending);
+        res.json({ success: true, enqueued: count, total: allPending.length });
+    } catch (e) {
+        console.error('[Admin] Trace check start all error:', e);
+        res.status(500).json({ error: 'Failed to start trace check all' });
+    }
+});
+
 // 反馈质检进度
 router.get('/trace-check-progress', (req, res) => {
     try {

@@ -388,6 +388,14 @@ export const TaskAPI = {
         return await res.json();
     },
 
+    async startTraceAll() {
+        const res = await fetch('/api/admin/trace-check-start-all', {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }
+        });
+        return await res.json();
+    },
+
     async fetchTraceProgress() {
         const res = await fetch('/api/admin/trace-check-progress', { headers: getAuthHeaders() });
         return await res.json();

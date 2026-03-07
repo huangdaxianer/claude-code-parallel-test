@@ -486,6 +486,18 @@ async function handleGlobalClick(e) {
                 document.querySelectorAll('.trace-checkbox').forEach(cb => cb.checked = true);
                 break;
 
+            case 'trace-start-all': {
+                if (!confirm('确认对所有待质检记录开始打标？')) break;
+                try {
+                    const result = await TaskAPI.startTraceAll();
+                    if (result.success) {
+                        alert(`已提交 ${result.enqueued} 条反馈质检任务`);
+                        fetchTraceStats();
+                    } else { alert(result.error || '启动失败'); }
+                } catch (e) { alert('启动全部反馈质检失败'); }
+                break;
+            }
+
             case 'trace-toggle-all': {
                 const allCb = document.getElementById('trace-select-all-checkbox');
                 document.querySelectorAll('.trace-checkbox').forEach(cb => cb.checked = allCb.checked);
