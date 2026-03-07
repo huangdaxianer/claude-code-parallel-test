@@ -145,58 +145,66 @@ function callAnthropicAPI(apiBaseUrl, apiKey, modelName, systemPrompt, userConte
 // ===================== 工具函数 =====================
 
 /**
- * 压缩执行轨迹：保留工具名称、摘要和成功/失败状态，以及末尾的总结文本
+ * 压缩执行轨迹：按时间顺序交织展示工具调用和模型文本输出
+ *
+ * 之前的实现：先列所有工具调用，再贴最后3条TXT。
+ * 问题：LIMIT 3 丢失大量上下文（有些任务有49条TXT记录），评估模型
+ * 看到大量工具调用但只有3小段文本，误判为"输出被截断"。
+ *
+ * 新实现：按 line_number 顺序交织排列所有条目（工具调用 + 文本），
+ * 中间文本截短到 200 字符，最后 3 条 TXT 保留完整内容（最多 5000 字符）。
  */
 function compressTrace(runId) {
-    // 1. 工具调用记录（带 preview_text 摘要）
-    const toolEntries = db.prepare(`
-        SELECT tool_name, status_class, preview_text
+    // 取所有相关条目（工具调用 + TXT），按 line_number 排序
+    const allEntries = db.prepare(`
+        SELECT line_number, type, tool_name, status_class, preview_text
         FROM log_entries
-        WHERE run_id = ? AND tool_name IS NOT NULL
+        WHERE run_id = ?
+          AND ((tool_name IS NOT NULL) OR (type = 'TXT' AND preview_text IS NOT NULL))
         ORDER BY line_number ASC
     `).all(runId);
 
-    // 2. 最后的文本输出（模型的总结段落）
-    const lastTextEntries = db.prepare(`
-        SELECT preview_text
-        FROM log_entries
-        WHERE run_id = ? AND type = 'TXT' AND preview_text IS NOT NULL
-        ORDER BY line_number DESC
-        LIMIT 3
-    `).all(runId);
+    if (allEntries.length === 0) return '(无工具调用记录)';
 
-    if (toolEntries.length === 0 && lastTextEntries.length === 0) return '(无工具调用记录)';
+    // 找出最后 3 条 TXT 条目的 line_number，这些保留完整内容
+    const txtEntries = allEntries.filter(e => e.type === 'TXT' && !e.tool_name);
+    const lastTxtLineNums = new Set(
+        txtEntries.slice(-3).map(e => e.line_number)
+    );
 
-    // 拼接工具调用摘要
-    const toolLines = toolEntries.map((entry, idx) => {
-        let statusLabel;
-        if (entry.status_class === 'type-success') {
-            statusLabel = '成功';
-        } else if (entry.status_class === 'type-error') {
-            statusLabel = '失败';
+    let stepNum = 0;
+    const lines = allEntries.map(entry => {
+        if (entry.tool_name) {
+            // 工具调用：一行摘要
+            stepNum++;
+            let statusLabel;
+            if (entry.status_class === 'type-success') {
+                statusLabel = '成功';
+            } else if (entry.status_class === 'type-error') {
+                statusLabel = '失败';
+            } else {
+                statusLabel = '进行中';
+            }
+            const preview = entry.preview_text
+                ? ': ' + entry.preview_text.substring(0, 80).replace(/\n/g, ' ')
+                : '';
+            return `${stepNum}. ${entry.tool_name}${preview} → ${statusLabel}`;
         } else {
-            statusLabel = '进行中';
+            // TXT 文本输出
+            const text = entry.preview_text.replace(/\n{3,}/g, '\n\n');
+            if (lastTxtLineNums.has(entry.line_number)) {
+                // 最后 3 条 TXT：保留完整内容（限 5000 字符）
+                return `[模型输出] ${text.substring(0, 5000)}`;
+            } else {
+                // 中间 TXT：截短到 200 字符，让评估模型了解执行流程
+                const short = text.substring(0, 200).replace(/\n/g, ' ');
+                const suffix = text.length > 200 ? '...' : '';
+                return `[模型输出] ${short}${suffix}`;
+            }
         }
-        // preview_text 截断到 80 字符
-        const preview = entry.preview_text
-            ? ': ' + entry.preview_text.substring(0, 80).replace(/\n/g, ' ')
-            : '';
-        return `${idx + 1}. ${entry.tool_name}${preview} → ${statusLabel}`;
-    }).join('\n');
+    });
 
-    // 拼接末尾文本（倒序取的，翻转回来）
-    // 注意：截断到 2000 字符，因为末尾总结是判断轨迹完整性的关键证据
-    // 之前 300 字符太短，导致总结被截断，模型误判为"轨迹不完整"
-    const lastTexts = lastTextEntries.reverse();
-    const tailText = lastTexts
-        .map(e => e.preview_text.substring(0, 50000).replace(/\n{3,}/g, '\n\n'))
-        .join('\n---\n');
-
-    let result = toolLines;
-    if (tailText) {
-        result += '\n\n=== 模型最终输出 ===\n' + tailText;
-    }
-    return result;
+    return lines.join('\n');
 }
 
 /**
