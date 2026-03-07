@@ -513,6 +513,39 @@ try { db.exec("ALTER TABLE model_runs ADD COLUMN count_glob INTEGER"); } catch (
 try { db.exec("ALTER TABLE model_runs ADD COLUMN count_grep INTEGER"); } catch (e) { }
 try { db.exec("ALTER TABLE model_runs ADD COLUMN count_agent INTEGER"); } catch (e) { }
 
+// Backfill: compute Edit/Glob/Grep/Agent counts from log_entries for existing runs
+try {
+    const needsBackfill = db.prepare(`SELECT id FROM model_runs WHERE count_edit IS NULL LIMIT 1`).get();
+    if (needsBackfill) {
+        console.log('[DB] Backfilling count_edit/count_glob/count_grep/count_agent from log_entries...');
+        const runIds = db.prepare(`SELECT id FROM model_runs WHERE count_edit IS NULL`).all();
+        const countStmt = db.prepare(`
+            SELECT
+                SUM(CASE WHEN tool_name = 'Edit' THEN 1 ELSE 0 END) AS c_edit,
+                SUM(CASE WHEN tool_name = 'Glob' THEN 1 ELSE 0 END) AS c_glob,
+                SUM(CASE WHEN tool_name = 'Grep' THEN 1 ELSE 0 END) AS c_grep,
+                SUM(CASE WHEN tool_name IN ('Task', 'Agent') THEN 1 ELSE 0 END) AS c_agent
+            FROM log_entries WHERE run_id = ? AND tool_name IN ('Edit', 'Glob', 'Grep', 'Task', 'Agent')
+        `);
+        const updateStmt = db.prepare(`UPDATE model_runs SET count_edit = ?, count_glob = ?, count_grep = ?, count_agent = ? WHERE id = ?`);
+        let filled = 0, errors = 0;
+        for (const { id } of runIds) {
+            try {
+                const c = countStmt.get(id);
+                updateStmt.run(c ? (c.c_edit || 0) : 0, c ? (c.c_glob || 0) : 0, c ? (c.c_grep || 0) : 0, c ? (c.c_agent || 0) : 0, id);
+                filled++;
+            } catch (e) {
+                // 跳过损坏的 log_entries，设为 0
+                updateStmt.run(0, 0, 0, 0, id);
+                errors++;
+            }
+        }
+        console.log(`[DB] Backfill complete: ${filled} runs filled, ${errors} skipped (corrupted).`);
+    }
+} catch (e) {
+    console.error('[DB] Backfill error:', e.message);
+}
+
 // Migration: Add process persistence columns to model_runs (for process re-attach on server restart)
 try { db.exec("ALTER TABLE model_runs ADD COLUMN pid INTEGER"); } catch (e) { }
 try { db.exec("ALTER TABLE model_runs ADD COLUMN stdout_file TEXT"); } catch (e) { }

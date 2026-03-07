@@ -52,7 +52,16 @@ let activeCount = 0;
 
 // 提示词
 const REQ_TYPE_SYSTEM_PROMPT = '你会看到一个软件开发需求，请你判断该需求是否为真实的软件开发需求（例如需求如果只是要求撰写方案文档，就不算软件开发需求），并对需求进行分类，包含以下几个分类：客户端、前端网页、全栈网页、服务端、算法、嵌入式、其它，如果需求符合要求就直接输出分类，如果不符合就直接输出不符合要求';
-const TRACE_SYSTEM_PROMPT = '以下是一段模型对用户需求的执行轨迹，请你判断该轨迹是否满足以下条件 1. 轨迹是完整的，并且在最终交付了用户的需求，并在最后一轮总结了用户的产物，没有被截断 2. 该任务确实调用工具改动了文件，生成了新的文件，而不是仅仅输出方案 请你判定完成后输入轨迹完整或轨迹不完整两种结果，不要输出其它内容';
+const TRACE_SYSTEM_PROMPT = `以下是一段 AI 编程助手对用户需求的执行轨迹（包含工具调用摘要和最终输出），请你判断该轨迹是否满足以下全部条件：
+
+1. 轨迹是完整的，没有被中途截断。完整的轨迹通常以模型的总结性文字结尾，列出创建/修改的文件和实现的功能
+2. 该任务确实调用了文件写入类工具（Write、Edit、Bash 写文件等）创建或修改了代码文件，而不是仅仅输出方案或只进行了文件阅读
+
+判定标准：
+- 轨迹完整：轨迹末尾有明确的总结段落（如"已完成"、"Results"、"总结"等），列出了交付产物（文件名、功能点等），且过程中有 Write/Edit 等文件修改操作
+- 轨迹不完整：轨迹在工具调用中途断开没有最终总结，或全程只有 Read/Glob 等只读操作没有实际写入文件，或最终输出只是方案文档而非代码实现
+
+请直接输出"轨迹完整"或"轨迹不完整"，不要输出其它内容。`;
 
 /**
  * 调用 Anthropic Messages API
@@ -119,19 +128,30 @@ function callAnthropicAPI(apiBaseUrl, apiKey, modelName, systemPrompt, userConte
 }
 
 /**
- * 压缩执行轨迹：仅保留工具名称和成功/失败状态
+ * 压缩执行轨迹：保留工具名称、摘要和成功/失败状态，以及末尾的总结文本
  */
 function compressTrace(runId) {
-    const entries = db.prepare(`
-        SELECT tool_name, status_class
+    // 1. 工具调用记录（带 preview_text 摘要）
+    const toolEntries = db.prepare(`
+        SELECT tool_name, status_class, preview_text
         FROM log_entries
         WHERE run_id = ? AND tool_name IS NOT NULL
         ORDER BY line_number ASC
     `).all(runId);
 
-    if (entries.length === 0) return '(无工具调用记录)';
+    // 2. 最后的文本输出（模型的总结段落）
+    const lastTextEntries = db.prepare(`
+        SELECT preview_text
+        FROM log_entries
+        WHERE run_id = ? AND type = 'TXT' AND preview_text IS NOT NULL
+        ORDER BY line_number DESC
+        LIMIT 3
+    `).all(runId);
 
-    return entries.map((entry, idx) => {
+    if (toolEntries.length === 0 && lastTextEntries.length === 0) return '(无工具调用记录)';
+
+    // 拼接工具调用摘要
+    const toolLines = toolEntries.map((entry, idx) => {
         let statusLabel;
         if (entry.status_class === 'type-success') {
             statusLabel = '成功';
@@ -140,8 +160,24 @@ function compressTrace(runId) {
         } else {
             statusLabel = '进行中';
         }
-        return `${idx + 1}. ${entry.tool_name} → ${statusLabel}`;
+        // preview_text 截断到 80 字符
+        const preview = entry.preview_text
+            ? ': ' + entry.preview_text.substring(0, 80).replace(/\n/g, ' ')
+            : '';
+        return `${idx + 1}. ${entry.tool_name}${preview} → ${statusLabel}`;
     }).join('\n');
+
+    // 拼接末尾文本（倒序取的，翻转回来）
+    const lastTexts = lastTextEntries.reverse();
+    const tailText = lastTexts
+        .map(e => e.preview_text.substring(0, 300).replace(/\n{3,}/g, '\n\n'))
+        .join('\n---\n');
+
+    let result = toolLines;
+    if (tailText) {
+        result += '\n\n=== 模型最终输出 ===\n' + tailText;
+    }
+    return result;
 }
 
 /**
