@@ -1567,6 +1567,50 @@ router.post('/trace-check-delete', (req, res) => {
     }
 });
 
+// 调试接口：查看发给模型的原始压缩轨迹
+router.get('/trace-check-debug', (req, res) => {
+    try {
+        const { taskId, modelId } = req.query;
+        if (!taskId || !modelId) {
+            return res.status(400).json({ error: 'taskId and modelId required' });
+        }
+        const run = db.prepare(
+            'SELECT id FROM model_runs WHERE task_id = ? AND model_id = ?'
+        ).get(taskId, modelId);
+        if (!run) {
+            return res.status(404).json({ error: 'model_run not found' });
+        }
+        const task = db.prepare('SELECT prompt FROM tasks WHERE task_id = ?').get(taskId);
+        const aiQcService = require('../services/aiQcService');
+        const compressedTrace = aiQcService.compressTrace(run.id);
+
+        // 同时返回最后几条原始 log_entries 供对比
+        const lastEntries = db.prepare(`
+            SELECT line_number, type, tool_name, status_class,
+                   length(preview_text) as preview_len,
+                   preview_text
+            FROM log_entries
+            WHERE run_id = ?
+            ORDER BY line_number DESC
+            LIMIT 10
+        `).all(run.id);
+
+        res.json({
+            success: true,
+            taskId,
+            modelId,
+            runId: run.id,
+            prompt: task?.prompt || '',
+            compressedTrace,
+            compressedTraceLength: compressedTrace.length,
+            lastEntries: lastEntries.reverse()
+        });
+    } catch (e) {
+        console.error('[Admin] Trace check debug error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // 挂载报告子路由
 const reportRoutes = require('./reports');
 router.use('/report', reportRoutes);
