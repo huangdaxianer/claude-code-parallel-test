@@ -185,9 +185,11 @@ function compressTrace(runId) {
     }).join('\n');
 
     // 拼接末尾文本（倒序取的，翻转回来）
+    // 注意：截断到 2000 字符，因为末尾总结是判断轨迹完整性的关键证据
+    // 之前 300 字符太短，导致总结被截断，模型误判为"轨迹不完整"
     const lastTexts = lastTextEntries.reverse();
     const tailText = lastTexts
-        .map(e => e.preview_text.substring(0, 300).replace(/\n{3,}/g, '\n\n'))
+        .map(e => e.preview_text.substring(0, 50000).replace(/\n{3,}/g, '\n\n'))
         .join('\n---\n');
 
     let result = toolLines;
