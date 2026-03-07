@@ -1152,7 +1152,7 @@ router.get('/comment-stats', (req, res) => {
     }
 });
 
-// 质检管理统计
+// 质检管理统计（统一表格：人工质检 + AI 题目分类 + AI 轨迹完整度）
 router.get('/qc-stats', (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -1162,6 +1162,8 @@ router.get('/qc-stats', (req, res) => {
         const inspector = req.query.inspector || '';
         const taskQuality = req.query.taskQuality || '';
         const feedbackQuality = req.query.feedbackQuality || '';
+        const requirementType = req.query.requirementType || '';
+        const traceCompleteness = req.query.traceCompleteness || '';
 
         let filterConditions = '';
         const filterParams = [];
@@ -1181,6 +1183,26 @@ router.get('/qc-stats', (req, res) => {
         if (feedbackQuality) {
             filterConditions += ' AND qi_fb.answer = ?';
             filterParams.push(feedbackQuality);
+        }
+
+        // 需求类型筛选
+        if (requirementType === '__pending__') {
+            filterConditions += ' AND ac.id IS NULL';
+        } else if (requirementType === '__running__') {
+            filterConditions += " AND ac.status IN ('pending', 'running')";
+        } else if (requirementType) {
+            filterConditions += ' AND ac.requirement_type = ? AND ac.status = ?';
+            filterParams.push(requirementType, 'completed');
+        }
+
+        // 轨迹完整度筛选
+        if (traceCompleteness === '__pending__') {
+            filterConditions += ' AND aq.id IS NULL';
+        } else if (traceCompleteness === '__running__') {
+            filterConditions += " AND aq.status IN ('pending', 'running')";
+        } else if (traceCompleteness) {
+            filterConditions += ' AND aq.trace_completeness = ? AND aq.status = ?';
+            filterParams.push(traceCompleteness, 'completed');
         }
 
         let qcStatusCondition = '';
@@ -1207,7 +1229,12 @@ router.get('/qc-stats', (req, res) => {
                 qi_task.admin_username as task_inspector,
                 qi_fb.answer as feedback_quality,
                 qi_fb.note as feedback_quality_note,
-                qi_fb.admin_username as feedback_inspector
+                qi_fb.admin_username as feedback_inspector,
+                ac.requirement_type,
+                ac.status as cls_status,
+                aq.trace_completeness,
+                aq.trace_reason,
+                aq.status as trace_status
             FROM model_runs mr
             JOIN fully_evaluated_tasks fet ON mr.task_id = fet.task_id
             JOIN tasks t ON mr.task_id = t.task_id
@@ -1215,6 +1242,8 @@ router.get('/qc-stats', (req, res) => {
             LEFT JOIN model_configs mc ON mc.model_id = mr.model_id
             LEFT JOIN quality_inspections qi_task ON qi_task.task_id = mr.task_id AND qi_task.model_id = mr.model_id AND qi_task.question_key = 'task_quality'
             LEFT JOIN quality_inspections qi_fb ON qi_fb.task_id = mr.task_id AND qi_fb.model_id = mr.model_id AND qi_fb.question_key = 'feedback_quality'
+            LEFT JOIN ai_task_classifications ac ON ac.task_id = mr.task_id
+            LEFT JOIN ai_quality_inspections aq ON aq.task_id = mr.task_id AND aq.model_id = mr.model_id
             WHERE 1=1 ${filterConditions} ${qcStatusCondition}
             ORDER BY mr.task_id DESC, mr.model_id
         `;
@@ -1261,6 +1290,15 @@ router.get('/qc-stats', (req, res) => {
             'SELECT DISTINCT admin_username FROM quality_inspections ORDER BY admin_username'
         ).all();
 
+        // 获取需求类型和轨迹完整度的去重值用于筛选器
+        const reqTypes = db.prepare(
+            "SELECT DISTINCT requirement_type FROM ai_task_classifications WHERE status = 'completed' AND requirement_type IS NOT NULL ORDER BY requirement_type"
+        ).all().map(r => r.requirement_type);
+
+        const traceTypes = db.prepare(
+            "SELECT DISTINCT trace_completeness FROM ai_quality_inspections WHERE status = 'completed' AND trace_completeness IS NOT NULL ORDER BY trace_completeness"
+        ).all().map(r => r.trace_completeness);
+
         res.json({
             success: true,
             data,
@@ -1270,7 +1308,9 @@ router.get('/qc-stats', (req, res) => {
             totalPages,
             stats: { pending: stats?.pending || 0, completed: stats?.completed || 0 },
             submitters,
-            inspectors: inspectors.map(i => i.admin_username)
+            inspectors: inspectors.map(i => i.admin_username),
+            requirementTypes: reqTypes,
+            traceCompletenessValues: traceTypes
         });
     } catch (e) {
         console.error('[Admin] QC stats error:', e);
@@ -1383,6 +1423,37 @@ router.post('/task-cls-start', (req, res) => {
     } catch (e) {
         console.error('[Admin] Task classification start error:', e);
         res.status(500).json({ error: 'Failed to start task classification' });
+    }
+});
+
+// 启动全部题目分类（将所有未分类的 task 加入队列）
+router.post('/task-cls-start-all', (req, res) => {
+    try {
+        const allPending = db.prepare(`
+            WITH fully_evaluated_tasks AS (
+                SELECT task_id FROM model_runs
+                GROUP BY task_id
+                HAVING COUNT(*) = SUM(CASE WHEN status = 'evaluated' THEN 1 ELSE 0 END)
+                   AND COUNT(*) > 0
+            )
+            SELECT DISTINCT t.task_id
+            FROM tasks t
+            JOIN fully_evaluated_tasks fet ON t.task_id = fet.task_id
+            LEFT JOIN ai_task_classifications ac ON ac.task_id = t.task_id
+            WHERE ac.id IS NULL
+        `).all();
+
+        if (allPending.length === 0) {
+            return res.json({ success: true, enqueued: 0, message: '没有待分类的记录' });
+        }
+
+        const aiQcService = require('../services/aiQcService');
+        const taskIds = allPending.map(r => r.task_id);
+        const count = aiQcService.enqueueForClassification(taskIds);
+        res.json({ success: true, enqueued: count, total: allPending.length });
+    } catch (e) {
+        console.error('[Admin] Task classification start all error:', e);
+        res.status(500).json({ error: 'Failed to start task classification all' });
     }
 });
 

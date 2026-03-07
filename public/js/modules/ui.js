@@ -1189,24 +1189,71 @@ export const UI = {
         const taskQualityColors = { '高': '#22c55e', '中': '#f59e0b', '低': '#f97316', '不可用': '#ef4444' };
         const feedbackQualityColors = { '完全可用': '#22c55e', '部分可用': '#f59e0b', '完全不可用': '#ef4444' };
 
+        const reqTypeColors = {
+            '客户端': '#6366f1', '前端网页': '#3b82f6', '全栈': '#0ea5e9',
+            '服务端': '#14b8a6', '算法': '#8b5cf6', '嵌入式': '#ec4899',
+            '技术文档': '#f59e0b', '其它': '#94a3b8', '不符合要求': '#ef4444'
+        };
+
+        // 需求类型列渲染（含 pending/running 状态）
+        const reqTypeCell = (row) => {
+            if (row.cls_status === 'completed' && row.requirement_type) {
+                const color = reqTypeColors[row.requirement_type] || '#94a3b8';
+                return `<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.75rem;color:white;background:${color};">${escapeHtml(row.requirement_type)}</span>`;
+            }
+            if (row.cls_status === 'running') {
+                return '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.7rem;color:#3b82f6;background:#eff6ff;border:1px solid #bfdbfe;">打标中</span>';
+            }
+            if (row.cls_status === 'pending') {
+                return '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.7rem;color:#f59e0b;background:#fffbeb;border:1px solid #fde68a;">排队中</span>';
+            }
+            if (row.cls_status === 'failed') {
+                return '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.7rem;color:#ef4444;background:#fef2f2;border:1px solid #fecaca;">失败</span>';
+            }
+            return '<span style="color:#cbd5e1;font-size:0.8rem;">待打标</span>';
+        };
+
+        // 轨迹完整度列渲染（含 pending/running 状态）
+        const traceCell = (row) => {
+            if (row.trace_status === 'completed' && row.trace_completeness) {
+                const isComplete = row.trace_completeness.includes('完整') && !row.trace_completeness.includes('不');
+                const color = isComplete ? '#22c55e' : '#ef4444';
+                return `<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.75rem;color:white;background:${color};">${escapeHtml(row.trace_completeness)}</span>`;
+            }
+            if (row.trace_status === 'running') {
+                return '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.7rem;color:#3b82f6;background:#eff6ff;border:1px solid #bfdbfe;">打标中</span>';
+            }
+            if (row.trace_status === 'pending') {
+                return '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.7rem;color:#f59e0b;background:#fffbeb;border:1px solid #fde68a;">排队中</span>';
+            }
+            if (row.trace_status === 'failed') {
+                return '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.7rem;color:#ef4444;background:#fef2f2;border:1px solid #fecaca;">失败</span>';
+            }
+            return '<span style="color:#cbd5e1;font-size:0.8rem;">待打标</span>';
+        };
+
         if (!data || data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><p>暂无数据</p></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="11" class="empty-state"><p>暂无数据</p></td></tr>`;
             if (paginationEl) paginationEl.innerHTML = '';
             return;
         }
 
         tbody.innerHTML = data.map(row => {
             const inspectorName = row.task_inspector || row.feedback_inspector || '';
+            const traceReason = (row.trace_status === 'completed' && row.trace_reason) ? row.trace_reason : '';
             return `
                 <tr>
                     <td><div class="task-id" data-action="view" data-id="${escapeHtml(row.task_id)}" data-username="${escapeHtml(row.submitter || '')}" style="cursor:pointer;">${escapeHtml(row.task_id)}</div></td>
-                    <td><span style="font-size:0.85rem;color:#475569;">${escapeHtml(row.model_name || row.model_id || '-')}</span></td>
+                    <td><span style="font-size:0.8rem;color:#475569;">${escapeHtml(row.model_name || row.model_id || '-')}</span></td>
                     <td><span class="user-badge">${escapeHtml(row.submitter || '-')}</span></td>
                     <td><span class="user-badge">${escapeHtml(inspectorName || '-')}</span></td>
                     <td>${qualityBadge(row.task_quality, taskQualityColors)}</td>
                     <td>${qualityBadge(row.feedback_quality, feedbackQualityColors)}</td>
-                    <td><span style="font-size:0.85rem;color:#64748b;" title="${escapeHtml(row.task_quality_note || '')}">${escapeHtml(row.task_quality_note ? (row.task_quality_note.length > 30 ? row.task_quality_note.substring(0, 30) + '...' : row.task_quality_note) : '-')}</span></td>
-                    <td><span style="font-size:0.85rem;color:#64748b;" title="${escapeHtml(row.feedback_quality_note || '')}">${escapeHtml(row.feedback_quality_note ? (row.feedback_quality_note.length > 30 ? row.feedback_quality_note.substring(0, 30) + '...' : row.feedback_quality_note) : '-')}</span></td>
+                    <td>${reqTypeCell(row)}</td>
+                    <td>${traceCell(row)}</td>
+                    <td><span style="font-size:0.8rem;color:#64748b;" title="${escapeHtml(traceReason)}">${escapeHtml(traceReason ? (traceReason.length > 25 ? traceReason.substring(0, 25) + '...' : traceReason) : '-')}</span></td>
+                    <td><span style="font-size:0.8rem;color:#64748b;" title="${escapeHtml(row.task_quality_note || '')}">${escapeHtml(row.task_quality_note ? (row.task_quality_note.length > 25 ? row.task_quality_note.substring(0, 25) + '...' : row.task_quality_note) : '-')}</span></td>
+                    <td><span style="font-size:0.8rem;color:#64748b;" title="${escapeHtml(row.feedback_quality_note || '')}">${escapeHtml(row.feedback_quality_note ? (row.feedback_quality_note.length > 25 ? row.feedback_quality_note.substring(0, 25) + '...' : row.feedback_quality_note) : '-')}</span></td>
                 </tr>
             `;
         }).join('');
@@ -1224,175 +1271,6 @@ export const UI = {
             html += `<span style="font-size:0.85rem;">第 ${pagination.page} / ${pagination.totalPages} 页</span>`;
             if (pagination.page < pagination.totalPages) {
                 html += `<button class="btn" data-action="qc-stats-page" data-page="${pagination.page + 1}" style="padding:0.25rem 0.5rem;font-size:0.8rem;">下一页</button>`;
-            }
-            html += `</div>`;
-            paginationEl.innerHTML = html;
-        }
-    },
-
-    // ===== 题目分类表格渲染 =====
-    renderClsTable(subTab, data, pagination) {
-        const tbodyMap = { 'cls-pending': 'cls-pending-tbody', 'cls-running': 'cls-running-tbody', 'cls-completed': 'cls-completed-tbody' };
-        const paginationMap = { 'cls-pending': 'cls-pending-pagination', 'cls-running': 'cls-running-pagination', 'cls-completed': 'cls-completed-pagination' };
-        const colsMap = { 'cls-pending': 3, 'cls-running': 5, 'cls-completed': 5 };
-
-        const tbody = document.getElementById(tbodyMap[subTab]);
-        const paginationEl = document.getElementById(paginationMap[subTab]);
-        if (!tbody) return;
-
-        const cols = colsMap[subTab] || 3;
-
-        if (!data || data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="${cols}" class="empty-state"><p>暂无数据</p></td></tr>`;
-            if (paginationEl) paginationEl.innerHTML = '';
-            return;
-        }
-
-        const reqTypeColors = {
-            '客户端': '#6366f1', '前端网页': '#3b82f6', '全栈': '#0ea5e9',
-            '服务端': '#14b8a6', '算法': '#8b5cf6', '嵌入式': '#ec4899',
-            '技术文档': '#f59e0b', '其它': '#94a3b8', '不符合要求': '#ef4444'
-        };
-        const reqTypeBadge = (val) => {
-            if (!val) return '<span style="color:#cbd5e1;">-</span>';
-            const color = reqTypeColors[val] || '#94a3b8';
-            return `<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.75rem;color:white;background:${color};">${escapeHtml(val)}</span>`;
-        };
-
-        if (subTab === 'cls-pending') {
-            tbody.innerHTML = data.map(row => `
-                <tr>
-                    <td><input type="checkbox" class="cls-checkbox" data-task-id="${escapeHtml(row.task_id)}"></td>
-                    <td><div class="task-id" data-action="view" data-id="${escapeHtml(row.task_id)}" data-username="${escapeHtml(row.submitter || '')}" style="cursor:pointer;">${escapeHtml(row.task_id)}</div></td>
-                    <td><span class="user-badge">${escapeHtml(row.submitter || '-')}</span></td>
-                </tr>
-            `).join('');
-        } else if (subTab === 'cls-running') {
-            tbody.innerHTML = data.map(row => {
-                const statusBadge = row.status === 'running'
-                    ? '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.75rem;color:white;background:#3b82f6;">运行中</span>'
-                    : '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.75rem;color:white;background:#f59e0b;">排队中</span>';
-                return `
-                    <tr>
-                        <td><div class="task-id" data-action="view" data-id="${escapeHtml(row.task_id)}" data-username="${escapeHtml(row.submitter || '')}" style="cursor:pointer;">${escapeHtml(row.task_id)}</div></td>
-                        <td><span class="user-badge">${escapeHtml(row.submitter || '-')}</span></td>
-                        <td>${statusBadge}</td>
-                        <td>${row.retry_count || 0}</td>
-                        <td><span style="font-size:0.85rem;color:#64748b;" title="${escapeHtml(row.error_message || '')}">${escapeHtml(row.error_message ? (row.error_message.length > 50 ? row.error_message.substring(0, 50) + '...' : row.error_message) : '-')}</span></td>
-                    </tr>
-                `;
-            }).join('');
-        } else { // cls-completed
-            tbody.innerHTML = data.map(row => `
-                <tr>
-                    <td><input type="checkbox" class="cls-completed-checkbox" data-task-id="${escapeHtml(row.task_id)}"></td>
-                    <td><div class="task-id" data-action="view" data-id="${escapeHtml(row.task_id)}" data-username="${escapeHtml(row.submitter || '')}" style="cursor:pointer;">${escapeHtml(row.task_id)}</div></td>
-                    <td><span class="user-badge">${escapeHtml(row.submitter || '-')}</span></td>
-                    <td>${reqTypeBadge(row.requirement_type)}</td>
-                    <td><span style="font-size:0.85rem;color:#64748b;">${row.completed_at || '-'}</span></td>
-                </tr>
-            `).join('');
-        }
-
-        // 分页
-        if (paginationEl && pagination) {
-            if (pagination.totalPages <= 1) {
-                paginationEl.innerHTML = `<span style="font-size:0.85rem;color:#94a3b8;">共 ${pagination.total} 条</span>`;
-                return;
-            }
-            let html = `<div style="display:flex;align-items:center;gap:0.5rem;justify-content:center;">`;
-            html += `<span style="font-size:0.85rem;color:#94a3b8;">共 ${pagination.total} 条</span>`;
-            if (pagination.page > 1) {
-                html += `<button class="btn" data-action="cls-page" data-page="${pagination.page - 1}" style="padding:0.25rem 0.5rem;font-size:0.8rem;">上一页</button>`;
-            }
-            html += `<span style="font-size:0.85rem;">第 ${pagination.page} / ${pagination.totalPages} 页</span>`;
-            if (pagination.page < pagination.totalPages) {
-                html += `<button class="btn" data-action="cls-page" data-page="${pagination.page + 1}" style="padding:0.25rem 0.5rem;font-size:0.8rem;">下一页</button>`;
-            }
-            html += `</div>`;
-            paginationEl.innerHTML = html;
-        }
-    },
-
-    // ===== 反馈质检表格渲染 =====
-    renderTraceTable(subTab, data, pagination) {
-        const tbodyMap = { 'trace-pending': 'trace-pending-tbody', 'trace-running': 'trace-running-tbody', 'trace-completed': 'trace-completed-tbody' };
-        const paginationMap = { 'trace-pending': 'trace-pending-pagination', 'trace-running': 'trace-running-pagination', 'trace-completed': 'trace-completed-pagination' };
-        const colsMap = { 'trace-pending': 4, 'trace-running': 6, 'trace-completed': 7 };
-
-        const tbody = document.getElementById(tbodyMap[subTab]);
-        const paginationEl = document.getElementById(paginationMap[subTab]);
-        if (!tbody) return;
-
-        const cols = colsMap[subTab] || 4;
-
-        if (!data || data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="${cols}" class="empty-state"><p>暂无数据</p></td></tr>`;
-            if (paginationEl) paginationEl.innerHTML = '';
-            return;
-        }
-
-        const traceBadge = (val, reason) => {
-            if (!val) return '<span style="color:#cbd5e1;">-</span>';
-            const isComplete = val.includes('完整') && !val.includes('不');
-            const color = isComplete ? '#22c55e' : '#ef4444';
-            const tooltip = reason ? ` title="${escapeHtml(reason)}"` : '';
-            return `<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.75rem;color:white;background:${color};cursor:${reason ? 'help' : 'default'};"${tooltip}>${escapeHtml(val)}</span>`;
-        };
-
-        if (subTab === 'trace-pending') {
-            tbody.innerHTML = data.map(row => `
-                <tr>
-                    <td><input type="checkbox" class="trace-checkbox" data-task-id="${escapeHtml(row.task_id)}" data-model-id="${escapeHtml(row.model_id)}"></td>
-                    <td><div class="task-id" data-action="view" data-id="${escapeHtml(row.task_id)}" data-username="${escapeHtml(row.submitter || '')}" style="cursor:pointer;">${escapeHtml(row.task_id)}</div></td>
-                    <td><span style="font-size:0.85rem;color:#475569;">${escapeHtml(row.model_name || row.model_id || '-')}</span></td>
-                    <td><span class="user-badge">${escapeHtml(row.submitter || '-')}</span></td>
-                </tr>
-            `).join('');
-        } else if (subTab === 'trace-running') {
-            tbody.innerHTML = data.map(row => {
-                const statusBadge = row.status === 'running'
-                    ? '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.75rem;color:white;background:#3b82f6;">运行中</span>'
-                    : '<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.75rem;color:white;background:#f59e0b;">排队中</span>';
-                return `
-                    <tr>
-                        <td><div class="task-id" data-action="view" data-id="${escapeHtml(row.task_id)}" data-username="${escapeHtml(row.submitter || '')}" style="cursor:pointer;">${escapeHtml(row.task_id)}</div></td>
-                        <td><span style="font-size:0.85rem;color:#475569;">${escapeHtml(row.model_name || row.model_id || '-')}</span></td>
-                        <td><span class="user-badge">${escapeHtml(row.submitter || '-')}</span></td>
-                        <td>${statusBadge}</td>
-                        <td>${row.retry_count || 0}</td>
-                        <td><span style="font-size:0.85rem;color:#64748b;" title="${escapeHtml(row.error_message || '')}">${escapeHtml(row.error_message ? (row.error_message.length > 50 ? row.error_message.substring(0, 50) + '...' : row.error_message) : '-')}</span></td>
-                    </tr>
-                `;
-            }).join('');
-        } else { // trace-completed
-            tbody.innerHTML = data.map(row => `
-                <tr>
-                    <td><input type="checkbox" class="trace-completed-checkbox" data-task-id="${escapeHtml(row.task_id)}" data-model-id="${escapeHtml(row.model_id)}"></td>
-                    <td><div class="task-id" data-action="view" data-id="${escapeHtml(row.task_id)}" data-username="${escapeHtml(row.submitter || '')}" style="cursor:pointer;">${escapeHtml(row.task_id)}</div></td>
-                    <td><span style="font-size:0.85rem;color:#475569;">${escapeHtml(row.model_name || row.model_id || '-')}</span></td>
-                    <td><span class="user-badge">${escapeHtml(row.submitter || '-')}</span></td>
-                    <td>${traceBadge(row.trace_completeness, row.trace_reason)}</td>
-                    <td><span style="font-size:0.85rem;color:#64748b;">${escapeHtml(row.trace_reason || '-')}</span></td>
-                    <td><span style="font-size:0.85rem;color:#64748b;">${row.completed_at || '-'}</span></td>
-                </tr>
-            `).join('');
-        }
-
-        // 分页
-        if (paginationEl && pagination) {
-            if (pagination.totalPages <= 1) {
-                paginationEl.innerHTML = `<span style="font-size:0.85rem;color:#94a3b8;">共 ${pagination.total} 条</span>`;
-                return;
-            }
-            let html = `<div style="display:flex;align-items:center;gap:0.5rem;justify-content:center;">`;
-            html += `<span style="font-size:0.85rem;color:#94a3b8;">共 ${pagination.total} 条</span>`;
-            if (pagination.page > 1) {
-                html += `<button class="btn" data-action="trace-page" data-page="${pagination.page - 1}" style="padding:0.25rem 0.5rem;font-size:0.8rem;">上一页</button>`;
-            }
-            html += `<span style="font-size:0.85rem;">第 ${pagination.page} / ${pagination.totalPages} 页</span>`;
-            if (pagination.page < pagination.totalPages) {
-                html += `<button class="btn" data-action="trace-page" data-page="${pagination.page + 1}" style="padding:0.25rem 0.5rem;font-size:0.8rem;">下一页</button>`;
             }
             html += `</div>`;
             paginationEl.innerHTML = html;

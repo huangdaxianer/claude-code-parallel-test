@@ -323,7 +323,7 @@ export const TaskAPI = {
         return await res.json();
     },
 
-    async fetchQCStats({ page = 1, pageSize = 50, status = '', userId = '', inspector = '', taskQuality = '', feedbackQuality = '' } = {}) {
+    async fetchQCStats({ page = 1, pageSize = 50, status = '', userId = '', inspector = '', taskQuality = '', feedbackQuality = '', requirementType = '', traceCompleteness = '' } = {}) {
         const params = new URLSearchParams();
         params.set('page', page);
         params.set('pageSize', pageSize);
@@ -332,7 +332,17 @@ export const TaskAPI = {
         if (inspector) params.set('inspector', inspector);
         if (taskQuality) params.set('taskQuality', taskQuality);
         if (feedbackQuality) params.set('feedbackQuality', feedbackQuality);
+        if (requirementType) params.set('requirementType', requirementType);
+        if (traceCompleteness) params.set('traceCompleteness', traceCompleteness);
         const res = await fetch(`/api/admin/qc-stats?${params.toString()}`, { headers: getAuthHeaders() });
+        return await res.json();
+    },
+
+    async startClsAll() {
+        const res = await fetch('/api/admin/task-cls-start-all', {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }
+        });
         return await res.json();
     },
 
