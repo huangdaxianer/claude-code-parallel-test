@@ -358,14 +358,40 @@ async function handleGlobalClick(e) {
 
             case 'refresh-qc-stats':
                 fetchQCStats();
+                fetchAiQcStats();
                 break;
 
             case 'qc-sub-tab': {
                 const val = actionBtn.dataset.value;
-                AppState.qcStatsStatus = val;
-                AppState.qcStatsPagination.page = 1;
                 document.querySelectorAll('.qc-sub-tab').forEach(b => b.classList.toggle('active', b.dataset.value === val));
-                fetchQCStats();
+
+                // 切换内容区域显示
+                const isHuman = val.startsWith('human-');
+                document.getElementById('qc-human-filters').style.display = isHuman ? 'flex' : 'none';
+                document.getElementById('qc-human-content').style.display = isHuman ? '' : 'none';
+                document.getElementById('qc-ai-pending-content').style.display = val === 'ai-pending' ? '' : 'none';
+                document.getElementById('qc-ai-running-content').style.display = val === 'ai-running' ? '' : 'none';
+                document.getElementById('qc-ai-completed-content').style.display = val === 'ai-completed' ? '' : 'none';
+
+                // 清理自动刷新定时器
+                if (window._aiQcRefreshTimer) {
+                    clearInterval(window._aiQcRefreshTimer);
+                    window._aiQcRefreshTimer = null;
+                }
+
+                if (isHuman) {
+                    AppState.qcStatsStatus = val === 'human-pending' ? 'pending' : 'completed';
+                    AppState.qcStatsPagination.page = 1;
+                    fetchQCStats();
+                } else {
+                    AppState.aiQcSubTab = val;
+                    AppState.aiQcPagination.page = 1;
+                    fetchAiQcStats();
+                    // 模型质检中页面自动刷新
+                    if (val === 'ai-running') {
+                        window._aiQcRefreshTimer = setInterval(fetchAiQcStats, 5000);
+                    }
+                }
                 break;
             }
 
@@ -373,6 +399,60 @@ async function handleGlobalClick(e) {
                 AppState.qcStatsPagination.page = parseInt(actionBtn.dataset.page) || 1;
                 fetchQCStats();
                 break;
+
+            case 'ai-qc-page':
+                AppState.aiQcPagination.page = parseInt(actionBtn.dataset.page) || 1;
+                fetchAiQcStats();
+                break;
+
+            case 'ai-qc-start-selected': {
+                const checked = document.querySelectorAll('.ai-qc-checkbox:checked');
+                const items = [...checked].map(cb => ({
+                    task_id: cb.dataset.taskId,
+                    model_id: cb.dataset.modelId
+                }));
+                if (items.length === 0) {
+                    alert('请选择至少一条记录');
+                    break;
+                }
+                try {
+                    const result = await TaskAPI.startAiQc(items);
+                    if (result.success) {
+                        alert(`已提交 ${result.enqueued} 条模型质检任务`);
+                        fetchAiQcStats();
+                    } else {
+                        alert(result.error || '启动失败');
+                    }
+                } catch (e) {
+                    alert('启动模型质检失败');
+                }
+                break;
+            }
+
+            case 'ai-qc-select-all':
+                document.querySelectorAll('.ai-qc-checkbox').forEach(cb => cb.checked = true);
+                break;
+
+            case 'ai-qc-toggle-all': {
+                const allCb = document.getElementById('ai-qc-select-all-checkbox');
+                document.querySelectorAll('.ai-qc-checkbox').forEach(cb => cb.checked = allCb.checked);
+                break;
+            }
+
+            case 'ai-qc-save-concurrency': {
+                const val = parseInt(document.getElementById('ai-qc-concurrency')?.value);
+                if (val >= 1 && val <= 100) {
+                    try {
+                        await TaskAPI.updateAiQcConcurrency(val);
+                        alert('并发数已保存');
+                    } catch (e) {
+                        alert('保存失败');
+                    }
+                } else {
+                    alert('并发数需在 1-100 之间');
+                }
+                break;
+            }
 
             case 'refresh-reports':
                 fetchReportList();
@@ -546,6 +626,18 @@ async function handleGlobalChange(e) {
         }
     }
 
+    // Handle external login toggle
+    if (target.dataset.action === 'toggle-allow-external-login') {
+        const isAllowed = target.checked;
+        try {
+            await TaskAPI.updateConfig({ allowExternalLogin: isAllowed });
+            UI.showToast(isAllowed ? '已允许外部评测人员登录' : '已禁止外部评测人员登录');
+        } catch (e) {
+            UI.showToast('更新失败: ' + e.message, 'error');
+            target.checked = !isAllowed; // revert
+        }
+    }
+
     // Handle model group setting toggle (is_enabled or is_default_checked)
     if (target.dataset.action === 'update-model-group-setting') {
         const modelId = target.dataset.modelId;
@@ -686,6 +778,10 @@ async function fetchUserManagementData() {
         const taskToggle = document.getElementById('allow-task-submission-toggle');
         if (taskToggle) {
             taskToggle.checked = configData.allowNewTaskSubmission !== false;
+        }
+        const externalLoginToggle = document.getElementById('allow-external-login-toggle');
+        if (externalLoginToggle) {
+            externalLoginToggle.checked = configData.allowExternalLogin !== false;
         }
     } catch (e) { console.error(e); }
 }
@@ -869,6 +965,67 @@ async function fetchQCStats() {
             UI.renderQCStats(AppState.qcStatsData, AppState.qcStatsPagination);
         }
     } catch (e) { console.error('Error fetching QC stats:', e); }
+}
+
+async function fetchAiQcStats() {
+    try {
+        // 首次加载时设置并发数输入框
+        const concurrencyInput = document.getElementById('ai-qc-concurrency');
+        if (concurrencyInput && !concurrencyInput.dataset.loaded) {
+            try {
+                const cfgRes = await fetch('/api/admin/config', { headers: { 'Authorization': `Bearer ${JSON.parse(localStorage.getItem('claude_user'))?.token}` } });
+                const cfg = await cfgRes.json();
+                if (cfg.aiQcConcurrency) concurrencyInput.value = cfg.aiQcConcurrency;
+                concurrencyInput.dataset.loaded = '1';
+            } catch (e) { /* ignore */ }
+        }
+
+        const statusMap = {
+            'ai-pending': 'pending',
+            'ai-running': 'running',
+            'ai-completed': 'completed'
+        };
+        const apiStatus = statusMap[AppState.aiQcSubTab] || 'pending';
+
+        const result = await TaskAPI.fetchAiQcStats({
+            page: AppState.aiQcPagination.page,
+            pageSize: AppState.aiQcPagination.pageSize,
+            status: apiStatus
+        });
+
+        if (result.success) {
+            AppState.aiQcData = result.data;
+            AppState.aiQcPagination = {
+                page: result.page,
+                pageSize: result.pageSize,
+                total: result.total,
+                totalPages: result.totalPages
+            };
+
+            // 更新 badge 计数
+            const counts = result.counts || {};
+            const setCount = (id, val) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = val || 0;
+            };
+            setCount('qc-count-ai-pending', counts.pending);
+            setCount('qc-count-ai-running', counts.in_progress);
+            setCount('qc-count-ai-completed', counts.completed);
+
+            // 更新进度文本（模型质检中页面）
+            if (AppState.aiQcSubTab === 'ai-running') {
+                const progressEl = document.getElementById('ai-qc-progress-text');
+                if (progressEl) {
+                    const progress = await TaskAPI.fetchAiQcProgress();
+                    if (progress.success) {
+                        progressEl.textContent = `运行中: ${progress.running || 0} | 排队中: ${progress.pending || 0} | 已完成: ${progress.completed || 0} | 失败: ${progress.failed || 0}`;
+                    }
+                }
+            }
+
+            UI.renderAiQcTable(AppState.aiQcSubTab, AppState.aiQcData, AppState.aiQcPagination);
+        }
+    } catch (e) { console.error('Error fetching AI QC stats:', e); }
 }
 
 // --- Logic ---
@@ -1114,7 +1271,7 @@ function activateTab(tabId, updateURL = true) {
     // Load tab-specific data
     if (tabId === 'feedback-stats') fetchFeedbackStats();
     if (tabId === 'comment-stats') fetchCommentStats();
-    if (tabId === 'qc-mgmt') fetchQCStats();
+    if (tabId === 'qc-mgmt') { fetchQCStats(); fetchAiQcStats(); }
     if (tabId === 'users') fetchUserManagementData();
     if (tabId === 'models') fetchModels();
     if (tabId === 'reports') initReportTab();

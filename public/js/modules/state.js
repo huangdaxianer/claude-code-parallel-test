@@ -56,10 +56,15 @@ export const AppState = {
     commentStatsPagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
     commentStatsTaskOwners: [],
 
-    // QC Stats (质检管理)
+    // QC Stats (质检管理 - 人工质检)
     qcStatsData: [],
     qcStatsPagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
     qcStatsStatus: 'pending',
+
+    // AI QC Stats (质检管理 - 模型质检)
+    aiQcSubTab: 'ai-pending',
+    aiQcData: [],
+    aiQcPagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
 
     // Per-model status filters: { modelId: 'completed' | 'stopped' | ... | '' }
     modelFilters: {},

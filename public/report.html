@@ -829,7 +829,11 @@
                 { key: 'avgTodoWrite', label: 'TodoWrite', isNum: true },
                 { key: 'avgRead', label: 'Read', isNum: true },
                 { key: 'avgWrite', label: 'Write', isNum: true },
+                { key: 'avgEdit', label: 'Edit', isNum: true },
                 { key: 'avgBash', label: 'Bash', isNum: true },
+                { key: 'avgGlob', label: 'Glob', isNum: true },
+                { key: 'avgGrep', label: 'Grep', isNum: true },
+                { key: 'avgAgent', label: 'Agent', isNum: true },
             ];
 
             const traceRows = data.models
@@ -936,7 +940,11 @@
                     <td class="num">${fmtNum(row.avgTodoWrite, 1)}${ciSpan1(s.todoWrite)}</td>
                     <td class="num">${fmtNum(row.avgRead, 1)}${ciSpan1(s.read)}</td>
                     <td class="num">${fmtNum(row.avgWrite, 1)}${ciSpan1(s.write)}</td>
+                    <td class="num">${fmtNum(row.avgEdit, 1)}${ciSpan1(s.edit)}</td>
                     <td class="num">${fmtNum(row.avgBash, 1)}${ciSpan1(s.bash)}</td>
+                    <td class="num">${fmtNum(row.avgGlob, 1)}${ciSpan1(s.glob)}</td>
+                    <td class="num">${fmtNum(row.avgGrep, 1)}${ciSpan1(s.grep)}</td>
+                    <td class="num">${fmtNum(row.avgAgent, 1)}${ciSpan1(s.agent)}</td>
                 </tr>`;
             }).join('');
         }
@@ -1363,6 +1371,10 @@
                 const reads = runs.map(r => r.countRead);
                 const writes = runs.map(r => r.countWrite);
                 const bashes = runs.map(r => r.countBash);
+                const edits = runs.map(r => r.countEdit || 0);
+                const globs = runs.map(r => r.countGlob || 0);
+                const greps = runs.map(r => r.countGrep || 0);
+                const agents = runs.map(r => r.countAgent || 0);
 
                 newTraceRows.push({
                     name: model.name,
@@ -1374,7 +1386,11 @@
                     avgTodoWrite: round2(avg(todoWrites)),
                     avgRead: round2(avg(reads)),
                     avgWrite: round2(avg(writes)),
+                    avgEdit: round2(avg(edits)),
                     avgBash: round2(avg(bashes)),
+                    avgGlob: round2(avg(globs)),
+                    avgGrep: round2(avg(greps)),
+                    avgAgent: round2(avg(agents)),
                     duration: computeCI95Front(durations),
                     turns: computeCI95Front(turnsList),
                     inputTokens: computeCI95Front(inputTokens),
@@ -1382,7 +1398,11 @@
                     todoWrite: computeCI95Front(todoWrites),
                     read: computeCI95Front(reads),
                     write: computeCI95Front(writes),
+                    edit: computeCI95Front(edits),
                     bash: computeCI95Front(bashes),
+                    glob: computeCI95Front(globs),
+                    grep: computeCI95Front(greps),
+                    agent: computeCI95Front(agents),
                 });
             }
             window.__traceRows = newTraceRows;

@@ -518,6 +518,19 @@ router.post('/config', (req, res) => {
         config.updateAppConfig({ allowNewTaskSubmission: !!allowNewTaskSubmission });
     }
 
+    const { allowExternalLogin } = req.body;
+    if (allowExternalLogin !== undefined) {
+        config.updateAppConfig({ allowExternalLogin: !!allowExternalLogin });
+    }
+
+    const { aiQcConcurrency } = req.body;
+    if (aiQcConcurrency !== undefined) {
+        const value = parseInt(aiQcConcurrency, 10);
+        if (!isNaN(value) && value >= 1 && value <= 100) {
+            config.updateAppConfig({ aiQcConcurrency: value });
+        }
+    }
+
     config.saveConfig(config.getAppConfig());
     console.log(`[Config] Updated config:`, config.getAppConfig());
 
@@ -1262,6 +1275,145 @@ router.get('/qc-stats', (req, res) => {
     } catch (e) {
         console.error('[Admin] QC stats error:', e);
         res.status(500).json({ error: 'Failed to fetch QC statistics' });
+    }
+});
+
+// ==================== AI 质检相关接口 ====================
+
+// AI 质检统计列表
+router.get('/ai-qc-stats', (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize) || 50));
+        const status = req.query.status || 'pending';
+
+        let allRows;
+
+        if (status === 'pending') {
+            // 待模型质检：fully_evaluated 但没有 ai_quality_inspections 记录的 model_runs
+            allRows = db.prepare(`
+                WITH fully_evaluated_tasks AS (
+                    SELECT task_id FROM model_runs
+                    GROUP BY task_id
+                    HAVING COUNT(*) = SUM(CASE WHEN status = 'evaluated' THEN 1 ELSE 0 END)
+                       AND COUNT(*) > 0
+                )
+                SELECT mr.task_id, mr.model_id,
+                       COALESCE(mc.endpoint_name, mr.model_id) as model_name,
+                       u.username as submitter
+                FROM model_runs mr
+                JOIN fully_evaluated_tasks fet ON mr.task_id = fet.task_id
+                JOIN tasks t ON mr.task_id = t.task_id
+                LEFT JOIN users u ON t.user_id = u.id
+                LEFT JOIN model_configs mc ON mc.model_id = mr.model_id
+                LEFT JOIN ai_quality_inspections aq ON aq.task_id = mr.task_id AND aq.model_id = mr.model_id
+                WHERE aq.id IS NULL
+                ORDER BY mr.task_id DESC, mr.model_id
+            `).all();
+        } else if (status === 'running') {
+            // 模型质检中：pending + running 状态的记录
+            allRows = db.prepare(`
+                SELECT aq.task_id, aq.model_id, aq.requirement_type, aq.trace_completeness,
+                       aq.status, aq.error_message, aq.retry_count, aq.started_at,
+                       COALESCE(mc.endpoint_name, aq.model_id) as model_name,
+                       u.username as submitter
+                FROM ai_quality_inspections aq
+                JOIN tasks t ON aq.task_id = t.task_id
+                LEFT JOIN users u ON t.user_id = u.id
+                LEFT JOIN model_configs mc ON mc.model_id = aq.model_id
+                WHERE aq.status IN ('pending', 'running')
+                ORDER BY aq.id DESC
+            `).all();
+        } else {
+            // completed / failed
+            allRows = db.prepare(`
+                SELECT aq.task_id, aq.model_id, aq.requirement_type, aq.trace_completeness,
+                       aq.status, aq.error_message, aq.retry_count, aq.completed_at,
+                       COALESCE(mc.endpoint_name, aq.model_id) as model_name,
+                       u.username as submitter
+                FROM ai_quality_inspections aq
+                JOIN tasks t ON aq.task_id = t.task_id
+                LEFT JOIN users u ON t.user_id = u.id
+                LEFT JOIN model_configs mc ON mc.model_id = aq.model_id
+                WHERE aq.status = ?
+                ORDER BY aq.id DESC
+            `).all(status);
+        }
+
+        const total = allRows.length;
+        const totalPages = Math.ceil(total / pageSize);
+        const data = allRows.slice((page - 1) * pageSize, page * pageSize);
+
+        // 各状态计数
+        const pendingCount = db.prepare(`
+            WITH fully_evaluated_tasks AS (
+                SELECT task_id FROM model_runs
+                GROUP BY task_id
+                HAVING COUNT(*) = SUM(CASE WHEN status = 'evaluated' THEN 1 ELSE 0 END)
+                   AND COUNT(*) > 0
+            )
+            SELECT COUNT(*) as count
+            FROM model_runs mr
+            JOIN fully_evaluated_tasks fet ON mr.task_id = fet.task_id
+            LEFT JOIN ai_quality_inspections aq ON aq.task_id = mr.task_id AND aq.model_id = mr.model_id
+            WHERE aq.id IS NULL
+        `).get().count;
+
+        const statusCounts = db.prepare(`
+            SELECT
+                COALESCE(SUM(CASE WHEN status IN ('pending', 'running') THEN 1 ELSE 0 END), 0) as in_progress,
+                COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
+                COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed
+            FROM ai_quality_inspections
+        `).get();
+
+        res.json({
+            success: true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages,
+            counts: {
+                pending: pendingCount,
+                in_progress: statusCounts.in_progress,
+                completed: statusCounts.completed,
+                failed: statusCounts.failed
+            }
+        });
+    } catch (e) {
+        console.error('[Admin] AI QC stats error:', e);
+        res.status(500).json({ error: 'Failed to fetch AI QC statistics' });
+    }
+});
+
+// 启动 AI 质检
+router.post('/ai-qc-start', (req, res) => {
+    try {
+        const { items } = req.body; // [{task_id, model_id}, ...]
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ error: '请选择至少一条记录' });
+        }
+
+        const aiQcService = require('../services/aiQcService');
+        const count = aiQcService.enqueueForAiQc(items);
+
+        res.json({ success: true, enqueued: count });
+    } catch (e) {
+        console.error('[Admin] AI QC start error:', e);
+        res.status(500).json({ error: 'Failed to start AI QC' });
+    }
+});
+
+// AI 质检进度
+router.get('/ai-qc-progress', (req, res) => {
+    try {
+        const aiQcService = require('../services/aiQcService');
+        const progress = aiQcService.getAiQcProgress();
+        res.json({ success: true, ...progress });
+    } catch (e) {
+        console.error('[Admin] AI QC progress error:', e);
+        res.status(500).json({ error: 'Failed to fetch AI QC progress' });
     }
 });
 

@@ -116,7 +116,11 @@ router.get('/task_details/:taskId', async (req, res) => {
                             TodoWrite: run.count_todo_write,
                             Read: run.count_read,
                             Write: run.count_write,
-                            Bash: run.count_bash
+                            Bash: run.count_bash,
+                            Edit: run.count_edit,
+                            Glob: run.count_glob,
+                            Grep: run.count_grep,
+                            Agent: run.count_agent
                         }
                     }
                 };

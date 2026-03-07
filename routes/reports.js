@@ -147,7 +147,8 @@ router.post('/create', (req, res) => {
         for (const modelId of modelIds) {
             const runs = db.prepare(`
                 SELECT duration, turns, input_tokens, output_tokens, cache_read_tokens,
-                       count_todo_write, count_read, count_write, count_bash
+                       count_todo_write, count_read, count_write, count_bash,
+                       count_edit, count_glob, count_grep, count_agent
                 FROM model_runs
                 WHERE model_id = ? AND task_id IN (${taskPlaceholders})
             `).all(modelId, ...taskIds);
@@ -170,6 +171,10 @@ router.post('/create', (req, res) => {
             const reads = runs.map(r => r.count_read || 0);
             const writes = runs.map(r => r.count_write || 0);
             const bashes = runs.map(r => r.count_bash || 0);
+            const edits = runs.map(r => r.count_edit || 0);
+            const globs = runs.map(r => r.count_glob || 0);
+            const greps = runs.map(r => r.count_grep || 0);
+            const agents = runs.map(r => r.count_agent || 0);
             const totalTools = runs.map(r => r.turns || 0);
 
             modelStats[modelId] = {
@@ -183,6 +188,10 @@ router.post('/create', (req, res) => {
                 avgRead: round2(avg(reads)),
                 avgWrite: round2(avg(writes)),
                 avgBash: round2(avg(bashes)),
+                avgEdit: round2(avg(edits)),
+                avgGlob: round2(avg(globs)),
+                avgGrep: round2(avg(greps)),
+                avgAgent: round2(avg(agents)),
                 avgTotalToolCalls: round2(avg(totalTools)),
                 duration: computeConfidenceInterval95(durations),
                 turns: computeConfidenceInterval95(turnsList),
@@ -192,6 +201,10 @@ router.post('/create', (req, res) => {
                 read: computeConfidenceInterval95(reads),
                 write: computeConfidenceInterval95(writes),
                 bash: computeConfidenceInterval95(bashes),
+                edit: computeConfidenceInterval95(edits),
+                glob: computeConfidenceInterval95(globs),
+                grep: computeConfidenceInterval95(greps),
+                agent: computeConfidenceInterval95(agents),
             };
         }
 
@@ -462,7 +475,8 @@ router.post('/create', (req, res) => {
         // Build raw per-task data for frontend filtering
         const allRunsRaw = db.prepare(`
             SELECT task_id, model_id, duration, turns, input_tokens, output_tokens, cache_read_tokens,
-                   count_todo_write, count_read, count_write, count_bash
+                   count_todo_write, count_read, count_write, count_bash,
+                   count_edit, count_glob, count_grep, count_agent
             FROM model_runs WHERE task_id IN (${taskPlaceholders}) AND model_id IN (${modelPlaceholders})
         `).all(...taskIds, ...modelIds);
 
@@ -485,6 +499,10 @@ router.post('/create', (req, res) => {
                 countRead: run.count_read || 0,
                 countWrite: run.count_write || 0,
                 countBash: run.count_bash || 0,
+                countEdit: run.count_edit || 0,
+                countGlob: run.count_glob || 0,
+                countGrep: run.count_grep || 0,
+                countAgent: run.count_agent || 0,
             };
         }
 

@@ -68,6 +68,10 @@ db.exec(`
         count_read INTEGER,
         count_write INTEGER,
         count_bash INTEGER,
+        count_edit INTEGER,
+        count_glob INTEGER,
+        count_grep INTEGER,
+        count_agent INTEGER,
         previewable TEXT, -- 'static', 'dynamic', 'preparing', 'unpreviewable'
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(task_id, model_id),
@@ -232,6 +236,25 @@ db.exec(`
         FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS ai_quality_inspections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        requirement_type TEXT,
+        trace_completeness TEXT,
+        status TEXT DEFAULT 'pending',
+        retry_count INTEGER DEFAULT 0,
+        error_message TEXT,
+        started_at DATETIME,
+        completed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(task_id, model_id),
+        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_qc_status ON ai_quality_inspections(status);
+    CREATE INDEX IF NOT EXISTS idx_ai_qc_task_id ON ai_quality_inspections(task_id);
+
     CREATE TABLE IF NOT EXISTS download_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         event_type TEXT NOT NULL,       -- 'download_start' or 'download_complete'
@@ -374,6 +397,9 @@ try {
     db.exec("UPDATE tasks SET source_type = 'upload' WHERE base_dir IS NOT NULL AND base_dir != '' AND (source_type IS NULL OR source_type = 'prompt')");
 } catch (e) { }
 
+// Recovery: Reset AI QC items stuck in 'running' state (e.g. after server restart)
+try { db.prepare("UPDATE ai_quality_inspections SET status = 'pending' WHERE status = 'running'").run(); } catch (e) { }
+
 // Helper function to generate 5-character model ID
 function generateModelId() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -480,6 +506,12 @@ try {
 } catch (e) {
     console.error('[DB] Password migration error:', e.message);
 }
+
+// Migration: Add extra tool count columns to model_runs
+try { db.exec("ALTER TABLE model_runs ADD COLUMN count_edit INTEGER"); } catch (e) { }
+try { db.exec("ALTER TABLE model_runs ADD COLUMN count_glob INTEGER"); } catch (e) { }
+try { db.exec("ALTER TABLE model_runs ADD COLUMN count_grep INTEGER"); } catch (e) { }
+try { db.exec("ALTER TABLE model_runs ADD COLUMN count_agent INTEGER"); } catch (e) { }
 
 // Migration: Add process persistence columns to model_runs (for process re-attach on server restart)
 try { db.exec("ALTER TABLE model_runs ADD COLUMN pid INTEGER"); } catch (e) { }

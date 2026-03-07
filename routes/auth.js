@@ -53,6 +53,14 @@ router.post('/login', (req, res) => {
             return res.status(401).json({ error: '密码错误' });
         }
 
+        // 检查外部评测人员是否允许登录
+        if (user.role === 'external') {
+            const appConfig = config.getAppConfig();
+            if (appConfig.allowExternalLogin === false) {
+                return res.status(403).json({ error: '测试活动已结束，感谢您的参与' });
+            }
+        }
+
         console.log(`[Auth] User logged in: ${trimmedUsername} (ID: ${user.id}, Role: ${user.role})`);
         return res.json({
             success: true,

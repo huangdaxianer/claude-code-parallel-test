@@ -336,6 +336,38 @@ export const TaskAPI = {
         return await res.json();
     },
 
+    async fetchAiQcStats({ page = 1, pageSize = 50, status = 'pending' } = {}) {
+        const params = new URLSearchParams();
+        params.set('page', page);
+        params.set('pageSize', pageSize);
+        params.set('status', status);
+        const res = await fetch(`/api/admin/ai-qc-stats?${params.toString()}`, { headers: getAuthHeaders() });
+        return await res.json();
+    },
+
+    async startAiQc(items) {
+        const res = await fetch('/api/admin/ai-qc-start', {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items })
+        });
+        return await res.json();
+    },
+
+    async fetchAiQcProgress() {
+        const res = await fetch('/api/admin/ai-qc-progress', { headers: getAuthHeaders() });
+        return await res.json();
+    },
+
+    async updateAiQcConcurrency(concurrency) {
+        const res = await fetch('/api/admin/config', {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ aiQcConcurrency: concurrency })
+        });
+        return await res.json();
+    },
+
     async fetchCommentStats({ page = 1, pageSize = 50, taskOwner = '', commentType = 'all', commenterType = '' } = {}) {
         const params = new URLSearchParams();
         params.set('page', page);

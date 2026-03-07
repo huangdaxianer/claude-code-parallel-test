@@ -28,7 +28,8 @@ class IngestHandler {
             // ---- Resume 模式：从 DB 加载统计数据，不修改 status ----
             const dbRun = db.prepare(`
                 SELECT duration, turns, input_tokens, output_tokens, cache_read_tokens,
-                       count_todo_write, count_read, count_write, count_bash, stop_reason
+                       count_todo_write, count_read, count_write, count_bash,
+                       count_edit, count_glob, count_grep, count_agent, stop_reason
                 FROM model_runs WHERE id = ?
             `).get(this.runId);
 
@@ -46,7 +47,11 @@ class IngestHandler {
                     TodoWrite: dbRun ? (dbRun.count_todo_write || 0) : 0,
                     Read: dbRun ? (dbRun.count_read || 0) : 0,
                     Write: dbRun ? (dbRun.count_write || 0) : 0,
-                    Bash: dbRun ? (dbRun.count_bash || 0) : 0
+                    Bash: dbRun ? (dbRun.count_bash || 0) : 0,
+                    Edit: dbRun ? (dbRun.count_edit || 0) : 0,
+                    Glob: dbRun ? (dbRun.count_glob || 0) : 0,
+                    Grep: dbRun ? (dbRun.count_grep || 0) : 0,
+                    Agent: dbRun ? (dbRun.count_agent || 0) : 0
                 }
             };
 
@@ -105,7 +110,11 @@ class IngestHandler {
                     TodoWrite: 0,
                     Read: 0,
                     Write: 0,
-                    Bash: 0
+                    Bash: 0,
+                    Edit: 0,
+                    Glob: 0,
+                    Grep: 0,
+                    Agent: 0
                 }
             };
 
@@ -126,6 +135,10 @@ class IngestHandler {
                 count_read = ?,
                 count_write = ?,
                 count_bash = ?,
+                count_edit = ?,
+                count_glob = ?,
+                count_grep = ?,
+                count_agent = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         `);
@@ -219,15 +232,13 @@ class IngestHandler {
         if (obj.type === 'user') this.stats.turns++;
 
         if (obj.type === 'tool_use') {
-            const name = obj.name;
-            if (this.stats.toolCounts.hasOwnProperty(name)) this.stats.toolCounts[name]++;
+            this._countTool(obj.name);
         }
 
         if (obj.type === 'assistant' && obj.message && Array.isArray(obj.message.content)) {
             obj.message.content.forEach(block => {
                 if (block.type === 'tool_use') {
-                    const name = block.name;
-                    if (this.stats.toolCounts.hasOwnProperty(name)) this.stats.toolCounts[name]++;
+                    this._countTool(block.name);
                 }
             });
             // 记录最后一条 assistant 消息的末尾 content block 类型
@@ -350,6 +361,17 @@ class IngestHandler {
     }
 
     /**
+     * 工具计数（Task 映射为 Agent）
+     */
+    _countTool(name) {
+        if (name === 'Task') {
+            this.stats.toolCounts.Agent++;
+        } else if (this.stats.toolCounts.hasOwnProperty(name)) {
+            this.stats.toolCounts[name]++;
+        }
+    }
+
+    /**
      * 处理工具调用
      */
     _processToolUse(toolObj, rawPart) {
@@ -467,6 +489,10 @@ class IngestHandler {
                 this.stats.toolCounts.Read,
                 this.stats.toolCounts.Write,
                 this.stats.toolCounts.Bash,
+                this.stats.toolCounts.Edit,
+                this.stats.toolCounts.Glob,
+                this.stats.toolCounts.Grep,
+                this.stats.toolCounts.Agent,
                 this.runId
             );
         } catch (e) {

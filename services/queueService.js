@@ -102,6 +102,7 @@ function tryAutoRetry(taskId, modelId) {
                     started_at = NULL, duration = NULL, turns = NULL,
                     input_tokens = NULL, output_tokens = NULL, cache_read_tokens = NULL,
                     count_todo_write = NULL, count_read = NULL, count_write = NULL, count_bash = NULL,
+                    count_edit = NULL, count_glob = NULL, count_grep = NULL, count_agent = NULL,
                     previewable = NULL,
                     pid = NULL, stdout_file = NULL, stdout_offset = 0
                 WHERE task_id = ? AND model_id = ?
