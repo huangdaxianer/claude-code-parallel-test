@@ -1880,14 +1880,42 @@ function renderReportTasks() {
         container.innerHTML = '<p style="color: #94a3b8;">没有符合条件的任务</p>';
         return;
     }
-    container.innerHTML = tasks.map(t => `
-        <label class="report-task-item">
-            <input type="checkbox" value="${t.task_id}" class="report-task-checkbox">
-            <span class="report-item-label">${escapeHtml(t.title || 'Untitled')}</span>
-            <span class="report-item-meta">${escapeHtml(t.username)} · ${t.task_id}</span>
-        </label>
-    `).join('');
 
+    // 判断任务是否"合格"：题目分类不为"不符合要求"，且所有子任务轨迹完整度不为"轨迹不完整"
+    const isQualified = (t) => t.requirement_type !== '不符合要求' && !t.has_incomplete_trace;
+
+    container.innerHTML = tasks.map(t => {
+        const qualified = isQualified(t);
+        // 不合格任务显示标记
+        let badge = '';
+        if (t.requirement_type === '不符合要求') {
+            badge = '<span style="font-size:0.7rem;color:#ef4444;margin-left:0.25rem;">不符合要求</span>';
+        } else if (t.has_incomplete_trace) {
+            badge = '<span style="font-size:0.7rem;color:#f59e0b;margin-left:0.25rem;">轨迹不完整</span>';
+        }
+        return `<label class="report-task-item" style="${qualified ? '' : 'opacity:0.6;'}">
+            <input type="checkbox" value="${t.task_id}" class="report-task-checkbox" data-qualified="${qualified ? '1' : '0'}">
+            <span class="report-item-label">${escapeHtml(t.title || 'Untitled')}${badge}</span>
+            <span class="report-item-meta">${escapeHtml(t.username)} · ${t.task_id}</span>
+        </label>`;
+    }).join('');
+
+    // "全选所有合格任务" — 默认选中
+    const selectQualified = document.getElementById('report-select-qualified-tasks');
+    if (selectQualified) {
+        selectQualified.checked = true;
+        // 默认勾选所有合格任务
+        document.querySelectorAll('.report-task-checkbox').forEach(cb => {
+            cb.checked = cb.dataset.qualified === '1';
+        });
+        selectQualified.onchange = () => {
+            document.querySelectorAll('.report-task-checkbox').forEach(cb => {
+                if (cb.dataset.qualified === '1') cb.checked = selectQualified.checked;
+            });
+        };
+    }
+
+    // "全选" — 选中所有任务（包括不合格的）
     const selectAll = document.getElementById('report-select-all-tasks');
     if (selectAll) {
         selectAll.checked = false;
@@ -1895,6 +1923,8 @@ function renderReportTasks() {
             document.querySelectorAll('.report-task-checkbox').forEach(cb => {
                 cb.checked = selectAll.checked;
             });
+            // 同步更新"合格"复选框状态
+            if (selectQualified) selectQualified.checked = selectAll.checked;
         };
     }
 }

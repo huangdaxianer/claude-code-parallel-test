@@ -114,6 +114,24 @@ router.post('/available-tasks', (req, res) => {
             return runs.every(r => r.status === 'completed' || r.status === 'evaluated');
         });
 
+        // 附加 AI 质检状态，用于前端"全选合格任务"功能
+        const clsStmt = db.prepare(
+            'SELECT requirement_type FROM ai_task_classifications WHERE task_id = ? AND status = ?'
+        );
+        const traceStmt = db.prepare(`
+            SELECT trace_completeness FROM ai_quality_inspections
+            WHERE task_id = ? AND model_id IN (${placeholders}) AND status = 'completed'
+        `);
+        for (const task of qualifiedTasks) {
+            // 题目分类：是否"不符合要求"
+            const cls = clsStmt.get(task.task_id, 'completed');
+            task.requirement_type = cls ? cls.requirement_type : null;
+
+            // 轨迹完整度：所选模型中是否有"轨迹不完整"
+            const traces = traceStmt.all(task.task_id, ...modelIds);
+            task.has_incomplete_trace = traces.some(t => t.trace_completeness === '轨迹不完整');
+        }
+
         res.json(qualifiedTasks);
     } catch (e) {
         console.error('[Report] Error fetching available tasks:', e);
