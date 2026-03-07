@@ -1243,7 +1243,7 @@ export const UI = {
             const traceReason = (row.trace_status === 'completed' && row.trace_reason) ? row.trace_reason : '';
             return `
                 <tr>
-                    <td><div class="task-id" data-action="view" data-id="${escapeHtml(row.task_id)}" data-username="${escapeHtml(row.submitter || '')}" style="cursor:pointer;">${escapeHtml(row.task_id)}</div></td>
+                    <td><div class="task-id" data-action="view" data-id="${escapeHtml(row.task_id)}" data-username="${escapeHtml(row.submitter || '')}" data-model-id="${escapeHtml(row.model_id || '')}" style="cursor:pointer;">${escapeHtml(row.task_id)}</div></td>
                     <td><span style="font-size:0.8rem;color:#475569;">${escapeHtml(row.model_name || row.model_id || '-')}</span></td>
                     <td><span class="user-badge">${escapeHtml(row.submitter || '-')}</span></td>
                     <td><span class="user-badge">${escapeHtml(inspectorName || '-')}</span></td>

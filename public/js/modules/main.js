@@ -301,7 +301,7 @@ async function handleGlobalClick(e) {
 
             case 'stop': stopTask(id); break;
             case 'delete': deleteTask(id); break;
-            case 'view': viewTask(id, actionBtn.dataset.username); break;
+            case 'view': viewTask(id, actionBtn.dataset.username, actionBtn.dataset.modelId); break;
 
             case 'edit-question': {
                 const q = AppState.allQuestions.find(i => String(i.id) === String(id));
@@ -1501,15 +1501,20 @@ async function deleteTask(taskId) {
     } catch (e) { alert(e.message); }
 }
 
-function viewTask(taskId, username) {
+function viewTask(taskId, username, modelId) {
+    let url;
     if (taskId && username) {
         // Use view_user for admin viewing mode to avoid auto-login issues
-        window.open(`/task.html?view_user=${encodeURIComponent(username)}&task=${taskId}`, '_blank');
+        url = `/task.html?view_user=${encodeURIComponent(username)}&task=${taskId}`;
     } else if (username) {
-        window.open(`/task.html?view_user=${encodeURIComponent(username)}`, '_blank');
+        url = `/task.html?view_user=${encodeURIComponent(username)}`;
     } else if (taskId) {
-        window.open(`/task.html?id=${taskId}`, '_blank');
+        url = `/task.html?id=${taskId}`;
     }
+    if (url && modelId) {
+        url += `&model=${encodeURIComponent(modelId)}`;
+    }
+    if (url) window.open(url, '_blank');
 }
 
 async function updateMaxParallel() {
