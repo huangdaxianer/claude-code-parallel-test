@@ -1200,7 +1200,7 @@ router.get('/qc-stats', (req, res) => {
             SELECT
                 mr.task_id,
                 mr.model_id,
-                COALESCE(mc.description, mc.endpoint_name, mr.model_id) as model_name,
+                COALESCE(NULLIF(mc.description, ''), mc.endpoint_name, mr.model_id) as model_name,
                 u.username as submitter,
                 qi_task.answer as task_quality,
                 qi_task.note as task_quality_note,
@@ -1281,7 +1281,10 @@ router.get('/qc-stats', (req, res) => {
 // ==================== AI 质检相关接口 ====================
 
 // AI 质检统计列表
-router.get('/ai-qc-stats', (req, res) => {
+// ===================== 题目分类（per task）=====================
+
+// 题目分类列表
+router.get('/task-cls-stats', (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize) || 50));
@@ -1290,7 +1293,145 @@ router.get('/ai-qc-stats', (req, res) => {
         let allRows;
 
         if (status === 'pending') {
-            // 待模型质检：fully_evaluated 但没有 ai_quality_inspections 记录的 model_runs
+            // 待打标：fully_evaluated_tasks 中没有 ai_task_classifications 记录的任务
+            allRows = db.prepare(`
+                WITH fully_evaluated_tasks AS (
+                    SELECT task_id FROM model_runs
+                    GROUP BY task_id
+                    HAVING COUNT(*) = SUM(CASE WHEN status = 'evaluated' THEN 1 ELSE 0 END)
+                       AND COUNT(*) > 0
+                )
+                SELECT DISTINCT t.task_id, u.username as submitter
+                FROM tasks t
+                JOIN fully_evaluated_tasks fet ON t.task_id = fet.task_id
+                LEFT JOIN users u ON t.user_id = u.id
+                LEFT JOIN ai_task_classifications ac ON ac.task_id = t.task_id
+                WHERE ac.id IS NULL
+                ORDER BY t.task_id DESC
+            `).all();
+        } else if (status === 'running') {
+            allRows = db.prepare(`
+                SELECT ac.task_id, ac.status, ac.retry_count, ac.error_message, ac.started_at,
+                       u.username as submitter
+                FROM ai_task_classifications ac
+                JOIN tasks t ON ac.task_id = t.task_id
+                LEFT JOIN users u ON t.user_id = u.id
+                WHERE ac.status IN ('pending', 'running')
+                ORDER BY ac.id DESC
+            `).all();
+        } else {
+            // completed / failed
+            allRows = db.prepare(`
+                SELECT ac.task_id, ac.requirement_type, ac.status, ac.error_message,
+                       ac.retry_count, ac.completed_at,
+                       u.username as submitter
+                FROM ai_task_classifications ac
+                JOIN tasks t ON ac.task_id = t.task_id
+                LEFT JOIN users u ON t.user_id = u.id
+                WHERE ac.status = ?
+                ORDER BY ac.id DESC
+            `).all(status);
+        }
+
+        const total = allRows.length;
+        const totalPages = Math.ceil(total / pageSize);
+        const data = allRows.slice((page - 1) * pageSize, page * pageSize);
+
+        // 各状态计数
+        const pendingCount = db.prepare(`
+            WITH fully_evaluated_tasks AS (
+                SELECT task_id FROM model_runs
+                GROUP BY task_id
+                HAVING COUNT(*) = SUM(CASE WHEN status = 'evaluated' THEN 1 ELSE 0 END)
+                   AND COUNT(*) > 0
+            )
+            SELECT COUNT(DISTINCT t.task_id) as count
+            FROM tasks t
+            JOIN fully_evaluated_tasks fet ON t.task_id = fet.task_id
+            LEFT JOIN ai_task_classifications ac ON ac.task_id = t.task_id
+            WHERE ac.id IS NULL
+        `).get().count;
+
+        const statusCounts = db.prepare(`
+            SELECT
+                COALESCE(SUM(CASE WHEN status IN ('pending', 'running') THEN 1 ELSE 0 END), 0) as in_progress,
+                COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
+                COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed
+            FROM ai_task_classifications
+        `).get();
+
+        res.json({
+            success: true, data, total, page, pageSize, totalPages,
+            counts: { pending: pendingCount, in_progress: statusCounts.in_progress, completed: statusCounts.completed, failed: statusCounts.failed }
+        });
+    } catch (e) {
+        console.error('[Admin] Task classification stats error:', e);
+        res.status(500).json({ error: 'Failed to fetch task classification stats' });
+    }
+});
+
+// 启动题目分类
+router.post('/task-cls-start', (req, res) => {
+    try {
+        const { taskIds } = req.body;
+        if (!Array.isArray(taskIds) || taskIds.length === 0) {
+            return res.status(400).json({ error: '请选择至少一条记录' });
+        }
+        const aiQcService = require('../services/aiQcService');
+        const count = aiQcService.enqueueForClassification(taskIds);
+        res.json({ success: true, enqueued: count });
+    } catch (e) {
+        console.error('[Admin] Task classification start error:', e);
+        res.status(500).json({ error: 'Failed to start task classification' });
+    }
+});
+
+// 题目分类进度
+router.get('/task-cls-progress', (req, res) => {
+    try {
+        const aiQcService = require('../services/aiQcService');
+        const progress = aiQcService.getClassificationProgress();
+        res.json({ success: true, ...progress });
+    } catch (e) {
+        console.error('[Admin] Task classification progress error:', e);
+        res.status(500).json({ error: 'Failed to fetch task classification progress' });
+    }
+});
+
+// 批量删除题目分类记录
+router.post('/task-cls-delete', (req, res) => {
+    try {
+        const { taskIds } = req.body;
+        if (!Array.isArray(taskIds) || taskIds.length === 0) {
+            return res.status(400).json({ error: '请选择要删除的记录' });
+        }
+        const deleteStmt = db.prepare('DELETE FROM ai_task_classifications WHERE task_id = ?');
+        let count = 0;
+        for (const taskId of taskIds) {
+            const result = deleteStmt.run(taskId);
+            count += result.changes;
+        }
+        console.log(`[Admin] Deleted ${count} task classification records`);
+        res.json({ success: true, deleted: count });
+    } catch (e) {
+        console.error('[Admin] Task classification delete error:', e);
+        res.status(500).json({ error: 'Failed to delete task classification records' });
+    }
+});
+
+// ===================== 反馈质检（per model_run）=====================
+
+// 反馈质检列表
+router.get('/trace-check-stats', (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize) || 50));
+        const status = req.query.status || 'pending';
+
+        let allRows;
+
+        if (status === 'pending') {
+            // 待打标：fully_evaluated 但没有 ai_quality_inspections 记录的 model_runs
             allRows = db.prepare(`
                 WITH fully_evaluated_tasks AS (
                     SELECT task_id FROM model_runs
@@ -1299,7 +1440,7 @@ router.get('/ai-qc-stats', (req, res) => {
                        AND COUNT(*) > 0
                 )
                 SELECT mr.task_id, mr.model_id,
-                       COALESCE(mc.endpoint_name, mr.model_id) as model_name,
+                       COALESCE(NULLIF(mc.description, ''), mc.endpoint_name, mr.model_id) as model_name,
                        u.username as submitter
                 FROM model_runs mr
                 JOIN fully_evaluated_tasks fet ON mr.task_id = fet.task_id
@@ -1311,11 +1452,9 @@ router.get('/ai-qc-stats', (req, res) => {
                 ORDER BY mr.task_id DESC, mr.model_id
             `).all();
         } else if (status === 'running') {
-            // 模型质检中：pending + running 状态的记录
             allRows = db.prepare(`
-                SELECT aq.task_id, aq.model_id, aq.requirement_type, aq.trace_completeness,
-                       aq.status, aq.error_message, aq.retry_count, aq.started_at,
-                       COALESCE(mc.endpoint_name, aq.model_id) as model_name,
+                SELECT aq.task_id, aq.model_id, aq.status, aq.error_message, aq.retry_count, aq.started_at,
+                       COALESCE(NULLIF(mc.description, ''), mc.endpoint_name, aq.model_id) as model_name,
                        u.username as submitter
                 FROM ai_quality_inspections aq
                 JOIN tasks t ON aq.task_id = t.task_id
@@ -1327,9 +1466,9 @@ router.get('/ai-qc-stats', (req, res) => {
         } else {
             // completed / failed
             allRows = db.prepare(`
-                SELECT aq.task_id, aq.model_id, aq.requirement_type, aq.trace_completeness,
-                       aq.status, aq.error_message, aq.retry_count, aq.completed_at,
-                       COALESCE(mc.endpoint_name, aq.model_id) as model_name,
+                SELECT aq.task_id, aq.model_id, aq.trace_completeness,
+                       aq.trace_reason, aq.status, aq.error_message, aq.retry_count, aq.completed_at,
+                       COALESCE(NULLIF(mc.description, ''), mc.endpoint_name, aq.model_id) as model_name,
                        u.username as submitter
                 FROM ai_quality_inspections aq
                 JOIN tasks t ON aq.task_id = t.task_id
@@ -1368,52 +1507,63 @@ router.get('/ai-qc-stats', (req, res) => {
         `).get();
 
         res.json({
-            success: true,
-            data,
-            total,
-            page,
-            pageSize,
-            totalPages,
-            counts: {
-                pending: pendingCount,
-                in_progress: statusCounts.in_progress,
-                completed: statusCounts.completed,
-                failed: statusCounts.failed
-            }
+            success: true, data, total, page, pageSize, totalPages,
+            counts: { pending: pendingCount, in_progress: statusCounts.in_progress, completed: statusCounts.completed, failed: statusCounts.failed }
         });
     } catch (e) {
-        console.error('[Admin] AI QC stats error:', e);
-        res.status(500).json({ error: 'Failed to fetch AI QC statistics' });
+        console.error('[Admin] Trace check stats error:', e);
+        res.status(500).json({ error: 'Failed to fetch trace check stats' });
     }
 });
 
-// 启动 AI 质检
-router.post('/ai-qc-start', (req, res) => {
+// 启动反馈质检
+router.post('/trace-check-start', (req, res) => {
     try {
         const { items } = req.body; // [{task_id, model_id}, ...]
         if (!Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ error: '请选择至少一条记录' });
         }
-
         const aiQcService = require('../services/aiQcService');
-        const count = aiQcService.enqueueForAiQc(items);
-
+        const count = aiQcService.enqueueForTraceCheck(items);
         res.json({ success: true, enqueued: count });
     } catch (e) {
-        console.error('[Admin] AI QC start error:', e);
-        res.status(500).json({ error: 'Failed to start AI QC' });
+        console.error('[Admin] Trace check start error:', e);
+        res.status(500).json({ error: 'Failed to start trace check' });
     }
 });
 
-// AI 质检进度
-router.get('/ai-qc-progress', (req, res) => {
+// 反馈质检进度
+router.get('/trace-check-progress', (req, res) => {
     try {
         const aiQcService = require('../services/aiQcService');
-        const progress = aiQcService.getAiQcProgress();
+        const progress = aiQcService.getTraceCheckProgress();
         res.json({ success: true, ...progress });
     } catch (e) {
-        console.error('[Admin] AI QC progress error:', e);
-        res.status(500).json({ error: 'Failed to fetch AI QC progress' });
+        console.error('[Admin] Trace check progress error:', e);
+        res.status(500).json({ error: 'Failed to fetch trace check progress' });
+    }
+});
+
+// 批量删除反馈质检记录
+router.post('/trace-check-delete', (req, res) => {
+    try {
+        const { items } = req.body; // [{task_id, model_id}, ...]
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ error: '请选择要删除的记录' });
+        }
+        const deleteStmt = db.prepare(
+            'DELETE FROM ai_quality_inspections WHERE task_id = ? AND model_id = ?'
+        );
+        let count = 0;
+        for (const item of items) {
+            const result = deleteStmt.run(item.task_id, item.model_id);
+            count += result.changes;
+        }
+        console.log(`[Admin] Deleted ${count} trace check records`);
+        res.json({ success: true, deleted: count });
+    } catch (e) {
+        console.error('[Admin] Trace check delete error:', e);
+        res.status(500).json({ error: 'Failed to delete trace check records' });
     }
 });
 

@@ -61,10 +61,17 @@ export const AppState = {
     qcStatsPagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
     qcStatsStatus: 'pending',
 
-    // AI QC Stats (质检管理 - 模型质检)
-    aiQcSubTab: 'ai-pending',
-    aiQcData: [],
-    aiQcPagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
+    // 质检管理 - 分组和子标签
+    qcGroup: 'human',                // 当前激活的分组：human | cls | trace
+    qcSubTab: 'human-pending',       // 当前激活的子标签
+
+    // 题目分类（per task）
+    clsData: [],
+    clsPagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
+
+    // 反馈质检（per model_run）
+    traceData: [],
+    tracePagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
 
     // Per-model status filters: { modelId: 'completed' | 'stopped' | ... | '' }
     modelFilters: {},

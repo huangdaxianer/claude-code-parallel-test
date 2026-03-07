@@ -901,9 +901,15 @@
             display: block;
         }
 
-        .qc-sub-tab.active {
+        .qc-group-tab.active {
             background: white !important;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            color: #0f172a;
+        }
+
+        .qc-sub-tab.active {
+            background: white !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.08);
             font-weight: 600;
         }
 
@@ -1663,16 +1669,35 @@
                 <button class="btn" data-action="refresh-qc-stats">刷新</button>
             </div>
 
-            <!-- 5 个子标签（独立一行） -->
-            <div style="display: flex; gap: 0.25rem; background: #f1f5f9; border-radius: 0.5rem; padding: 0.25rem; margin-bottom: 1rem;">
-                <button class="btn qc-sub-tab active" data-action="qc-sub-tab" data-value="human-pending" style="padding: 0.35rem 0.75rem; font-size: 0.85rem; border: none;">待人工质检 <span id="qc-count-pending" style="color:#f59e0b;">0</span></button>
-                <button class="btn qc-sub-tab" data-action="qc-sub-tab" data-value="human-completed" style="padding: 0.35rem 0.75rem; font-size: 0.85rem; border: none;">已人工质检 <span id="qc-count-completed" style="color:#22c55e;">0</span></button>
-                <button class="btn qc-sub-tab" data-action="qc-sub-tab" data-value="ai-pending" style="padding: 0.35rem 0.75rem; font-size: 0.85rem; border: none;">待模型质检 <span id="qc-count-ai-pending" style="color:#f59e0b;">0</span></button>
-                <button class="btn qc-sub-tab" data-action="qc-sub-tab" data-value="ai-running" style="padding: 0.35rem 0.75rem; font-size: 0.85rem; border: none;">模型质检中 <span id="qc-count-ai-running" style="color:#3b82f6;">0</span></button>
-                <button class="btn qc-sub-tab" data-action="qc-sub-tab" data-value="ai-completed" style="padding: 0.35rem 0.75rem; font-size: 0.85rem; border: none;">已模型质检 <span id="qc-count-ai-completed" style="color:#22c55e;">0</span></button>
+            <!-- 第一行：三个分组选择器 -->
+            <div style="display: flex; gap: 0.25rem; background: #f1f5f9; border-radius: 0.5rem; padding: 0.25rem; margin-bottom: 0.5rem;">
+                <button class="btn qc-group-tab active" data-action="qc-group-tab" data-value="human" style="padding: 0.4rem 1rem; font-size: 0.85rem; border: none; font-weight: 600;">人工质检</button>
+                <button class="btn qc-group-tab" data-action="qc-group-tab" data-value="cls" style="padding: 0.4rem 1rem; font-size: 0.85rem; border: none; font-weight: 600;">题目分类</button>
+                <button class="btn qc-group-tab" data-action="qc-group-tab" data-value="trace" style="padding: 0.4rem 1rem; font-size: 0.85rem; border: none; font-weight: 600;">反馈质检</button>
             </div>
 
-            <!-- 人工质检筛选器（仅人工质检子标签下显示） -->
+            <!-- 第二行：每组的子标签 -->
+            <!-- 人工质检子标签 -->
+            <div id="qc-sub-tabs-human" class="qc-sub-tabs-row" style="display: flex; gap: 0.25rem; background: #f8fafc; border-radius: 0.375rem; padding: 0.2rem; margin-bottom: 1rem;">
+                <button class="btn qc-sub-tab active" data-action="qc-sub-tab" data-group="human" data-value="human-pending" style="padding: 0.3rem 0.75rem; font-size: 0.8rem; border: none;">待人工质检 <span id="qc-count-pending" style="color:#f59e0b;">0</span></button>
+                <button class="btn qc-sub-tab" data-action="qc-sub-tab" data-group="human" data-value="human-completed" style="padding: 0.3rem 0.75rem; font-size: 0.8rem; border: none;">已人工质检 <span id="qc-count-completed" style="color:#22c55e;">0</span></button>
+            </div>
+            <!-- 题目分类子标签 -->
+            <div id="qc-sub-tabs-cls" class="qc-sub-tabs-row" style="display: none; gap: 0.25rem; background: #f8fafc; border-radius: 0.375rem; padding: 0.2rem; margin-bottom: 1rem;">
+                <button class="btn qc-sub-tab active" data-action="qc-sub-tab" data-group="cls" data-value="cls-pending" style="padding: 0.3rem 0.75rem; font-size: 0.8rem; border: none;">待打标 <span id="cls-count-pending" style="color:#f59e0b;">0</span></button>
+                <button class="btn qc-sub-tab" data-action="qc-sub-tab" data-group="cls" data-value="cls-running" style="padding: 0.3rem 0.75rem; font-size: 0.8rem; border: none;">打标中 <span id="cls-count-running" style="color:#3b82f6;">0</span></button>
+                <button class="btn qc-sub-tab" data-action="qc-sub-tab" data-group="cls" data-value="cls-completed" style="padding: 0.3rem 0.75rem; font-size: 0.8rem; border: none;">已打标 <span id="cls-count-completed" style="color:#22c55e;">0</span></button>
+            </div>
+            <!-- 反馈质检子标签 -->
+            <div id="qc-sub-tabs-trace" class="qc-sub-tabs-row" style="display: none; gap: 0.25rem; background: #f8fafc; border-radius: 0.375rem; padding: 0.2rem; margin-bottom: 1rem;">
+                <button class="btn qc-sub-tab active" data-action="qc-sub-tab" data-group="trace" data-value="trace-pending" style="padding: 0.3rem 0.75rem; font-size: 0.8rem; border: none;">待打标 <span id="trace-count-pending" style="color:#f59e0b;">0</span></button>
+                <button class="btn qc-sub-tab" data-action="qc-sub-tab" data-group="trace" data-value="trace-running" style="padding: 0.3rem 0.75rem; font-size: 0.8rem; border: none;">打标中 <span id="trace-count-running" style="color:#3b82f6;">0</span></button>
+                <button class="btn qc-sub-tab" data-action="qc-sub-tab" data-group="trace" data-value="trace-completed" style="padding: 0.3rem 0.75rem; font-size: 0.8rem; border: none;">已打标 <span id="trace-count-completed" style="color:#22c55e;">0</span></button>
+            </div>
+
+            <!-- ===== 人工质检内容区域 ===== -->
+
+            <!-- 人工质检筛选器 -->
             <div id="qc-human-filters" style="display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
                     <label style="font-size: 0.85rem; color: #64748b;">提交用户:</label>
@@ -1733,45 +1758,123 @@
                 <div id="qc-stats-pagination" style="margin-top: 1rem;"></div>
             </div>
 
-            <!-- 待模型质检（带复选框 + 批量操作） -->
-            <div id="qc-ai-pending-content" style="display: none;">
+            <!-- ===== 题目分类内容区域 ===== -->
+
+            <!-- 待打标（题目分类） -->
+            <div id="cls-pending-content" style="display: none;">
                 <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-                    <button class="btn btn-primary" data-action="ai-qc-start-selected">开始模型质检</button>
-                    <button class="btn" data-action="ai-qc-select-all">全选</button>
+                    <button class="btn btn-primary" data-action="cls-start-selected">开始打标</button>
+                    <button class="btn" data-action="cls-select-all">全选</button>
                 </div>
                 <div class="table-container" style="overflow-x: auto;">
-                    <table class="tasks-table" id="ai-qc-pending-table">
+                    <table class="tasks-table">
                         <thead>
                             <tr>
-                                <th style="width: 40px;"><input type="checkbox" id="ai-qc-select-all-checkbox" data-action="ai-qc-toggle-all"></th>
+                                <th style="width: 40px;"><input type="checkbox" id="cls-select-all-checkbox" data-action="cls-toggle-all"></th>
+                                <th>任务 ID</th>
+                                <th>提交用户</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cls-pending-tbody">
+                            <tr><td colspan="3" class="empty-state"><p>加载中...</p></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="cls-pending-pagination" style="margin-top: 1rem;"></div>
+            </div>
+
+            <!-- 打标中（题目分类） -->
+            <div id="cls-running-content" style="display: none;">
+                <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <label style="font-size: 0.85rem; color: #64748b;">并发数:</label>
+                        <input type="number" id="qc-concurrency" value="30" min="1" max="100"
+                               style="width: 80px; padding: 0.4rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.85rem;">
+                        <button class="btn" data-action="qc-save-concurrency" style="font-size: 0.85rem;">保存</button>
+                    </div>
+                    <span id="cls-progress-text" style="font-size: 0.85rem; color: #64748b;">
+                        运行中: 0 | 排队中: 0 | 已完成: 0 | 失败: 0
+                    </span>
+                </div>
+                <div class="table-container" style="overflow-x: auto;">
+                    <table class="tasks-table">
+                        <thead>
+                            <tr>
+                                <th>任务 ID</th>
+                                <th>提交用户</th>
+                                <th>状态</th>
+                                <th>重试次数</th>
+                                <th style="min-width: 150px;">错误信息</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cls-running-tbody">
+                            <tr><td colspan="5" class="empty-state"><p>加载中...</p></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="cls-running-pagination" style="margin-top: 1rem;"></div>
+            </div>
+
+            <!-- 已打标（题目分类） -->
+            <div id="cls-completed-content" style="display: none;">
+                <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+                    <button class="btn btn-primary" data-action="cls-delete-selected" style="padding: 0.4rem 1rem; font-size: 0.85rem;">删除选中</button>
+                    <button class="btn" data-action="cls-completed-select-all" style="padding: 0.4rem 1rem; font-size: 0.85rem;">全选</button>
+                </div>
+                <div class="table-container" style="overflow-x: auto;">
+                    <table class="tasks-table">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" data-action="cls-completed-toggle-all"></th>
+                                <th>任务 ID</th>
+                                <th>提交用户</th>
+                                <th>需求类型</th>
+                                <th>完成时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cls-completed-tbody">
+                            <tr><td colspan="5" class="empty-state"><p>加载中...</p></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="cls-completed-pagination" style="margin-top: 1rem;"></div>
+            </div>
+
+            <!-- ===== 反馈质检内容区域 ===== -->
+
+            <!-- 待打标（反馈质检） -->
+            <div id="trace-pending-content" style="display: none;">
+                <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                    <button class="btn btn-primary" data-action="trace-start-selected">开始打标</button>
+                    <button class="btn" data-action="trace-select-all">全选</button>
+                </div>
+                <div class="table-container" style="overflow-x: auto;">
+                    <table class="tasks-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;"><input type="checkbox" id="trace-select-all-checkbox" data-action="trace-toggle-all"></th>
                                 <th>任务 ID</th>
                                 <th>子模型</th>
                                 <th>提交用户</th>
                             </tr>
                         </thead>
-                        <tbody id="ai-qc-pending-tbody">
+                        <tbody id="trace-pending-tbody">
                             <tr><td colspan="4" class="empty-state"><p>加载中...</p></td></tr>
                         </tbody>
                     </table>
                 </div>
-                <div id="ai-qc-pending-pagination" style="margin-top: 1rem;"></div>
+                <div id="trace-pending-pagination" style="margin-top: 1rem;"></div>
             </div>
 
-            <!-- 模型质检中（进度 + 并发配置） -->
-            <div id="qc-ai-running-content" style="display: none;">
+            <!-- 打标中（反馈质检） -->
+            <div id="trace-running-content" style="display: none;">
                 <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap;">
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                        <label style="font-size: 0.85rem; color: #64748b;">并发数:</label>
-                        <input type="number" id="ai-qc-concurrency" value="30" min="1" max="100"
-                               style="width: 80px; padding: 0.4rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.85rem;">
-                        <button class="btn" data-action="ai-qc-save-concurrency" style="font-size: 0.85rem;">保存</button>
-                    </div>
-                    <span id="ai-qc-progress-text" style="font-size: 0.85rem; color: #64748b;">
+                    <span id="trace-progress-text" style="font-size: 0.85rem; color: #64748b;">
                         运行中: 0 | 排队中: 0 | 已完成: 0 | 失败: 0
                     </span>
                 </div>
                 <div class="table-container" style="overflow-x: auto;">
-                    <table class="tasks-table" id="ai-qc-running-table">
+                    <table class="tasks-table">
                         <thead>
                             <tr>
                                 <th>任务 ID</th>
@@ -1782,34 +1885,39 @@
                                 <th style="min-width: 150px;">错误信息</th>
                             </tr>
                         </thead>
-                        <tbody id="ai-qc-running-tbody">
+                        <tbody id="trace-running-tbody">
                             <tr><td colspan="6" class="empty-state"><p>加载中...</p></td></tr>
                         </tbody>
                     </table>
                 </div>
-                <div id="ai-qc-running-pagination" style="margin-top: 1rem;"></div>
+                <div id="trace-running-pagination" style="margin-top: 1rem;"></div>
             </div>
 
-            <!-- 已模型质检（结果表格） -->
-            <div id="qc-ai-completed-content" style="display: none;">
+            <!-- 已打标（反馈质检） -->
+            <div id="trace-completed-content" style="display: none;">
+                <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+                    <button class="btn btn-primary" data-action="trace-delete-selected" style="padding: 0.4rem 1rem; font-size: 0.85rem;">删除选中</button>
+                    <button class="btn" data-action="trace-completed-select-all" style="padding: 0.4rem 1rem; font-size: 0.85rem;">全选</button>
+                </div>
                 <div class="table-container" style="overflow-x: auto;">
-                    <table class="tasks-table" id="ai-qc-completed-table">
+                    <table class="tasks-table">
                         <thead>
                             <tr>
+                                <th><input type="checkbox" data-action="trace-completed-toggle-all"></th>
                                 <th>任务 ID</th>
                                 <th>子模型</th>
                                 <th>提交用户</th>
-                                <th>需求类型</th>
                                 <th>轨迹完整度</th>
+                                <th>判断原因</th>
                                 <th>完成时间</th>
                             </tr>
                         </thead>
-                        <tbody id="ai-qc-completed-tbody">
-                            <tr><td colspan="6" class="empty-state"><p>加载中...</p></td></tr>
+                        <tbody id="trace-completed-tbody">
+                            <tr><td colspan="7" class="empty-state"><p>加载中...</p></td></tr>
                         </tbody>
                     </table>
                 </div>
-                <div id="ai-qc-completed-pagination" style="margin-top: 1rem;"></div>
+                <div id="trace-completed-pagination" style="margin-top: 1rem;"></div>
             </div>
         </div>
 

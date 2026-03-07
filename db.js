@@ -242,6 +242,7 @@ db.exec(`
         model_id TEXT NOT NULL,
         requirement_type TEXT,
         trace_completeness TEXT,
+        trace_reason TEXT,
         status TEXT DEFAULT 'pending',
         retry_count INTEGER DEFAULT 0,
         error_message TEXT,
@@ -254,6 +255,20 @@ db.exec(`
 
     CREATE INDEX IF NOT EXISTS idx_ai_qc_status ON ai_quality_inspections(status);
     CREATE INDEX IF NOT EXISTS idx_ai_qc_task_id ON ai_quality_inspections(task_id);
+
+    CREATE TABLE IF NOT EXISTS ai_task_classifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL UNIQUE,
+        requirement_type TEXT,
+        status TEXT DEFAULT 'pending',
+        retry_count INTEGER DEFAULT 0,
+        error_message TEXT,
+        started_at DATETIME,
+        completed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(task_id) REFERENCES tasks(task_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_cls_status ON ai_task_classifications(status);
 
     CREATE TABLE IF NOT EXISTS download_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -399,6 +414,10 @@ try {
 
 // Recovery: Reset AI QC items stuck in 'running' state (e.g. after server restart)
 try { db.prepare("UPDATE ai_quality_inspections SET status = 'pending' WHERE status = 'running'").run(); } catch (e) { }
+try { db.prepare("UPDATE ai_task_classifications SET status = 'pending' WHERE status = 'running'").run(); } catch (e) { }
+
+// Migration: Add trace_reason column to ai_quality_inspections if not exists
+try { db.prepare("ALTER TABLE ai_quality_inspections ADD COLUMN trace_reason TEXT").run(); } catch (e) { /* column already exists */ }
 
 // Helper function to generate 5-character model ID
 function generateModelId() {

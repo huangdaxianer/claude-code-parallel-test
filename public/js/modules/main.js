@@ -357,41 +357,34 @@ async function handleGlobalClick(e) {
                 break;
 
             case 'refresh-qc-stats':
-                fetchQCStats();
-                fetchAiQcStats();
+                refreshCurrentQcGroup();
                 break;
 
+            // ===== 分组切换 =====
+            case 'qc-group-tab': {
+                const group = actionBtn.dataset.value;
+                AppState.qcGroup = group;
+                document.querySelectorAll('.qc-group-tab').forEach(b => b.classList.toggle('active', b.dataset.value === group));
+
+                // 切换子标签行
+                document.querySelectorAll('.qc-sub-tabs-row').forEach(el => el.style.display = 'none');
+                const subTabRow = document.getElementById(`qc-sub-tabs-${group}`);
+                if (subTabRow) subTabRow.style.display = 'flex';
+
+                // 选中该组的第一个子标签
+                const firstSubTab = subTabRow?.querySelector('.qc-sub-tab');
+                if (firstSubTab) {
+                    const subVal = firstSubTab.dataset.value;
+                    switchQcSubTab(subVal, group);
+                }
+                break;
+            }
+
+            // ===== 子标签切换 =====
             case 'qc-sub-tab': {
                 const val = actionBtn.dataset.value;
-                document.querySelectorAll('.qc-sub-tab').forEach(b => b.classList.toggle('active', b.dataset.value === val));
-
-                // 切换内容区域显示
-                const isHuman = val.startsWith('human-');
-                document.getElementById('qc-human-filters').style.display = isHuman ? 'flex' : 'none';
-                document.getElementById('qc-human-content').style.display = isHuman ? '' : 'none';
-                document.getElementById('qc-ai-pending-content').style.display = val === 'ai-pending' ? '' : 'none';
-                document.getElementById('qc-ai-running-content').style.display = val === 'ai-running' ? '' : 'none';
-                document.getElementById('qc-ai-completed-content').style.display = val === 'ai-completed' ? '' : 'none';
-
-                // 清理自动刷新定时器
-                if (window._aiQcRefreshTimer) {
-                    clearInterval(window._aiQcRefreshTimer);
-                    window._aiQcRefreshTimer = null;
-                }
-
-                if (isHuman) {
-                    AppState.qcStatsStatus = val === 'human-pending' ? 'pending' : 'completed';
-                    AppState.qcStatsPagination.page = 1;
-                    fetchQCStats();
-                } else {
-                    AppState.aiQcSubTab = val;
-                    AppState.aiQcPagination.page = 1;
-                    fetchAiQcStats();
-                    // 模型质检中页面自动刷新
-                    if (val === 'ai-running') {
-                        window._aiQcRefreshTimer = setInterval(fetchAiQcStats, 5000);
-                    }
-                }
+                const group = actionBtn.dataset.group;
+                switchQcSubTab(val, group);
                 break;
             }
 
@@ -400,57 +393,130 @@ async function handleGlobalClick(e) {
                 fetchQCStats();
                 break;
 
-            case 'ai-qc-page':
-                AppState.aiQcPagination.page = parseInt(actionBtn.dataset.page) || 1;
-                fetchAiQcStats();
+            // ===== 题目分类操作 =====
+            case 'cls-page':
+                AppState.clsPagination.page = parseInt(actionBtn.dataset.page) || 1;
+                fetchClsStats();
                 break;
 
-            case 'ai-qc-start-selected': {
-                const checked = document.querySelectorAll('.ai-qc-checkbox:checked');
+            case 'cls-start-selected': {
+                const checked = document.querySelectorAll('.cls-checkbox:checked');
+                const taskIds = [...checked].map(cb => cb.dataset.taskId);
+                if (taskIds.length === 0) { alert('请选择至少一条记录'); break; }
+                try {
+                    const result = await TaskAPI.startCls(taskIds);
+                    if (result.success) {
+                        alert(`已提交 ${result.enqueued} 条题目分类任务`);
+                        fetchClsStats();
+                    } else { alert(result.error || '启动失败'); }
+                } catch (e) { alert('启动题目分类失败'); }
+                break;
+            }
+
+            case 'cls-select-all':
+                document.querySelectorAll('.cls-checkbox').forEach(cb => cb.checked = true);
+                break;
+
+            case 'cls-toggle-all': {
+                const allCb = document.getElementById('cls-select-all-checkbox');
+                document.querySelectorAll('.cls-checkbox').forEach(cb => cb.checked = allCb.checked);
+                break;
+            }
+
+            case 'cls-delete-selected': {
+                const checked = document.querySelectorAll('.cls-completed-checkbox:checked');
+                const taskIds = [...checked].map(cb => cb.dataset.taskId);
+                if (taskIds.length === 0) { alert('请选择至少一条记录'); break; }
+                if (!confirm(`确定要删除 ${taskIds.length} 条分类记录吗？删除后将回到待打标状态。`)) break;
+                try {
+                    const result = await TaskAPI.deleteCls(taskIds);
+                    if (result.success) {
+                        alert(`已删除 ${result.deleted} 条记录`);
+                        fetchClsStats();
+                    } else { alert(result.error || '删除失败'); }
+                } catch (e) { alert('删除分类记录失败'); }
+                break;
+            }
+
+            case 'cls-completed-select-all':
+                document.querySelectorAll('.cls-completed-checkbox').forEach(cb => cb.checked = true);
+                break;
+
+            case 'cls-completed-toggle-all': {
+                const allChecked = actionBtn.checked;
+                document.querySelectorAll('.cls-completed-checkbox').forEach(cb => cb.checked = allChecked);
+                break;
+            }
+
+            case 'qc-save-concurrency': {
+                const val = parseInt(document.getElementById('qc-concurrency')?.value);
+                if (val >= 1 && val <= 100) {
+                    try {
+                        await TaskAPI.updateQcConcurrency(val);
+                        alert('并发数已保存');
+                    } catch (e) { alert('保存失败'); }
+                } else { alert('并发数需在 1-100 之间'); }
+                break;
+            }
+
+            // ===== 反馈质检操作 =====
+            case 'trace-page':
+                AppState.tracePagination.page = parseInt(actionBtn.dataset.page) || 1;
+                fetchTraceStats();
+                break;
+
+            case 'trace-start-selected': {
+                const checked = document.querySelectorAll('.trace-checkbox:checked');
                 const items = [...checked].map(cb => ({
                     task_id: cb.dataset.taskId,
                     model_id: cb.dataset.modelId
                 }));
-                if (items.length === 0) {
-                    alert('请选择至少一条记录');
-                    break;
-                }
+                if (items.length === 0) { alert('请选择至少一条记录'); break; }
                 try {
-                    const result = await TaskAPI.startAiQc(items);
+                    const result = await TaskAPI.startTrace(items);
                     if (result.success) {
-                        alert(`已提交 ${result.enqueued} 条模型质检任务`);
-                        fetchAiQcStats();
-                    } else {
-                        alert(result.error || '启动失败');
-                    }
-                } catch (e) {
-                    alert('启动模型质检失败');
-                }
+                        alert(`已提交 ${result.enqueued} 条反馈质检任务`);
+                        fetchTraceStats();
+                    } else { alert(result.error || '启动失败'); }
+                } catch (e) { alert('启动反馈质检失败'); }
                 break;
             }
 
-            case 'ai-qc-select-all':
-                document.querySelectorAll('.ai-qc-checkbox').forEach(cb => cb.checked = true);
+            case 'trace-select-all':
+                document.querySelectorAll('.trace-checkbox').forEach(cb => cb.checked = true);
                 break;
 
-            case 'ai-qc-toggle-all': {
-                const allCb = document.getElementById('ai-qc-select-all-checkbox');
-                document.querySelectorAll('.ai-qc-checkbox').forEach(cb => cb.checked = allCb.checked);
+            case 'trace-toggle-all': {
+                const allCb = document.getElementById('trace-select-all-checkbox');
+                document.querySelectorAll('.trace-checkbox').forEach(cb => cb.checked = allCb.checked);
                 break;
             }
 
-            case 'ai-qc-save-concurrency': {
-                const val = parseInt(document.getElementById('ai-qc-concurrency')?.value);
-                if (val >= 1 && val <= 100) {
-                    try {
-                        await TaskAPI.updateAiQcConcurrency(val);
-                        alert('并发数已保存');
-                    } catch (e) {
-                        alert('保存失败');
-                    }
-                } else {
-                    alert('并发数需在 1-100 之间');
-                }
+            case 'trace-delete-selected': {
+                const checked = document.querySelectorAll('.trace-completed-checkbox:checked');
+                const items = [...checked].map(cb => ({
+                    task_id: cb.dataset.taskId,
+                    model_id: cb.dataset.modelId
+                }));
+                if (items.length === 0) { alert('请选择至少一条记录'); break; }
+                if (!confirm(`确定要删除 ${items.length} 条质检记录吗？删除后将回到待打标状态。`)) break;
+                try {
+                    const result = await TaskAPI.deleteTrace(items);
+                    if (result.success) {
+                        alert(`已删除 ${result.deleted} 条记录`);
+                        fetchTraceStats();
+                    } else { alert(result.error || '删除失败'); }
+                } catch (e) { alert('删除质检记录失败'); }
+                break;
+            }
+
+            case 'trace-completed-select-all':
+                document.querySelectorAll('.trace-completed-checkbox').forEach(cb => cb.checked = true);
+                break;
+
+            case 'trace-completed-toggle-all': {
+                const allChecked = actionBtn.checked;
+                document.querySelectorAll('.trace-completed-checkbox').forEach(cb => cb.checked = allChecked);
                 break;
             }
 
@@ -967,65 +1033,162 @@ async function fetchQCStats() {
     } catch (e) { console.error('Error fetching QC stats:', e); }
 }
 
-async function fetchAiQcStats() {
+// ===== 题目分类数据获取 =====
+async function fetchClsStats() {
     try {
         // 首次加载时设置并发数输入框
-        const concurrencyInput = document.getElementById('ai-qc-concurrency');
+        const concurrencyInput = document.getElementById('qc-concurrency');
         if (concurrencyInput && !concurrencyInput.dataset.loaded) {
             try {
-                const cfgRes = await fetch('/api/admin/config', { headers: { 'Authorization': `Bearer ${JSON.parse(localStorage.getItem('claude_user'))?.token}` } });
+                const cfgRes = await fetch('/api/admin/config', { headers: getAuthHeaders() });
                 const cfg = await cfgRes.json();
                 if (cfg.aiQcConcurrency) concurrencyInput.value = cfg.aiQcConcurrency;
                 concurrencyInput.dataset.loaded = '1';
             } catch (e) { /* ignore */ }
         }
 
-        const statusMap = {
-            'ai-pending': 'pending',
-            'ai-running': 'running',
-            'ai-completed': 'completed'
-        };
-        const apiStatus = statusMap[AppState.aiQcSubTab] || 'pending';
+        const subTab = AppState.qcSubTab;
+        const statusMap = { 'cls-pending': 'pending', 'cls-running': 'running', 'cls-completed': 'completed' };
+        const apiStatus = statusMap[subTab] || 'pending';
 
-        const result = await TaskAPI.fetchAiQcStats({
-            page: AppState.aiQcPagination.page,
-            pageSize: AppState.aiQcPagination.pageSize,
+        const result = await TaskAPI.fetchClsStats({
+            page: AppState.clsPagination.page,
+            pageSize: AppState.clsPagination.pageSize,
             status: apiStatus
         });
 
         if (result.success) {
-            AppState.aiQcData = result.data;
-            AppState.aiQcPagination = {
-                page: result.page,
-                pageSize: result.pageSize,
-                total: result.total,
-                totalPages: result.totalPages
+            AppState.clsData = result.data;
+            AppState.clsPagination = {
+                page: result.page, pageSize: result.pageSize,
+                total: result.total, totalPages: result.totalPages
             };
 
             // 更新 badge 计数
             const counts = result.counts || {};
-            const setCount = (id, val) => {
-                const el = document.getElementById(id);
-                if (el) el.textContent = val || 0;
-            };
-            setCount('qc-count-ai-pending', counts.pending);
-            setCount('qc-count-ai-running', counts.in_progress);
-            setCount('qc-count-ai-completed', counts.completed);
+            const setCount = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || 0; };
+            setCount('cls-count-pending', counts.pending);
+            setCount('cls-count-running', counts.in_progress);
+            setCount('cls-count-completed', counts.completed);
 
-            // 更新进度文本（模型质检中页面）
-            if (AppState.aiQcSubTab === 'ai-running') {
-                const progressEl = document.getElementById('ai-qc-progress-text');
+            // 更新进度文本
+            if (subTab === 'cls-running') {
+                const progressEl = document.getElementById('cls-progress-text');
                 if (progressEl) {
-                    const progress = await TaskAPI.fetchAiQcProgress();
+                    const progress = await TaskAPI.fetchClsProgress();
                     if (progress.success) {
                         progressEl.textContent = `运行中: ${progress.running || 0} | 排队中: ${progress.pending || 0} | 已完成: ${progress.completed || 0} | 失败: ${progress.failed || 0}`;
                     }
                 }
             }
 
-            UI.renderAiQcTable(AppState.aiQcSubTab, AppState.aiQcData, AppState.aiQcPagination);
+            UI.renderClsTable(subTab, AppState.clsData, AppState.clsPagination);
         }
-    } catch (e) { console.error('Error fetching AI QC stats:', e); }
+    } catch (e) { console.error('Error fetching classification stats:', e); }
+}
+
+// ===== 反馈质检数据获取 =====
+async function fetchTraceStats() {
+    try {
+        const subTab = AppState.qcSubTab;
+        const statusMap = { 'trace-pending': 'pending', 'trace-running': 'running', 'trace-completed': 'completed' };
+        const apiStatus = statusMap[subTab] || 'pending';
+
+        const result = await TaskAPI.fetchTraceStats({
+            page: AppState.tracePagination.page,
+            pageSize: AppState.tracePagination.pageSize,
+            status: apiStatus
+        });
+
+        if (result.success) {
+            AppState.traceData = result.data;
+            AppState.tracePagination = {
+                page: result.page, pageSize: result.pageSize,
+                total: result.total, totalPages: result.totalPages
+            };
+
+            // 更新 badge 计数
+            const counts = result.counts || {};
+            const setCount = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || 0; };
+            setCount('trace-count-pending', counts.pending);
+            setCount('trace-count-running', counts.in_progress);
+            setCount('trace-count-completed', counts.completed);
+
+            // 更新进度文本
+            if (subTab === 'trace-running') {
+                const progressEl = document.getElementById('trace-progress-text');
+                if (progressEl) {
+                    const progress = await TaskAPI.fetchTraceProgress();
+                    if (progress.success) {
+                        progressEl.textContent = `运行中: ${progress.running || 0} | 排队中: ${progress.pending || 0} | 已完成: ${progress.completed || 0} | 失败: ${progress.failed || 0}`;
+                    }
+                }
+            }
+
+            UI.renderTraceTable(subTab, AppState.traceData, AppState.tracePagination);
+        }
+    } catch (e) { console.error('Error fetching trace check stats:', e); }
+}
+
+// ===== QC 子标签切换逻辑 =====
+function switchQcSubTab(val, group) {
+    AppState.qcSubTab = val;
+
+    // 更新子标签高亮
+    const subTabRow = document.getElementById(`qc-sub-tabs-${group}`);
+    if (subTabRow) {
+        subTabRow.querySelectorAll('.qc-sub-tab').forEach(b => b.classList.toggle('active', b.dataset.value === val));
+    }
+
+    // 隐藏所有内容区域
+    const allContentIds = [
+        'qc-human-filters', 'qc-human-content',
+        'cls-pending-content', 'cls-running-content', 'cls-completed-content',
+        'trace-pending-content', 'trace-running-content', 'trace-completed-content'
+    ];
+    allContentIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    // 清理自动刷新定时器
+    if (window._qcRefreshTimer) {
+        clearInterval(window._qcRefreshTimer);
+        window._qcRefreshTimer = null;
+    }
+
+    // 显示对应内容区域并拉取数据
+    if (group === 'human') {
+        document.getElementById('qc-human-filters').style.display = 'flex';
+        document.getElementById('qc-human-content').style.display = '';
+        AppState.qcStatsStatus = val === 'human-pending' ? 'pending' : 'completed';
+        AppState.qcStatsPagination.page = 1;
+        fetchQCStats();
+    } else if (group === 'cls') {
+        const contentEl = document.getElementById(`${val}-content`);
+        if (contentEl) contentEl.style.display = '';
+        AppState.clsPagination.page = 1;
+        fetchClsStats();
+        if (val === 'cls-running') {
+            window._qcRefreshTimer = setInterval(fetchClsStats, 5000);
+        }
+    } else if (group === 'trace') {
+        const contentEl = document.getElementById(`${val}-content`);
+        if (contentEl) contentEl.style.display = '';
+        AppState.tracePagination.page = 1;
+        fetchTraceStats();
+        if (val === 'trace-running') {
+            window._qcRefreshTimer = setInterval(fetchTraceStats, 5000);
+        }
+    }
+}
+
+// ===== 刷新当前分组 =====
+function refreshCurrentQcGroup() {
+    const group = AppState.qcGroup;
+    if (group === 'human') { fetchQCStats(); }
+    else if (group === 'cls') { fetchClsStats(); }
+    else if (group === 'trace') { fetchTraceStats(); }
 }
 
 // --- Logic ---
@@ -1271,7 +1434,7 @@ function activateTab(tabId, updateURL = true) {
     // Load tab-specific data
     if (tabId === 'feedback-stats') fetchFeedbackStats();
     if (tabId === 'comment-stats') fetchCommentStats();
-    if (tabId === 'qc-mgmt') { fetchQCStats(); fetchAiQcStats(); }
+    if (tabId === 'qc-mgmt') { refreshCurrentQcGroup(); }
     if (tabId === 'users') fetchUserManagementData();
     if (tabId === 'models') fetchModels();
     if (tabId === 'reports') initReportTab();

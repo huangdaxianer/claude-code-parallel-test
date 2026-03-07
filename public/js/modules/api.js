@@ -336,17 +336,51 @@ export const TaskAPI = {
         return await res.json();
     },
 
-    async fetchAiQcStats({ page = 1, pageSize = 50, status = 'pending' } = {}) {
+    // ===== 题目分类 (per task) =====
+    async fetchClsStats({ page = 1, pageSize = 50, status = 'pending' } = {}) {
         const params = new URLSearchParams();
         params.set('page', page);
         params.set('pageSize', pageSize);
         params.set('status', status);
-        const res = await fetch(`/api/admin/ai-qc-stats?${params.toString()}`, { headers: getAuthHeaders() });
+        const res = await fetch(`/api/admin/task-cls-stats?${params.toString()}`, { headers: getAuthHeaders() });
         return await res.json();
     },
 
-    async startAiQc(items) {
-        const res = await fetch('/api/admin/ai-qc-start', {
+    async startCls(taskIds) {
+        const res = await fetch('/api/admin/task-cls-start', {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ taskIds })
+        });
+        return await res.json();
+    },
+
+    async fetchClsProgress() {
+        const res = await fetch('/api/admin/task-cls-progress', { headers: getAuthHeaders() });
+        return await res.json();
+    },
+
+    async deleteCls(taskIds) {
+        const res = await fetch('/api/admin/task-cls-delete', {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ taskIds })
+        });
+        return await res.json();
+    },
+
+    // ===== 反馈质检 (per model_run) =====
+    async fetchTraceStats({ page = 1, pageSize = 50, status = 'pending' } = {}) {
+        const params = new URLSearchParams();
+        params.set('page', page);
+        params.set('pageSize', pageSize);
+        params.set('status', status);
+        const res = await fetch(`/api/admin/trace-check-stats?${params.toString()}`, { headers: getAuthHeaders() });
+        return await res.json();
+    },
+
+    async startTrace(items) {
+        const res = await fetch('/api/admin/trace-check-start', {
             method: 'POST',
             headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ items })
@@ -354,12 +388,21 @@ export const TaskAPI = {
         return await res.json();
     },
 
-    async fetchAiQcProgress() {
-        const res = await fetch('/api/admin/ai-qc-progress', { headers: getAuthHeaders() });
+    async fetchTraceProgress() {
+        const res = await fetch('/api/admin/trace-check-progress', { headers: getAuthHeaders() });
         return await res.json();
     },
 
-    async updateAiQcConcurrency(concurrency) {
+    async deleteTrace(items) {
+        const res = await fetch('/api/admin/trace-check-delete', {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items })
+        });
+        return await res.json();
+    },
+
+    async updateQcConcurrency(concurrency) {
         const res = await fetch('/api/admin/config', {
             method: 'POST',
             headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
