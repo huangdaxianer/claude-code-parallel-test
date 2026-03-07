@@ -166,7 +166,7 @@ function callAnthropicAPI(apiBaseUrl, apiKey, modelName, systemPrompt, userConte
  * 看到大量工具调用但只有3小段文本，误判为"输出被截断"。
  *
  * 新实现：按 line_number 顺序交织排列所有条目（工具调用 + 文本），
- * 中间文本截短到 200 字符，最后 3 条 TXT 保留完整内容（最多 5000 字符）。
+ * 所有 TXT 文本保留完整内容，工具调用压缩为一行摘要。
  */
 function compressTrace(runId) {
     // 取所有相关条目（工具调用 + TXT），按 line_number 排序
@@ -179,12 +179,6 @@ function compressTrace(runId) {
     `).all(runId);
 
     if (allEntries.length === 0) return '(无工具调用记录)';
-
-    // 找出最后 3 条 TXT 条目的 line_number，这些保留完整内容
-    const txtEntries = allEntries.filter(e => e.type === 'TXT' && !e.tool_name);
-    const lastTxtLineNums = new Set(
-        txtEntries.slice(-3).map(e => e.line_number)
-    );
 
     let stepNum = 0;
     const lines = allEntries.map(entry => {
@@ -204,17 +198,9 @@ function compressTrace(runId) {
                 : '';
             return `${stepNum}. ${entry.tool_name}${preview} → ${statusLabel}`;
         } else {
-            // TXT 文本输出
+            // TXT 文本输出：保留完整内容
             const text = entry.preview_text.replace(/\n{3,}/g, '\n\n');
-            if (lastTxtLineNums.has(entry.line_number)) {
-                // 最后 3 条 TXT：保留完整内容（限 5000 字符）
-                return `[模型输出] ${text.substring(0, 5000)}`;
-            } else {
-                // 中间 TXT：截短到 200 字符，让评估模型了解执行流程
-                const short = text.substring(0, 200).replace(/\n/g, ' ');
-                const suffix = text.length > 200 ? '...' : '';
-                return `[模型输出] ${short}${suffix}`;
-            }
+            return `[模型输出] ${text}`;
         }
     });
 
