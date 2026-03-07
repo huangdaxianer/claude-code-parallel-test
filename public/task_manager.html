@@ -1289,6 +1289,7 @@
             <button class="tab-btn" data-tab="reports">统计报告</button>
             <button class="tab-btn" data-tab="users">用户管理</button>
             <button class="tab-btn" data-tab="qc-mgmt">质检管理</button>
+            <button class="tab-btn" data-tab="analysis">智能分析</button>
             <div class="tabs-nav-right">
                 <a class="btn-back-tasks" href="/task.html" title="返回我的任务列表">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
@@ -1661,6 +1662,117 @@
                             <button class="btn" data-action="report-prev-step" data-current="5">上一步</button>
                             <button class="btn btn-primary" data-action="report-create" id="report-create-btn">创建报告</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analysis Tab -->
+        <div id="tab-analysis" class="tab-pane">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h2 style="font-size: 1.25rem; font-weight: 600;">智能分析</h2>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-primary" data-action="open-create-analysis">+ 创建分析</button>
+                    <button class="btn" data-action="refresh-analyses">刷新</button>
+                </div>
+            </div>
+            <div id="analyses-list">
+                <p style="color: #94a3b8;">加载中...</p>
+            </div>
+        </div>
+
+        <!-- Create Analysis Modal -->
+        <div class="modal-overlay" id="analysis-modal">
+            <div class="modal" style="max-width: 700px; width: 95%;">
+                <div class="modal-header">
+                    <h3>创建智能分析</h3>
+                    <button class="modal-close" data-action="close-modal" data-modal-id="analysis-modal">&times;</button>
+                </div>
+                <div class="modal-body" style="max-height: calc(85vh - 120px);">
+                    <!-- Step Indicator -->
+                    <div class="report-steps" id="analysis-step-indicator">
+                        <div class="report-step active" data-step="1">
+                            <span class="step-num">1</span><span class="step-label">选择模型</span>
+                        </div>
+                        <div class="report-step-line"></div>
+                        <div class="report-step" data-step="2">
+                            <span class="step-num">2</span><span class="step-label">选择用户</span>
+                        </div>
+                        <div class="report-step-line"></div>
+                        <div class="report-step" data-step="3">
+                            <span class="step-num">3</span><span class="step-label">选择任务</span>
+                        </div>
+                    </div>
+
+                    <!-- Step 1: Select 2 models -->
+                    <div class="report-step-content active" id="analysis-step-1">
+                        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">选择两个待比较模型</h3>
+                        <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1rem;">请恰好选择 2 个模型进行对比分析</p>
+                        <div id="analysis-models-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <p style="color: #94a3b8;">加载中...</p>
+                        </div>
+                        <p id="analysis-model-count" style="font-size: 0.85rem; color: #64748b; margin-top: 0.5rem;">已选择 0/2 个模型</p>
+                        <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem;">
+                            <button class="btn btn-primary" data-action="analysis-next-step" data-current="1">下一步</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Select Users -->
+                    <div class="report-step-content" id="analysis-step-2">
+                        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">选择用户</h3>
+                        <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1rem;">筛选特定用户的任务进行分析</p>
+                        <div style="margin-bottom: 0.75rem;">
+                            <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                                <input type="checkbox" id="analysis-select-all-users" checked> 全选
+                            </label>
+                        </div>
+                        <div id="analysis-users-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 300px; overflow-y: auto;">
+                            <p style="color: #94a3b8;">加载中...</p>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 1.5rem;">
+                            <button class="btn" data-action="analysis-prev-step" data-current="2">上一步</button>
+                            <button class="btn btn-primary" data-action="analysis-next-step" data-current="2">下一步</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Select Tasks -->
+                    <div class="report-step-content" id="analysis-step-3">
+                        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">选择待分析任务</h3>
+                        <p style="font-size: 0.85rem; color: #64748b; margin-bottom: 1rem;" id="analysis-task-hint">仅展示所选 2 个模型均已完成或已反馈的任务</p>
+                        <div style="margin-bottom: 0.75rem; display: flex; gap: 1rem;">
+                            <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                                <input type="checkbox" id="analysis-select-qualified-tasks" checked> 全选合格任务
+                            </label>
+                            <label style="display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                                <input type="checkbox" id="analysis-select-all-tasks"> 全选
+                            </label>
+                        </div>
+                        <div id="analysis-tasks-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 300px; overflow-y: auto;">
+                            <p style="color: #94a3b8;">请先选择模型...</p>
+                        </div>
+                        <div style="margin-top: 1rem;">
+                            <label style="font-size: 0.9rem; font-weight: 500;">分析标题（可选）</label>
+                            <input type="text" id="analysis-title-input" class="filter-input" placeholder="留空将自动生成" style="margin-top: 0.25rem; width: 100%;">
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 1.5rem;">
+                            <button class="btn" data-action="analysis-prev-step" data-current="3">上一步</button>
+                            <button class="btn btn-primary" data-action="analysis-create" id="analysis-create-btn">开始分析</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analysis Detail Modal -->
+        <div class="modal-overlay" id="analysis-detail-modal">
+            <div class="modal" style="max-width: 1100px; width: 95%;">
+                <div class="modal-header">
+                    <h3 id="analysis-detail-title">分析详情</h3>
+                    <button class="modal-close" data-action="close-modal" data-modal-id="analysis-detail-modal">&times;</button>
+                </div>
+                <div class="modal-body" style="max-height: calc(85vh - 120px);">
+                    <div id="analysis-detail-content">
+                        <p style="color: #94a3b8;">加载中...</p>
                     </div>
                 </div>
             </div>

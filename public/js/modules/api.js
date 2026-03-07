@@ -323,6 +323,65 @@ export const TaskAPI = {
         return await res.json();
     },
 
+    // Analysis APIs
+    async fetchAnalysisModels() {
+        const res = await fetch('/api/admin/analysis/models', { headers: getAuthHeaders() });
+        return await res.json();
+    },
+
+    async fetchAnalysisAvailableTasks(modelIds) {
+        const res = await fetch('/api/admin/analysis/available-tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ modelIds })
+        });
+        return await res.json();
+    },
+
+    async createAnalysis(modelIds, taskIds, title) {
+        const res = await fetch('/api/admin/analysis/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ modelIds, taskIds, title })
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || '创建分析失败');
+        }
+        return await res.json();
+    },
+
+    async fetchAnalysisList() {
+        const res = await fetch('/api/admin/analysis/list', { headers: getAuthHeaders() });
+        return await res.json();
+    },
+
+    async fetchAnalysisDetail(id) {
+        const res = await fetch(`/api/admin/analysis/${id}`, { headers: getAuthHeaders() });
+        return await res.json();
+    },
+
+    async fetchAnalysisProgress(id) {
+        const res = await fetch(`/api/admin/analysis/${id}/progress`, { headers: getAuthHeaders() });
+        return await res.json();
+    },
+
+    async retryAnalysis(id) {
+        const res = await fetch(`/api/admin/analysis/${id}/retry`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+        return await res.json();
+    },
+
+    async deleteAnalysis(id) {
+        const res = await fetch(`/api/admin/analysis/${id}`, {
+            method: 'DELETE',
+            headers: getAuthHeaders()
+        });
+        return await res.json();
+    },
+
     async fetchQCStats({ page = 1, pageSize = 50, userId = '', inspector = '', taskQuality = '', feedbackQuality = '', requirementType = '', traceCompleteness = '' } = {}) {
         const params = new URLSearchParams();
         params.set('page', page);

@@ -76,7 +76,7 @@ function initTabFromURL() {
     const tabParam = urlParams.get('tab');
 
     // Valid tab names
-    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'comment-stats', 'reports', 'users', 'qc-mgmt'];
+    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'comment-stats', 'reports', 'users', 'qc-mgmt', 'analysis'];
 
     // Default to 'tasks' if no valid tab parameter
     const tabId = validTabs.includes(tabParam) ? tabParam : 'tasks';
@@ -91,7 +91,7 @@ function initTabFromURL() {
 function handlePopState(e) {
     const urlParams = new URLSearchParams(window.location.search);
     const tabParam = urlParams.get('tab');
-    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'comment-stats', 'reports', 'users', 'qc-mgmt'];
+    const validTabs = ['tasks', 'models', 'eval', 'feedback-stats', 'comment-stats', 'reports', 'users', 'qc-mgmt', 'analysis'];
     const tabId = validTabs.includes(tabParam) ? tabParam : 'tasks';
 
     activateTab(tabId, false);
@@ -128,7 +128,7 @@ function setupEventListeners() {
     });
 
     // Modal Outside Clicks
-    const modalIds = ['prompt-modal', 'config-modal', 'question-modal', 'model-modal', 'group-modal', 'create-user-modal', 'report-modal', 'task-list-modal'];
+    const modalIds = ['prompt-modal', 'config-modal', 'question-modal', 'model-modal', 'group-modal', 'create-user-modal', 'report-modal', 'task-list-modal', 'analysis-modal', 'analysis-detail-modal'];
     modalIds.forEach(id => {
         document.getElementById(id)?.addEventListener('click', (e) => {
             if (e.target.id === id) UI.closeModal(id);
@@ -422,6 +422,38 @@ async function handleGlobalClick(e) {
 
             case 'delete-report':
                 handleDeleteReport(id);
+                break;
+
+            case 'refresh-analyses':
+                fetchAnalysisList();
+                break;
+
+            case 'open-create-analysis':
+                openCreateAnalysisModal();
+                break;
+
+            case 'analysis-next-step':
+                handleAnalysisNextStep(parseInt(actionBtn.dataset.current));
+                break;
+
+            case 'analysis-prev-step':
+                handleAnalysisPrevStep(parseInt(actionBtn.dataset.current));
+                break;
+
+            case 'analysis-create':
+                handleAnalysisCreate();
+                break;
+
+            case 'delete-analysis':
+                handleDeleteAnalysis(id);
+                break;
+
+            case 'view-analysis':
+                viewAnalysisDetail(id);
+                break;
+
+            case 'retry-analysis':
+                retryAnalysis(id);
                 break;
 
             case 'refresh-users-management':
@@ -1226,6 +1258,7 @@ function activateTab(tabId, updateURL = true) {
     if (tabId === 'users') fetchUserManagementData();
     if (tabId === 'models') fetchModels();
     if (tabId === 'reports') initReportTab();
+    if (tabId === 'analysis') initAnalysisTab();
 }
 
 window.openConfigModal = function () {
@@ -2057,6 +2090,374 @@ async function handleDeleteReport(id) {
         fetchReportList();
     } catch (e) {
         alert('删除失败: ' + e.message);
+    }
+}
+
+// ============ Analysis Functions ============
+
+let analysisState = {
+    currentStep: 1,
+    models: [],
+    selectedModelIds: [],
+    availableTasks: [],
+    filteredTasks: [],
+    selectedTaskIds: [],
+    availableUsers: [],
+    selectedUsernames: [],
+    analysesList: [],
+    pollingTimers: {}
+};
+
+async function initAnalysisTab() {
+    fetchAnalysisList();
+}
+
+async function openCreateAnalysisModal() {
+    analysisState.currentStep = 1;
+    analysisState.selectedModelIds = [];
+    analysisState.availableTasks = [];
+    analysisState.filteredTasks = [];
+    analysisState.availableUsers = [];
+    analysisState.selectedUsernames = [];
+    updateAnalysisStepUI(1);
+    document.getElementById('analysis-modal')?.classList.add('show');
+    try {
+        const models = await TaskAPI.fetchAnalysisModels();
+        analysisState.models = models;
+        renderAnalysisModels();
+    } catch (e) {
+        console.error('[Analysis] Error loading models:', e);
+    }
+}
+
+function renderAnalysisModels() {
+    const container = document.getElementById('analysis-models-list');
+    if (!analysisState.models.length) {
+        container.innerHTML = '<p style="color: #94a3b8;">暂无可用模型</p>';
+        return;
+    }
+    container.innerHTML = analysisState.models.map(m => `
+        <label class="report-model-item">
+            <input type="checkbox" value="${m.id}" class="analysis-model-checkbox">
+            <span class="report-item-label">${escapeHtml(m.name)}</span>
+            ${m.description ? `<span class="report-item-meta">${escapeHtml(m.description)}</span>` : ''}
+        </label>
+    `).join('');
+
+    container.addEventListener('change', () => {
+        const checked = container.querySelectorAll('.analysis-model-checkbox:checked');
+        document.getElementById('analysis-model-count').textContent = `已选择 ${checked.length}/2 个模型`;
+    });
+}
+
+function updateAnalysisStepUI(step) {
+    analysisState.currentStep = step;
+    document.querySelectorAll('#analysis-modal .report-step-content').forEach(el => el.classList.remove('active'));
+    const stepEl = document.getElementById(`analysis-step-${step}`);
+    if (stepEl) stepEl.classList.add('active');
+
+    document.querySelectorAll('#analysis-step-indicator .report-step').forEach(el => {
+        const s = parseInt(el.dataset.step);
+        el.classList.remove('active', 'completed');
+        if (s === step) el.classList.add('active');
+        else if (s < step) el.classList.add('completed');
+    });
+}
+
+async function handleAnalysisNextStep(current) {
+    if (current === 1) {
+        const checked = Array.from(document.querySelectorAll('.analysis-model-checkbox:checked')).map(cb => cb.value);
+        if (checked.length !== 2) {
+            alert('请恰好选择 2 个模型');
+            return;
+        }
+        analysisState.selectedModelIds = checked;
+        await loadAnalysisUsersStep();
+    } else if (current === 2) {
+        const checkedUsers = Array.from(document.querySelectorAll('.analysis-user-checkbox:checked')).map(cb => cb.value);
+        if (checkedUsers.length === 0) {
+            alert('请至少选择一个用户');
+            return;
+        }
+        analysisState.selectedUsernames = checkedUsers;
+        analysisState.filteredTasks = analysisState.availableTasks.filter(
+            t => checkedUsers.includes(t.username)
+        );
+        renderAnalysisTasks();
+        updateAnalysisStepUI(3);
+    }
+}
+
+function handleAnalysisPrevStep(current) {
+    if (current > 1) {
+        updateAnalysisStepUI(current - 1);
+    }
+}
+
+async function loadAnalysisUsersStep() {
+    const usersContainer = document.getElementById('analysis-users-list');
+    usersContainer.innerHTML = '<p style="color: #94a3b8;">加载中...</p>';
+    updateAnalysisStepUI(2);
+
+    try {
+        analysisState.availableTasks = await TaskAPI.fetchAnalysisAvailableTasks(analysisState.selectedModelIds);
+        const userMap = new Map();
+        analysisState.availableTasks.forEach(t => {
+            userMap.set(t.username, (userMap.get(t.username) || 0) + 1);
+        });
+        analysisState.availableUsers = Array.from(userMap.entries()).map(
+            ([username, taskCount]) => ({ username, taskCount })
+        );
+        renderAnalysisUsers();
+    } catch (e) {
+        usersContainer.innerHTML = '<p style="color: #ef4444;">加载失败，请重试</p>';
+        console.error('[Analysis] Error loading users:', e);
+    }
+}
+
+function renderAnalysisUsers() {
+    const container = document.getElementById('analysis-users-list');
+    const users = analysisState.availableUsers;
+    if (!users.length) {
+        container.innerHTML = '<p style="color: #94a3b8;">没有符合条件的用户</p>';
+        return;
+    }
+    container.innerHTML = users.map(u => `
+        <label class="report-user-item">
+            <input type="checkbox" value="${escapeHtml(u.username)}" class="analysis-user-checkbox" checked>
+            <span class="report-item-label">${escapeHtml(u.username)}</span>
+            <span class="report-item-meta">${u.taskCount} 个任务</span>
+        </label>
+    `).join('');
+
+    const selectAll = document.getElementById('analysis-select-all-users');
+    if (selectAll) {
+        selectAll.checked = true;
+        selectAll.onchange = () => {
+            document.querySelectorAll('.analysis-user-checkbox').forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+        };
+    }
+}
+
+function renderAnalysisTasks() {
+    const container = document.getElementById('analysis-tasks-list');
+    const tasks = analysisState.filteredTasks;
+    if (!tasks.length) {
+        container.innerHTML = '<p style="color: #94a3b8;">没有符合条件的任务</p>';
+        return;
+    }
+
+    const isQualified = (t) => t.requirement_type !== '不符合要求' && !t.has_incomplete_trace;
+
+    container.innerHTML = tasks.map(t => {
+        const qualified = isQualified(t);
+        let badge = '';
+        if (t.requirement_type === '不符合要求') {
+            badge = '<span style="font-size:0.7rem;color:#ef4444;margin-left:0.25rem;">不符合要求</span>';
+        } else if (t.has_incomplete_trace) {
+            badge = '<span style="font-size:0.7rem;color:#f59e0b;margin-left:0.25rem;">轨迹不完整</span>';
+        }
+        return `<label class="report-task-item" style="${qualified ? '' : 'opacity:0.6;'}">
+            <input type="checkbox" value="${t.task_id}" class="analysis-task-checkbox" data-qualified="${qualified ? '1' : '0'}">
+            <span class="report-item-label">${escapeHtml(t.title || 'Untitled')}${badge}</span>
+            <span class="report-item-meta">${escapeHtml(t.username)} · ${t.task_id}</span>
+        </label>`;
+    }).join('');
+
+    // Select qualified tasks by default
+    const selectQualified = document.getElementById('analysis-select-qualified-tasks');
+    if (selectQualified) {
+        selectQualified.checked = true;
+        document.querySelectorAll('.analysis-task-checkbox').forEach(cb => {
+            cb.checked = cb.dataset.qualified === '1';
+        });
+        selectQualified.onchange = () => {
+            document.querySelectorAll('.analysis-task-checkbox').forEach(cb => {
+                if (cb.dataset.qualified === '1') cb.checked = selectQualified.checked;
+            });
+        };
+    }
+
+    const selectAll = document.getElementById('analysis-select-all-tasks');
+    if (selectAll) {
+        selectAll.checked = false;
+        selectAll.onchange = () => {
+            document.querySelectorAll('.analysis-task-checkbox').forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+            if (selectQualified) selectQualified.checked = selectAll.checked;
+        };
+    }
+}
+
+async function handleAnalysisCreate() {
+    const checkedTasks = Array.from(document.querySelectorAll('.analysis-task-checkbox:checked')).map(cb => cb.value);
+    if (checkedTasks.length === 0) {
+        alert('请至少选择一个任务');
+        return;
+    }
+    analysisState.selectedTaskIds = checkedTasks;
+    const titleInput = document.getElementById('analysis-title-input');
+    const title = titleInput ? titleInput.value.trim() : '';
+    const btn = document.getElementById('analysis-create-btn');
+    btn.disabled = true;
+    btn.textContent = '创建中...';
+
+    try {
+        const result = await TaskAPI.createAnalysis(
+            analysisState.selectedModelIds,
+            analysisState.selectedTaskIds,
+            title || undefined
+        );
+        if (result.success) {
+            UI.showToast('分析任务已创建，正在后台处理');
+            UI.closeModal('analysis-modal');
+            analysisState.currentStep = 1;
+            updateAnalysisStepUI(1);
+            if (titleInput) titleInput.value = '';
+            fetchAnalysisList();
+            startAnalysisPolling(result.analysisId);
+        }
+    } catch (e) {
+        alert('创建分析失败: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '开始分析';
+    }
+}
+
+function startAnalysisPolling(analysisId) {
+    if (analysisState.pollingTimers[analysisId]) return;
+    const timer = setInterval(async () => {
+        try {
+            const progress = await TaskAPI.fetchAnalysisProgress(analysisId);
+            updateAnalysisListItem(analysisId, progress);
+            if (progress.status === 'completed' || progress.status === 'failed') {
+                clearInterval(timer);
+                delete analysisState.pollingTimers[analysisId];
+            }
+        } catch (e) {
+            clearInterval(timer);
+            delete analysisState.pollingTimers[analysisId];
+        }
+    }, 3000);
+    analysisState.pollingTimers[analysisId] = timer;
+}
+
+function updateAnalysisListItem(analysisId, progress) {
+    const statusCell = document.getElementById(`analysis-status-${analysisId}`);
+    if (statusCell) {
+        statusCell.innerHTML = renderAnalysisStatusHtml(progress);
+    }
+}
+
+function renderAnalysisStatusHtml(a) {
+    if (a.status === 'completed' && a.failed_count === 0) {
+        return `<span style="color: #16a34a;">已完成 (${a.completed_count}/${a.total_count})</span>`;
+    } else if (a.status === 'completed' && a.failed_count > 0) {
+        return `<span style="color: #f59e0b;">已完成 (${a.completed_count}/${a.total_count}，${a.failed_count} 失败)</span>`;
+    } else if (a.status === 'processing') {
+        return `<span style="color: #3b82f6;">处理中 (${a.completed_count}/${a.total_count})</span>`;
+    } else if (a.status === 'pending') {
+        return `<span style="color: #94a3b8;">等待中</span>`;
+    }
+    return `<span style="color: #ef4444;">失败</span>`;
+}
+
+async function fetchAnalysisList() {
+    try {
+        const analyses = await TaskAPI.fetchAnalysisList();
+        analysisState.analysesList = analyses;
+        renderAnalysisList(analyses);
+    } catch (e) {
+        console.error('[Analysis] Error fetching list:', e);
+    }
+}
+
+function renderAnalysisList(analyses) {
+    const container = document.getElementById('analyses-list');
+    if (!analyses || analyses.length === 0) {
+        container.innerHTML = '<p style="color: #94a3b8; text-align: center; padding: 2rem;">暂无分析记录</p>';
+        return;
+    }
+    container.innerHTML = analyses.map(a => `
+        <div class="report-card">
+            <div class="report-card-info">
+                <div class="report-card-title">${escapeHtml(a.title || '未命名分析')}</div>
+                <div class="report-card-meta">
+                    <span>${escapeHtml(a.model_a_name || a.model_a_id)} vs ${escapeHtml(a.model_b_name || a.model_b_id)}</span>
+                    <span>${a.total_count} 个任务</span>
+                    <span id="analysis-status-${a.id}">${renderAnalysisStatusHtml(a)}</span>
+                    <span>创建者: ${escapeHtml(a.created_by || '未知')}</span>
+                    <span>${formatDateTime(a.created_at)}</span>
+                </div>
+            </div>
+            <div class="report-card-actions">
+                <button class="btn btn-primary" data-action="view-analysis" data-id="${a.id}" style="font-size:0.85rem;">查看</button>
+                ${a.failed_count > 0 ? `<button class="btn" data-action="retry-analysis" data-id="${a.id}" style="font-size:0.85rem;">重试失败</button>` : ''}
+                <button class="btn btn-danger" data-action="delete-analysis" data-id="${a.id}" style="font-size:0.85rem;">删除</button>
+            </div>
+        </div>
+    `).join('');
+
+    // Start polling for any in-progress analyses
+    analyses.filter(a => a.status === 'processing' || a.status === 'pending').forEach(a => {
+        startAnalysisPolling(a.id);
+    });
+}
+
+async function viewAnalysisDetail(analysisId) {
+    document.getElementById('analysis-detail-modal')?.classList.add('show');
+    document.getElementById('analysis-detail-content').innerHTML = '<p style="color: #94a3b8;">加载中...</p>';
+
+    try {
+        const data = await TaskAPI.fetchAnalysisDetail(analysisId);
+        document.getElementById('analysis-detail-title').textContent = data.title || '分析详情';
+
+        const rows = data.results.map(r => `<tr>
+            <td style="white-space: nowrap;"><a href="/task.html?id=${r.task_id}" target="_blank" style="color: #3b82f6; text-decoration: none;">${escapeHtml(r.task_title || r.task_id)}</a>
+                <div style="font-size:0.75rem; color:#94a3b8;">${escapeHtml(r.username || '')}</div>
+            </td>
+            <td style="white-space: nowrap; font-size: 0.85rem;">${escapeHtml(data.model_a_name)} vs ${escapeHtml(data.model_b_name)}</td>
+            <td style="white-space: pre-wrap; font-size: 0.85rem; line-height: 1.5; max-width: 600px;">${r.status === 'completed'
+                ? escapeHtml(r.insight || '(无洞察)')
+                : `<span style="color: ${r.status === 'failed' ? '#ef4444' : '#f59e0b'};">${r.status === 'failed' ? '失败: ' + escapeHtml(r.error_message || '') : '处理中...'}</span>`
+            }</td>
+        </tr>`).join('');
+
+        document.getElementById('analysis-detail-content').innerHTML = `
+            <div class="table-container"><table class="tasks-table">
+                <thead><tr><th>任务</th><th>对比模型</th><th>AI 分析洞察</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table></div>`;
+    } catch (e) {
+        document.getElementById('analysis-detail-content').innerHTML = '<p style="color: #ef4444;">加载失败</p>';
+    }
+}
+
+async function handleDeleteAnalysis(id) {
+    if (!confirm('确定要删除这份分析吗？')) return;
+    try {
+        await TaskAPI.deleteAnalysis(id);
+        UI.showToast('分析已删除');
+        fetchAnalysisList();
+    } catch (e) {
+        alert('删除失败: ' + e.message);
+    }
+}
+
+async function retryAnalysis(id) {
+    try {
+        const result = await TaskAPI.retryAnalysis(id);
+        if (result.success) {
+            UI.showToast(`已重新提交 ${result.retried} 个失败任务`);
+            fetchAnalysisList();
+            startAnalysisPolling(id);
+        }
+    } catch (e) {
+        alert('重试失败: ' + e.message);
     }
 }
 

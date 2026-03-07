@@ -288,6 +288,39 @@ db.exec(`
     CREATE INDEX IF NOT EXISTS idx_gsb_jobs_user_id ON gsb_jobs(user_id);
     CREATE INDEX IF NOT EXISTS idx_gsb_tasks_job_id ON gsb_tasks(job_id);
     CREATE INDEX IF NOT EXISTS idx_model_runs_status ON model_runs(status);
+
+    CREATE TABLE IF NOT EXISTS ai_analyses (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        model_a_id TEXT NOT NULL,
+        model_b_id TEXT NOT NULL,
+        selected_tasks TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        total_count INTEGER DEFAULT 0,
+        completed_count INTEGER DEFAULT 0,
+        failed_count INTEGER DEFAULT 0,
+        created_by INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completed_at DATETIME,
+        FOREIGN KEY(created_by) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_analysis_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        analysis_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        insight TEXT,
+        status TEXT DEFAULT 'pending',
+        retry_count INTEGER DEFAULT 0,
+        error_message TEXT,
+        started_at DATETIME,
+        completed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(analysis_id, task_id),
+        FOREIGN KEY(analysis_id) REFERENCES ai_analyses(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_analysis_results_analysis ON ai_analysis_results(analysis_id);
+    CREATE INDEX IF NOT EXISTS idx_analysis_results_status ON ai_analysis_results(status);
 `);
 
 // Migration: Add new columns to log_entries if they don't exist
@@ -415,6 +448,7 @@ try {
 // Recovery: Reset AI QC items stuck in 'running' state (e.g. after server restart)
 try { db.prepare("UPDATE ai_quality_inspections SET status = 'pending' WHERE status = 'running'").run(); } catch (e) { }
 try { db.prepare("UPDATE ai_task_classifications SET status = 'pending' WHERE status = 'running'").run(); } catch (e) { }
+try { db.prepare("UPDATE ai_analysis_results SET status = 'pending' WHERE status = 'running'").run(); } catch (e) { }
 
 // Migration: Add trace_reason column to ai_quality_inspections if not exists
 try { db.prepare("ALTER TABLE ai_quality_inspections ADD COLUMN trace_reason TEXT").run(); } catch (e) { /* column already exists */ }

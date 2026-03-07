@@ -1708,4 +1708,8 @@ router.get('/trace-check-debug', (req, res) => {
 const reportRoutes = require('./reports');
 router.use('/report', reportRoutes);
 
+// 挂载智能分析子路由
+const analysisRoutes = require('./analysis');
+router.use('/analysis', analysisRoutes);
+
 module.exports = router;
