@@ -360,14 +360,6 @@ async function handleGlobalClick(e) {
                 refreshCurrentQcGroup();
                 break;
 
-            // ===== 子标签切换 =====
-            case 'qc-sub-tab': {
-                const val = actionBtn.dataset.value;
-                const group = actionBtn.dataset.group;
-                switchQcSubTab(val, group);
-                break;
-            }
-
             case 'qc-stats-page':
                 AppState.qcStatsPagination.page = parseInt(actionBtn.dataset.page) || 1;
                 fetchQCStats();
@@ -887,7 +879,6 @@ async function fetchQCStats() {
         const result = await TaskAPI.fetchQCStats({
             page: AppState.qcStatsPagination.page,
             pageSize: AppState.qcStatsPagination.pageSize,
-            status: AppState.qcStatsStatus,
             userId,
             inspector,
             taskQuality,
@@ -983,22 +974,7 @@ async function updateAiProgressText() {
 }
 
 
-// ===== QC 子标签切换逻辑 =====
-function switchQcSubTab(val, group) {
-    AppState.qcSubTab = val;
-
-    // 更新子标签高亮
-    const subTabRow = document.getElementById(`qc-sub-tabs-${group}`);
-    if (subTabRow) {
-        subTabRow.querySelectorAll('.qc-sub-tab').forEach(b => b.classList.toggle('active', b.dataset.value === val));
-    }
-
-    AppState.qcStatsStatus = val === 'human-pending' ? 'pending' : 'completed';
-    AppState.qcStatsPagination.page = 1;
-    fetchQCStats();
-}
-
-// ===== 刷新当前分组 =====
+// ===== 刷新质检数据 =====
 function refreshCurrentQcGroup() {
     fetchQCStats();
 }

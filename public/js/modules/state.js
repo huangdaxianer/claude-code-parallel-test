@@ -56,13 +56,9 @@ export const AppState = {
     commentStatsPagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
     commentStatsTaskOwners: [],
 
-    // QC Stats (质检管理 - 人工质检)
+    // QC Stats (质检管理)
     qcStatsData: [],
     qcStatsPagination: { page: 1, pageSize: 50, total: 0, totalPages: 0 },
-    qcStatsStatus: 'pending',
-
-    // 质检管理 - 子标签
-    qcSubTab: 'human-pending',       // 当前激活的子标签
 
     // Per-model status filters: { modelId: 'completed' | 'stopped' | ... | '' }
     modelFilters: {},

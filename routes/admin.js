@@ -1157,7 +1157,6 @@ router.get('/qc-stats', (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize) || 50));
-        const status = req.query.status || '';
         const userId = req.query.userId || '';
         const inspector = req.query.inspector || '';
         const taskQuality = req.query.taskQuality || '';
@@ -1176,11 +1175,15 @@ router.get('/qc-stats', (req, res) => {
             filterConditions += ' AND (qi_task.admin_username = ? OR qi_fb.admin_username = ?)';
             filterParams.push(inspector, inspector);
         }
-        if (taskQuality) {
+        if (taskQuality === '__unreviewed__') {
+            filterConditions += ' AND qi_task.id IS NULL';
+        } else if (taskQuality) {
             filterConditions += ' AND qi_task.answer = ?';
             filterParams.push(taskQuality);
         }
-        if (feedbackQuality) {
+        if (feedbackQuality === '__unreviewed__') {
+            filterConditions += ' AND qi_fb.id IS NULL';
+        } else if (feedbackQuality) {
             filterConditions += ' AND qi_fb.answer = ?';
             filterParams.push(feedbackQuality);
         }
@@ -1203,13 +1206,6 @@ router.get('/qc-stats', (req, res) => {
         } else if (traceCompleteness) {
             filterConditions += ' AND aq.trace_completeness = ? AND aq.status = ?';
             filterParams.push(traceCompleteness, 'completed');
-        }
-
-        let qcStatusCondition = '';
-        if (status === 'pending') {
-            qcStatusCondition = ' AND (qi_task.id IS NULL OR qi_fb.id IS NULL)';
-        } else if (status === 'completed') {
-            qcStatusCondition = ' AND qi_task.id IS NOT NULL AND qi_fb.id IS NOT NULL';
         }
 
         const dataQuery = `
@@ -1244,7 +1240,7 @@ router.get('/qc-stats', (req, res) => {
             LEFT JOIN quality_inspections qi_fb ON qi_fb.task_id = mr.task_id AND qi_fb.model_id = mr.model_id AND qi_fb.question_key = 'feedback_quality'
             LEFT JOIN ai_task_classifications ac ON ac.task_id = mr.task_id
             LEFT JOIN ai_quality_inspections aq ON aq.task_id = mr.task_id AND aq.model_id = mr.model_id
-            WHERE 1=1 ${filterConditions} ${qcStatusCondition}
+            WHERE 1=1 ${filterConditions}
             ORDER BY mr.task_id DESC, mr.model_id
         `;
 

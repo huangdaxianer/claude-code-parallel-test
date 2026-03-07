@@ -323,11 +323,10 @@ export const TaskAPI = {
         return await res.json();
     },
 
-    async fetchQCStats({ page = 1, pageSize = 50, status = '', userId = '', inspector = '', taskQuality = '', feedbackQuality = '', requirementType = '', traceCompleteness = '' } = {}) {
+    async fetchQCStats({ page = 1, pageSize = 50, userId = '', inspector = '', taskQuality = '', feedbackQuality = '', requirementType = '', traceCompleteness = '' } = {}) {
         const params = new URLSearchParams();
         params.set('page', page);
         params.set('pageSize', pageSize);
-        if (status) params.set('status', status);
         if (userId) params.set('userId', userId);
         if (inspector) params.set('inspector', inspector);
         if (taskQuality) params.set('taskQuality', taskQuality);
