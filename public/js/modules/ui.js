@@ -1249,9 +1249,9 @@ export const UI = {
         }
 
         const reqTypeColors = {
-            '客户端': '#6366f1', '前端网页': '#3b82f6', '全栈网页': '#0ea5e9',
+            '客户端': '#6366f1', '前端网页': '#3b82f6', '全栈': '#0ea5e9',
             '服务端': '#14b8a6', '算法': '#8b5cf6', '嵌入式': '#ec4899',
-            '其它': '#94a3b8', '不符合要求': '#ef4444'
+            '技术文档': '#f59e0b', '其它': '#94a3b8', '不符合要求': '#ef4444'
         };
         const reqTypeBadge = (val) => {
             if (!val) return '<span style="color:#cbd5e1;">-</span>';
