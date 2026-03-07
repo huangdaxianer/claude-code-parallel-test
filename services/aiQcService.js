@@ -253,8 +253,14 @@ function normalizeOutput(text) {
 }
 
 /**
+ * 合法的轨迹完整度结果值（仅这两种）
+ */
+const VALID_TRACE_RESULTS = ['轨迹完整', '轨迹不完整'];
+
+/**
  * 解析轨迹完整度的 JSON 响应
  * 兼容模型可能输出带 markdown code block 或纯 JSON
+ * 仅接受 "轨迹完整" 和 "轨迹不完整" 两种结果，其它视为解析失败
  */
 function parseTraceResponse(raw) {
     const text = raw.trim();
@@ -265,17 +271,21 @@ function parseTraceResponse(raw) {
             const obj = JSON.parse(jsonMatch[0]);
             const result = normalizeOutput(obj.result || '');
             const reason = (obj.reason || '').trim();
-            // 确保 result 是合法值
-            if (result.includes('完整') || result.includes('不完整')) {
+            // 严格匹配：仅接受这两种结果
+            if (VALID_TRACE_RESULTS.includes(result)) {
                 return { result, reason };
             }
         } catch (e) {
             // JSON parse failed, fall through
         }
     }
-    // fallback：旧格式兼容（纯文本 "轨迹完整" / "轨迹不完整"）
+    // fallback：从整段文本中尝试提取合法结果
     const normalized = normalizeOutput(text);
-    return { result: normalized, reason: '' };
+    if (VALID_TRACE_RESULTS.includes(normalized)) {
+        return { result: normalized, reason: '' };
+    }
+    // 无法解析出合法结果，抛错让调用方重试
+    throw new Error(`模型返回了无法识别的结果: ${text.substring(0, 100)}`);
 }
 
 // =========================================================
