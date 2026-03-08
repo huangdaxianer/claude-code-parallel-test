@@ -498,10 +498,17 @@ router.post('/create', (req, res) => {
             FROM model_runs WHERE task_id IN (${taskPlaceholders}) AND model_id IN (${modelPlaceholders})
         `).all(...taskIds, ...modelIds);
 
+        // Fetch requirement_type for each task
+        const clsStmtReport = db.prepare(
+            'SELECT requirement_type FROM ai_task_classifications WHERE task_id = ? AND status = ?'
+        );
+
         const rawTaskData = {};
         for (const t of tasks) {
+            const cls = clsStmtReport.get(t.task_id, 'completed');
             rawTaskData[t.task_id] = {
                 sourceType: t.source_type || 'prompt',
+                requirementType: cls ? cls.requirement_type : null,
                 models: {}
             };
         }

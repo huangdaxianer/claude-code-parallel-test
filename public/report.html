@@ -630,6 +630,18 @@
 
                 // Filter panel
                 if (data.rawTaskData && Object.keys(data.rawTaskData).length > 0) {
+                    // Collect unique requirement types from rawTaskData
+                    const reqTypeSet = new Set();
+                    for (const tid in data.rawTaskData) {
+                        const rt = data.rawTaskData[tid].requirementType;
+                        if (rt) reqTypeSet.add(rt);
+                    }
+                    const reqTypes = Array.from(reqTypeSet).sort();
+                    let reqTypeOptions = '<option value="all">全部</option>';
+                    for (const rt of reqTypes) {
+                        reqTypeOptions += `<option value="${rt}">${rt}</option>`;
+                    }
+
                     html += `<div class="filter-panel" id="report-filter-panel">
                         <span class="filter-label">筛选</span>
                         <div class="filter-group">
@@ -638,6 +650,12 @@
                                 <option value="all">全部</option>
                                 <option value="prompt">从零到一</option>
                                 <option value="upload">基于现有项目</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>需求类型</label>
+                            <select id="filter-requirement-type">
+                                ${reqTypeOptions}
                             </select>
                         </div>
                         <div class="filter-group">
@@ -1311,6 +1329,7 @@
             if (!raw) return data.tasks.map(t => t.task_id);
 
             const sourceType = document.getElementById('filter-source-type')?.value || 'all';
+            const requirementType = document.getElementById('filter-requirement-type')?.value || 'all';
             const minTurnsVal = document.getElementById('filter-min-turns')?.value;
             const maxTurnsVal = document.getElementById('filter-max-turns')?.value;
             const minTurns = minTurnsVal !== '' && minTurnsVal !== undefined ? parseInt(minTurnsVal) : null;
@@ -1324,6 +1343,9 @@
 
                 // Filter by source type
                 if (sourceType !== 'all' && taskRaw.sourceType !== sourceType) return false;
+
+                // Filter by requirement type
+                if (requirementType !== 'all' && (taskRaw.requirementType || null) !== requirementType) return false;
 
                 // Filter by turns (across all selected models)
                 if (minTurns !== null || maxTurns !== null) {
@@ -1523,12 +1545,15 @@
             const urlMinTurns = urlParams.get('minTurns');
             const urlMaxTurns = urlParams.get('maxTurns');
             const urlSourceType = urlParams.get('sourceType');
+            const urlRequirementType = urlParams.get('requirementType');
             const minTurnsEl = document.getElementById('filter-min-turns');
             const maxTurnsEl = document.getElementById('filter-max-turns');
             const sourceTypeEl = document.getElementById('filter-source-type');
+            const requirementTypeEl = document.getElementById('filter-requirement-type');
             if (urlMinTurns !== null && minTurnsEl) minTurnsEl.value = urlMinTurns;
             if (urlMaxTurns !== null && maxTurnsEl) maxTurnsEl.value = urlMaxTurns;
             if (urlSourceType !== null && sourceTypeEl) sourceTypeEl.value = urlSourceType;
+            if (urlRequirementType !== null && requirementTypeEl) requirementTypeEl.value = urlRequirementType;
 
             function updateUrlParams() {
                 const params = new URLSearchParams(window.location.search);
@@ -1538,6 +1563,8 @@
                 if (minVal !== undefined && minVal !== '') params.set('minTurns', minVal); else params.delete('minTurns');
                 if (maxVal !== undefined && maxVal !== '') params.set('maxTurns', maxVal); else params.delete('maxTurns');
                 if (srcVal && srcVal !== 'all') params.set('sourceType', srcVal); else params.delete('sourceType');
+                const reqVal = requirementTypeEl?.value;
+                if (reqVal && reqVal !== 'all') params.set('requirementType', reqVal); else params.delete('requirementType');
                 const newUrl = window.location.pathname + '?' + params.toString();
                 window.history.replaceState(null, '', newUrl);
             }
@@ -1550,11 +1577,12 @@
             }
 
             document.getElementById('filter-source-type')?.addEventListener('change', onFilterChange);
+            document.getElementById('filter-requirement-type')?.addEventListener('change', onFilterChange);
             document.getElementById('filter-min-turns')?.addEventListener('input', onFilterChange);
             document.getElementById('filter-max-turns')?.addEventListener('input', onFilterChange);
 
             // Apply initial filter if URL params were set
-            if (urlMinTurns !== null || urlMaxTurns !== null || (urlSourceType !== null && urlSourceType !== 'all')) {
+            if (urlMinTurns !== null || urlMaxTurns !== null || (urlSourceType !== null && urlSourceType !== 'all') || (urlRequirementType !== null && urlRequirementType !== 'all')) {
                 onFilterChange();
             }
         }
