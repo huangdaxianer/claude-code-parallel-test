@@ -1081,17 +1081,19 @@
             justify-content: center;
             gap: 0;
             margin-bottom: 2rem;
+            flex-wrap: nowrap;
         }
 
         .report-step {
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            padding: 0.5rem 1rem;
+            padding: 0.5rem 0.75rem;
             border-radius: 999px;
             font-size: 0.9rem;
             color: #94a3b8;
             font-weight: 500;
+            white-space: nowrap;
         }
 
         .report-step.active {
@@ -1591,7 +1593,12 @@
 
                     <!-- Step 2: Select Models -->
                     <div class="report-step-content" id="report-step-2">
-                        <h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem;">选择待分析模型</h3>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                            <h3 style="font-size: 1.1rem; font-weight: 600; margin: 0;">选择待分析模型</h3>
+                            <label style="font-size: 0.85rem; color: #64748b; cursor: pointer; display: flex; align-items: center; gap: 0.35rem; user-select: none;">
+                                <input type="checkbox" id="report-models-select-all" checked> 全选
+                            </label>
+                        </div>
                         <div id="report-models-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
                             <p style="color: #94a3b8;">加载中...</p>
                         </div>

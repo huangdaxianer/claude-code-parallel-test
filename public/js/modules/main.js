@@ -1680,11 +1680,30 @@ function renderReportModels() {
     }
     container.innerHTML = reportState.models.map(m => `
         <label class="report-model-item">
-            <input type="checkbox" value="${m.id}" class="report-model-checkbox">
+            <input type="checkbox" value="${m.id}" class="report-model-checkbox" checked>
             <span class="report-item-label">${escapeHtml(m.name)}</span>
             ${m.description ? `<span class="report-item-meta">${escapeHtml(m.description)}</span>` : ''}
         </label>
     `).join('');
+
+    // Wire up select-all checkbox
+    const selectAllCb = document.getElementById('report-models-select-all');
+    if (selectAllCb) {
+        selectAllCb.addEventListener('change', () => {
+            container.querySelectorAll('.report-model-checkbox').forEach(cb => {
+                cb.checked = selectAllCb.checked;
+            });
+        });
+        // Keep select-all in sync when individual checkboxes change
+        container.addEventListener('change', (e) => {
+            if (e.target.classList.contains('report-model-checkbox')) {
+                const all = container.querySelectorAll('.report-model-checkbox');
+                const checked = container.querySelectorAll('.report-model-checkbox:checked');
+                selectAllCb.checked = all.length === checked.length;
+                selectAllCb.indeterminate = checked.length > 0 && checked.length < all.length;
+            }
+        });
+    }
 }
 
 function renderReportTasks() {
