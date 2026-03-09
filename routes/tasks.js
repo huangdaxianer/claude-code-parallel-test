@@ -964,6 +964,54 @@ router.get('/:taskId/download', (req, res) => {
     streamZip(taskDir, `task_${taskId}.zip`, req, res);
 });
 
+// 下载原始上传项目（仅管理员）
+router.get('/:taskId/download_source', (req, res) => {
+    const { taskId } = req.params;
+
+    // 仅管理员可下载原始项目
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: '仅管理员可下载原始项目' });
+    }
+
+    const task = db.prepare('SELECT source_type, base_dir FROM tasks WHERE task_id = ?').get(taskId);
+    if (!task) {
+        return res.status(404).json({ error: 'Task not found' });
+    }
+    if (task.source_type !== 'upload') {
+        return res.status(400).json({ error: '该任务没有上传的原始项目' });
+    }
+
+    const sourceDir = path.resolve(config.TASKS_DIR, taskId, 'source');
+    const resolvedTasksDir = path.resolve(config.TASKS_DIR);
+    if (!sourceDir.startsWith(resolvedTasksDir + path.sep)) {
+        return res.status(403).json({ error: 'Access denied' });
+    }
+    if (!fs.existsSync(sourceDir)) {
+        return res.status(404).json({ error: '原始项目文件不存在' });
+    }
+
+    // 埋点
+    const startTime = Date.now();
+    try {
+        db.prepare(`INSERT INTO download_events (event_type, user_id, username, task_id, model_id) VALUES (?, ?, ?, ?, ?)`)
+            .run('download_source_start', req.user.id, req.user.username, taskId, null);
+    } catch (e) {
+        console.error('[Download Tracking] Failed to log download_source_start:', e.message);
+    }
+
+    res.on('finish', () => {
+        const durationMs = Date.now() - startTime;
+        try {
+            db.prepare(`INSERT INTO download_events (event_type, user_id, username, task_id, model_id, duration_ms) VALUES (?, ?, ?, ?, ?, ?)`)
+                .run('download_source_complete', req.user.id, req.user.username, taskId, null, durationMs);
+        } catch (e) {
+            console.error('[Download Tracking] Failed to log download_source_complete:', e.message);
+        }
+    });
+
+    streamZip(sourceDir, `source_${taskId}.zip`, req, res);
+});
+
 // 批量任务上传
 router.post('/batch', upload.single('file'), (req, res) => {
     if (!req.file) {

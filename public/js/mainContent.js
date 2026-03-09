@@ -806,6 +806,14 @@
         window.location.href = `/api/download_zip?folderName=${encodeURIComponent(App.state.activeFolder)}`;
     };
 
+    window.downloadSource = function () {
+        if (!App.state.currentTaskId) {
+            alert('No task selected.');
+            return;
+        }
+        window.location.href = `/api/tasks/${encodeURIComponent(App.state.currentTaskId)}/download_source`;
+    };
+
     // Store the default copy button HTML once
     const copyBtnDefaultHtml = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copy`;
     let copyResetTimer = null;

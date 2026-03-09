@@ -56,10 +56,20 @@
                 App.state.activeFolder = App.state.currentRuns[0].folderName;
             }
 
+            // 保存 sourceType
+            App.state.currentSourceType = data.sourceType || 'prompt';
+
             // 更新 Prompt 显示
             const promptEl = document.getElementById('task-prompt-display');
             if (promptEl && data.prompt && promptEl.textContent !== data.prompt) {
                 promptEl.textContent = data.prompt;
+            }
+
+            // 控制下载原始项目按钮可见性（仅管理员 + upload 类型任务）
+            const downloadSourceBtn = document.getElementById('download-source-btn');
+            if (downloadSourceBtn) {
+                downloadSourceBtn.style.display =
+                    (App.state.currentUser?.role === 'admin' && data.sourceType === 'upload') ? '' : 'none';
             }
 
             // 确保 activeFolder 存在

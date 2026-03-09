@@ -90,6 +90,7 @@ router.get('/task_details/:taskId', async (req, res) => {
             taskId: task.task_id,
             title: task.title,
             prompt: task.prompt,
+            sourceType: task.source_type || 'prompt',
             runs: runs.map((run, i) => {
                 const generatedFiles = allFileLists[i];
                 const hasFiles = generatedFiles.length > 0;
