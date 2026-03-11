@@ -936,12 +936,13 @@
             border-radius: 0.75rem;
             border: 1px solid #e2e8f0;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
+            overflow-x: auto;
             margin-bottom: 2rem;
         }
 
         .stats-table {
             width: 100%;
+            min-width: 900px;
             border-collapse: collapse;
             font-size: 0.95rem;
         }
