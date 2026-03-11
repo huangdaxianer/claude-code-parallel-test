@@ -421,8 +421,8 @@
             App.qualityInspection.init();
         }
 
-        // 外部众测用户：隐藏下载产物按钮
-        if (App.state.currentUser?.group_name === '外部众测用户') {
+        // 外部评测用户：隐藏下载产物按钮
+        if (App.state.currentUser?.role === 'external') {
             const downloadFilesBtn = document.getElementById('download-files-btn');
             if (downloadFilesBtn) downloadFilesBtn.style.display = 'none';
         }

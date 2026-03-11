@@ -901,7 +901,7 @@ router.post('/:taskId/start', (req, res) => {
 // 删除任务
 router.delete('/:taskId', (req, res) => {
     const { taskId } = req.params;
-    if (req.user.group_name === '外部众测用户') {
+    if (req.user.role === 'external') {
         return res.status(403).json({ error: '您的用户组没有删除任务的权限' });
     }
     if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
@@ -931,7 +931,7 @@ router.delete('/:taskId', (req, res) => {
 // 下载任务轨迹 (流式打包任务目录，避免代理超时)
 router.get('/:taskId/download', (req, res) => {
     const { taskId } = req.params;
-    if (req.user.group_name === '外部众测用户') {
+    if (req.user.role === 'external') {
         return res.status(403).json({ error: '您的用户组没有下载轨迹的权限' });
     }
     if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
