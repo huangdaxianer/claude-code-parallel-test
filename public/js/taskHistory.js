@@ -20,19 +20,18 @@
             tasks.forEach(task => {
                 const item = document.createElement('div');
                 item.className = `history-item ${task.taskId === App.state.currentTaskId ? 'active' : ''}`;
-                const isExternal = App.state.currentUser && App.state.currentUser.role === 'external';
                 item.innerHTML = `
                     <div style="flex:1; overflow:hidden;">
                         <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right: 20px;">${task.title || 'Untitled'}</div>
                         <div style="font-size:0.75rem; color:#94a3b8;">${task.taskId}</div>
                     </div>
-                    ${isExternal ? '' : `<button class="item-menu-btn" data-task-id="${task.taskId}">
+                    <button class="item-menu-btn" data-task-id="${task.taskId}">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="12" cy="12" r="1"></circle>
                             <circle cx="12" cy="5" r="1"></circle>
                             <circle cx="12" cy="19" r="1"></circle>
                         </svg>
-                    </button>`}
+                    </button>
                 `;
                 item.onclick = (e) => {
                     if (e.target.closest('.item-menu-btn')) return;
@@ -42,9 +41,9 @@
                     }
                 };
 
-                // 菜单按钮（外部评测用户不渲染）
+                // 菜单按钮
                 const menuBtn = item.querySelector('.item-menu-btn');
-                if (menuBtn) menuBtn.onclick = (e) => {
+                menuBtn.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
 

@@ -421,10 +421,10 @@
             App.qualityInspection.init();
         }
 
-        // 外部评测用户：隐藏下载产物按钮
+        // 外部评测用户：隐藏下载原始项目按钮
         if (App.state.currentUser?.role === 'external') {
-            const downloadFilesBtn = document.getElementById('download-files-btn');
-            if (downloadFilesBtn) downloadFilesBtn.style.display = 'none';
+            const downloadSourceBtn = document.getElementById('download-source-btn');
+            if (downloadSourceBtn) downloadSourceBtn.style.display = 'none';
         }
 
         // 显示 GSB 入口按钮（仅 internal 角色）
