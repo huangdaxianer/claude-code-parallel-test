@@ -931,9 +931,6 @@ router.delete('/:taskId', (req, res) => {
 // 下载任务轨迹 (流式打包任务目录，避免代理超时)
 router.get('/:taskId/download', (req, res) => {
     const { taskId } = req.params;
-    if (req.user.role === 'external') {
-        return res.status(403).json({ error: '您的用户组没有下载轨迹的权限' });
-    }
     if (!isTaskOwnerOrAdmin(req, res, taskId)) return;
     const taskDir = path.join(config.TASKS_DIR, taskId);
 
