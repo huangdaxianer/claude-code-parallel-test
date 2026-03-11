@@ -42,9 +42,10 @@ const PROXY_PORT = 3001;
  *
  * @param {string} modelId - 模型 ID，用于代理路由识别（如 'A1B2C'，或 '__default__'）
  * @param {Object} [extra={}] - 额外的环境变量（如 { CI: 'true' }）
+ * @param {string|null} [taskId=null] - 任务 ID，用于代理层关联 model_run（采集 TTFT/TPOT 指标）
  * @returns {Object} 安全的环境变量对象
  */
-function buildSafeEnv(modelId, extra = {}) {
+function buildSafeEnv(modelId, extra = {}, taskId = null) {
     const env = {};
 
     // 只从 process.env 中提取白名单变量
@@ -59,8 +60,10 @@ function buildSafeEnv(modelId, extra = {}) {
     env.LC_ALL = 'en_US.UTF-8';
 
     // API 认证：指向内部代理，使用假 token
+    // URL 包含 taskId 用于代理层关联到具体的 model_run（采集性能指标）
     env.ANTHROPIC_AUTH_TOKEN = 'proxy-placeholder-token';
-    env.ANTHROPIC_BASE_URL = `http://localhost:${PROXY_PORT}/internal-proxy/${modelId}`;
+    const taskSegment = taskId || '_';
+    env.ANTHROPIC_BASE_URL = `http://localhost:${PROXY_PORT}/internal-proxy/${taskSegment}/${modelId}`;
 
     // Claude CLI 配置
     env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC =

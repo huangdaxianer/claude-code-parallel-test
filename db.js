@@ -321,6 +321,29 @@ db.exec(`
     );
     CREATE INDEX IF NOT EXISTS idx_analysis_results_analysis ON ai_analysis_results(analysis_id);
     CREATE INDEX IF NOT EXISTS idx_analysis_results_status ON ai_analysis_results(status);
+
+    -- API 请求级别性能指标（TTFT / TPOT）
+    CREATE TABLE IF NOT EXISTS api_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id INTEGER NOT NULL,
+        request_index INTEGER NOT NULL,
+        is_haiku INTEGER DEFAULT 0,
+        request_model TEXT,
+        upstream_model TEXT,
+        request_started_at REAL,
+        first_token_at REAL,
+        last_token_at REAL,
+        ttft_ms REAL,
+        tpot_ms REAL,
+        input_tokens INTEGER DEFAULT 0,
+        output_tokens INTEGER DEFAULT 0,
+        cache_read_tokens INTEGER DEFAULT 0,
+        status_code INTEGER,
+        duration_ms REAL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(run_id) REFERENCES model_runs(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_api_requests_run_id ON api_requests(run_id);
 `);
 
 // Migration: Add new columns to log_entries if they don't exist

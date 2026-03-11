@@ -117,6 +117,8 @@
                                 <th>Input</th>
                                 <th>Output</th>
                                 <th>Cache Read</th>
+                                <th class="admin-only" style="display:none">TTFT</th>
+                                <th class="admin-only" style="display:none">TPOT</th>
                             </tr>
                         </thead>
                         <tbody id="stats-table-body">
@@ -126,6 +128,9 @@
                 </div>
             </div>
 
+            <div id="comparison-metrics" class="comparison-metrics" style="display:none;">
+                <!-- Performance metrics cards (admin-only, injected via JS) -->
+            </div>
             <div id="comparison-view" class="comparison-view">
                 <!-- Left Panel -->
                 <div class="comparison-panel" id="comparison-left">

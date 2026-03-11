@@ -729,6 +729,36 @@
             /* 紫色 */
         }
 
+        /* Comparison Metrics (Admin-only performance cards) */
+        .comparison-metrics {
+            display: none;
+            gap: 1rem;
+            padding: 0.5rem 1rem 0;
+            justify-content: center;
+            background: #f1f5f9;
+        }
+        .metrics-card {
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 0.6rem 1rem;
+            min-width: 220px;
+            font-size: 0.85rem;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        }
+        .metrics-card strong {
+            display: block;
+            margin-bottom: 0.25rem;
+            color: #1e293b;
+        }
+        .metrics-row {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 0.2rem;
+        }
+        .metric-label { color: #64748b; }
+        .metric-value { font-weight: 600; font-variant-numeric: tabular-nums; color: #334155; }
+
         /* Comparison View */
         .comparison-view {
             display: none;

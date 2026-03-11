@@ -196,6 +196,12 @@
         // 先停止旧的计时器
         stopDurationTimer();
 
+        // 管理员列显隐控制
+        const isAdmin = App.state.currentUser && App.state.currentUser.role === 'admin';
+        document.querySelectorAll('.stats-table th.admin-only').forEach(th => {
+            th.style.display = isAdmin ? '' : 'none';
+        });
+
         const translateStatus = (status) => {
             const map = {
                 'pending': '排队中',
@@ -254,6 +260,22 @@
             // 停止原因 tooltip
             const stopReasonHtml = buildStopReasonTooltip(run);
 
+            // TTFT/TPOT 列（仅 admin 可见）
+            let adminCols = '';
+            if (isAdmin) {
+                const m = run.apiMetrics;
+                if (m && m.avgTtft != null) {
+                    const ttftTooltip = `min: ${m.minTtft}ms / max: ${m.maxTtft}ms / ${m.mainRequests} 次请求`;
+                    const tpotTooltip = m.avgTpot != null ? `min: ${m.minTpot}ms / max: ${m.maxTpot}ms` : '';
+                    adminCols = `
+                        <td class="admin-only" title="${ttftTooltip}">${m.avgTtft}ms</td>
+                        <td class="admin-only" title="${tpotTooltip}">${m.avgTpot != null ? m.avgTpot + 'ms' : '-'}</td>
+                    `;
+                } else {
+                    adminCols = `<td class="admin-only">${formatVal(null)}</td><td class="admin-only">${formatVal(null)}</td>`;
+                }
+            }
+
             tr.innerHTML = `
                 <td style="font-weight:600">${stats.modelName}</td>
                 <td><span class="status-badge status-${stats.status}">${translateStatus(stats.status)}</span>${stopReasonHtml}</td>
@@ -267,6 +289,7 @@
                 <td>${formatVal(stats.inputTokens != null ? (stats.inputTokens || 0) + (stats.cacheReadTokens || 0) : null)}</td>
                 <td>${formatVal(stats.outputTokens)}</td>
                 <td>${formatVal(stats.cacheReadTokens)}</td>
+                ${adminCols}
             `;
             tbody.appendChild(tr);
         });
@@ -298,6 +321,7 @@
                     <td><button class="btn-xs action-btn" data-action="start" data-model-id="${model.id}"
                         style="background: #dbeafe; color: #1e40af; border:none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">启动</button></td>
                     <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                    ${isAdmin ? '<td class="admin-only"></td><td class="admin-only"></td>' : ''}
                 `;
                 tbody.appendChild(tr);
             });

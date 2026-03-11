@@ -10,8 +10,11 @@
  * 当检测到请求的 model 包含 "haiku" 时，自动路由到标记为 is_preview_model 的模型，
  * 并强制关闭 thinking，避免辅助请求被错误地发到昂贵的主模型。
  *
+ * 性能指标采集：对每次 API 请求采集 TTFT（首 token 延迟）和 TPOT（每输出 token 耗时），
+ * 写入 api_requests 表，用于管理员在前端查看模型性能。
+ *
  * 路由格式：
- *   POST /internal-proxy/:modelId/v1/messages
+ *   POST /internal-proxy/:taskId/:modelId/v1/messages
  *   （实际用通配匹配所有子路径）
  */
 const express = require('express');
@@ -39,6 +42,79 @@ try {
 }
 
 const router = express.Router();
+
+// ========== 性能指标采集相关 ==========
+
+// Per-run 请求计数器：Map<"taskId/modelId", number>
+const requestCounters = new Map();
+
+// 预编译的 INSERT 语句
+let insertApiRequestStmt = null;
+try {
+    insertApiRequestStmt = db.prepare(`
+        INSERT INTO api_requests
+            (run_id, request_index, is_haiku, request_model, upstream_model,
+             request_started_at, first_token_at, last_token_at,
+             ttft_ms, tpot_ms, input_tokens, output_tokens, cache_read_tokens,
+             status_code, duration_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+} catch (e) {
+    console.warn('[Proxy Metrics] Failed to prepare insert statement:', e.message);
+}
+
+// 缓存 run_id 查询：Map<"taskId/modelId", runId>
+const runIdCache = new Map();
+
+/**
+ * 持久化单次 API 请求的性能指标
+ */
+function persistApiRequestMetrics(data) {
+    if (!insertApiRequestStmt) return;
+    try {
+        // 查找 run_id（带缓存）
+        const cacheKey = `${data.taskId}/${data.modelId}`;
+        let runId = runIdCache.get(cacheKey);
+        if (!runId) {
+            const run = db.prepare(
+                'SELECT id FROM model_runs WHERE task_id = ? AND model_id = ?'
+            ).get(data.taskId, data.modelId);
+            if (!run) {
+                console.warn(`[Proxy Metrics] No model_run found for ${cacheKey}`);
+                return;
+            }
+            runId = run.id;
+            runIdCache.set(cacheKey, runId);
+        }
+
+        // 递增请求计数
+        const requestIndex = (requestCounters.get(cacheKey) || 0) + 1;
+        requestCounters.set(cacheKey, requestIndex);
+
+        // 计算指标
+        const ttft = data.firstTokenTime ? (data.firstTokenTime - data.requestStartTime) : null;
+        const duration = Date.now() - data.requestStartTime;
+        let tpot = null;
+        if (data.firstTokenTime && data.lastTokenTime && data.outputTokenCount > 1) {
+            tpot = (data.lastTokenTime - data.firstTokenTime) / (data.outputTokenCount - 1);
+        }
+
+        insertApiRequestStmt.run(
+            runId, requestIndex, data.isHaiku ? 1 : 0,
+            data.requestModel || null, data.upstreamModel || null,
+            data.requestStartTime, data.firstTokenTime || null, data.lastTokenTime || null,
+            ttft, tpot,
+            data.inputTokenCount || 0, data.outputTokenCount || 0, data.cacheReadCount || 0,
+            data.statusCode || null, duration
+        );
+
+        if (ttft !== null) {
+            console.log(`[Proxy Metrics] ${cacheKey} req#${requestIndex}: TTFT=${ttft.toFixed(0)}ms TPOT=${tpot !== null ? tpot.toFixed(1) + 'ms' : 'N/A'} out=${data.outputTokenCount}`);
+        }
+    } catch (e) {
+        console.error('[Proxy Metrics] Failed to persist:', e.message);
+    }
+}
 
 /**
  * 缓存 preview model 配置（Haiku fallback），每 60 秒刷新
@@ -93,14 +169,17 @@ function requireLocalhost(req, res, next) {
 router.use(requireLocalhost);
 
 /**
- * 通配路由：处理所有 /internal-proxy/:modelId/* 的请求
+ * 通配路由：处理所有 /internal-proxy/:taskId/:modelId/* 的请求
+ * taskId 为 '_' 时表示非任务场景（如 preview），不采集指标
  */
-router.all('/:modelId/{*path}', (req, res) => {
-    const { modelId, path: pathSegments } = req.params;
+router.all('/:taskId/:modelId/{*path}', (req, res) => {
+    const { taskId: rawTaskId, modelId, path: pathSegments } = req.params;
     // Express 5 的 {*path} 返回数组，需拼接为路径字符串
     const remainingPath = Array.isArray(pathSegments) ? pathSegments.join('/') : pathSegments;
+    // taskId 为 '_' 时表示非任务场景
+    const effectiveTaskId = (rawTaskId === '_') ? null : rawTaskId;
 
-    console.log(`[Proxy] ${req.method} model=${modelId} path=${remainingPath}`);
+    console.log(`[Proxy] ${req.method} task=${rawTaskId} model=${modelId} path=${remainingPath}`);
 
     // 查找模型的真实 API 配置
     let apiKey, apiBaseUrl, alwaysThinkingEnabled = false, actualModelName = null, providerConfig = null;
@@ -157,12 +236,18 @@ router.all('/:modelId/{*path}', (req, res) => {
     forwardHeaders['authorization'] = `Bearer ${apiKey}`;
     forwardHeaders['host'] = targetUrl.host;
 
+    // 闭包变量：在 POST body 解析中设置，供 sendUpstream 回调使用
+    let isHaiku = false;
+    let originalRequestModel = null;
+    let upstreamModelName = null;
+
     /**
      * 发送请求到上游（使用当前的 targetUrl 和 forwardHeaders）
      * @param {Buffer|null} bodyBuffer - 修改后的请求体，null 表示用 pipe 透传
      * @param {string|null} responseModelOverride - 如果非空，将响应 SSE 中的 model 字段改写为此值
      */
     function sendUpstream(bodyBuffer, responseModelOverride) {
+        const requestStartTime = Date.now();
         const currentIsHttps = targetUrl.protocol === 'https:';
         const currentRequestModule = currentIsHttps ? https : http;
         const currentAgent = currentIsHttps ? httpsProxyAgent : httpProxyAgent;
@@ -185,24 +270,78 @@ router.all('/:modelId/{*path}', (req, res) => {
         const proxyReq = currentRequestModule.request(targetUrl, requestOptions, (proxyRes) => {
             res.writeHead(proxyRes.statusCode, proxyRes.headers);
 
-            if (responseModelOverride) {
-                // SSE 流式响应：改写 model 字段，让 Claude Code 认为是原始模型
-                const modelPattern = /"model"\s*:\s*"[^"]+"/g;
-                const modelReplacement = `"model":"${responseModelOverride}"`;
+            // ---- 性能指标采集 ----
+            let firstTokenTime = null;
+            let lastTokenTime = null;
+            let outputTokenCount = 0;
+            let inputTokenCount = 0;
+            let cacheReadCount = 0;
 
-                proxyRes.on('data', (chunk) => {
-                    const data = chunk.toString().replace(modelPattern, modelReplacement);
-                    res.write(data);
-                });
-                proxyRes.on('end', () => res.end());
-                proxyRes.on('error', (err) => {
-                    console.error(`[Proxy] Response stream error:`, err.message);
-                    res.end();
-                });
-            } else {
-                // 无需改写，直接管道转发（天然支持 SSE 流式传输）
-                proxyRes.pipe(res);
-            }
+            const modelPattern = responseModelOverride ? /"model"\s*:\s*"[^"]+"/g : null;
+            const modelReplacement = responseModelOverride ? `"model":"${responseModelOverride}"` : null;
+
+            proxyRes.on('data', (chunk) => {
+                const now = Date.now();
+                const text = chunk.toString();
+
+                // 写数据给下游（可选 model 改写）
+                if (modelPattern) {
+                    res.write(text.replace(modelPattern, modelReplacement));
+                } else {
+                    res.write(chunk);
+                }
+
+                // 检测 content_block_delta（实际输出 token）用于计时
+                if (text.includes('content_block_delta')) {
+                    if (!firstTokenTime) {
+                        firstTokenTime = now;
+                    }
+                    lastTokenTime = now;
+                }
+
+                // 解析 usage 信息（出现在 message_delta 或 message_stop 事件中）
+                if (text.includes('"usage"')) {
+                    const lines = text.split('\n');
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        try {
+                            const evt = JSON.parse(line.slice(6));
+                            if (evt.usage) {
+                                if (evt.usage.output_tokens) outputTokenCount = evt.usage.output_tokens;
+                                if (evt.usage.input_tokens) inputTokenCount = evt.usage.input_tokens;
+                                if (evt.usage.cache_read_input_tokens) cacheReadCount = evt.usage.cache_read_input_tokens;
+                            }
+                        } catch (_) { /* partial JSON, ignore */ }
+                    }
+                }
+            });
+
+            proxyRes.on('end', () => {
+                res.end();
+
+                // 持久化指标（仅当有有效 taskId 且请求成功时）
+                if (effectiveTaskId && proxyRes.statusCode >= 200 && proxyRes.statusCode < 300) {
+                    persistApiRequestMetrics({
+                        taskId: effectiveTaskId,
+                        modelId,
+                        isHaiku,
+                        requestModel: originalRequestModel,
+                        upstreamModel: upstreamModelName,
+                        requestStartTime,
+                        firstTokenTime,
+                        lastTokenTime,
+                        outputTokenCount,
+                        inputTokenCount,
+                        cacheReadCount,
+                        statusCode: proxyRes.statusCode
+                    });
+                }
+            });
+
+            proxyRes.on('error', (err) => {
+                console.error(`[Proxy] Response stream error:`, err.message);
+                res.end();
+            });
         });
 
         proxyReq.on('error', (err) => {
@@ -228,12 +367,13 @@ router.all('/:modelId/{*path}', (req, res) => {
                 const body = JSON.parse(Buffer.concat(chunks).toString());
 
                 // 记录 Claude Code 发来的原始 model 名（改写前），用于响应回写
-                const originalRequestModel = body.model || null;
+                originalRequestModel = body.model || null;
 
                 // ========== Haiku 分流逻辑 ==========
                 // Claude Code 内部用 Haiku 做分类/路由，这些请求不应发到主模型
                 // 检测到 Haiku 时，路由到 is_preview_model 标记的模型，并关闭 thinking
                 if (originalRequestModel && isHaikuModel(originalRequestModel)) {
+                    isHaiku = true;
                     const previewConfig = getPreviewModelConfig();
 
                     if (previewConfig && previewConfig.api_base_url && previewConfig.api_key) {
@@ -253,6 +393,7 @@ router.all('/:modelId/{*path}', (req, res) => {
 
                             // 改写 model 为 preview model 的实际模型名
                             body.model = previewConfig.model_name;
+                            upstreamModelName = previewConfig.model_name;
 
                             // Haiku 辅助请求一律关闭 thinking
                             body.thinking = { type: 'disabled' };
@@ -278,6 +419,7 @@ router.all('/:modelId/{*path}', (req, res) => {
                     body.model = actualModelName;
                     modelRewritten = true;
                 }
+                upstreamModelName = body.model;
 
                 if (alwaysThinkingEnabled) {
                     // 启用推理：强制注入 thinking enabled + budget_tokens

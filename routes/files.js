@@ -86,6 +86,46 @@ router.get('/task_details/:taskId', async (req, res) => {
         });
         const allFileLists = await Promise.all(fileListPromises);
 
+        // 聚合 TTFT/TPOT 性能指标（仅 admin 可见）
+        const isAdmin = req.user && req.user.role === 'admin';
+        const apiMetricsMap = {};
+        if (isAdmin && runs.length > 0) {
+            try {
+                const runIds = runs.map(r => r.id);
+                const placeholders = runIds.map(() => '?').join(',');
+                const metrics = db.prepare(`
+                    SELECT run_id,
+                        AVG(ttft_ms) as avg_ttft,
+                        MIN(ttft_ms) as min_ttft,
+                        MAX(ttft_ms) as max_ttft,
+                        AVG(tpot_ms) as avg_tpot,
+                        MIN(tpot_ms) as min_tpot,
+                        MAX(tpot_ms) as max_tpot,
+                        COUNT(*) as total_requests,
+                        SUM(CASE WHEN is_haiku = 0 THEN 1 ELSE 0 END) as main_requests
+                    FROM api_requests
+                    WHERE run_id IN (${placeholders})
+                      AND is_haiku = 0
+                      AND ttft_ms IS NOT NULL
+                    GROUP BY run_id
+                `).all(...runIds);
+                for (const m of metrics) {
+                    apiMetricsMap[m.run_id] = {
+                        avgTtft: m.avg_ttft != null ? Math.round(m.avg_ttft) : null,
+                        minTtft: m.min_ttft != null ? Math.round(m.min_ttft) : null,
+                        maxTtft: m.max_ttft != null ? Math.round(m.max_ttft) : null,
+                        avgTpot: m.avg_tpot != null ? Math.round(m.avg_tpot * 10) / 10 : null,
+                        minTpot: m.min_tpot != null ? Math.round(m.min_tpot * 10) / 10 : null,
+                        maxTpot: m.max_tpot != null ? Math.round(m.max_tpot * 10) / 10 : null,
+                        totalRequests: m.total_requests,
+                        mainRequests: m.main_requests
+                    };
+                }
+            } catch (e) {
+                console.error('[Files] Failed to fetch API metrics:', e.message);
+            }
+        }
+
         const responseData = {
             taskId: task.task_id,
             title: task.title,
@@ -123,7 +163,8 @@ router.get('/task_details/:taskId', async (req, res) => {
                             Grep: run.count_grep,
                             Agent: run.count_agent
                         }
-                    }
+                    },
+                    apiMetrics: apiMetricsMap[run.id] || null
                 };
             })
         };

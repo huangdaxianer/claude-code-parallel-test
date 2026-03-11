@@ -317,7 +317,7 @@ function executeModel(taskId, modelId, modelConfig) {
 
         console.log(`[Executor] Using firejail sandbox for ${subtaskKey}`);
 
-        const envVars = buildSafeEnv(modelId);
+        const envVars = buildSafeEnv(modelId, {}, taskId);
         envVars.CLAUDE_CODE_MAX_OUTPUT_TOKENS = '128000';
         if (modelConfig.alwaysThinkingEnabled) {
             envVars.alwaysThinkingEnabled = 'true';
@@ -354,7 +354,7 @@ function executeModel(taskId, modelId, modelConfig) {
     } else {
         // 无沙箱模式
         console.log(`[Executor] Running without sandbox for ${subtaskKey}`);
-        const envVars = buildSafeEnv(modelId);
+        const envVars = buildSafeEnv(modelId, {}, taskId);
         envVars.CLAUDE_CODE_MAX_OUTPUT_TOKENS = '128000';
         if (modelConfig.alwaysThinkingEnabled) {
             envVars.alwaysThinkingEnabled = 'true';

@@ -294,6 +294,9 @@
         if (!isSingleMode) {
             App.compare.updateComparisonSide('right');
         }
+
+        // 渲染性能对比卡片（admin-only）
+        App.compare.renderComparisonMetrics();
     };
 
     /**
@@ -400,6 +403,85 @@
 
             container.appendChild(btn);
         });
+    };
+
+    /**
+     * 渲染对比性能指标卡片（仅 admin 可见）
+     */
+    App.compare.renderComparisonMetrics = function () {
+        const container = document.getElementById('comparison-metrics');
+        if (!container) return;
+
+        const isAdmin = App.state.currentUser && App.state.currentUser.role === 'admin';
+        if (!isAdmin) {
+            container.style.display = 'none';
+            return;
+        }
+
+        const runs = App.state.currentRuns || [];
+        const previewableRuns = runs.filter(r => r.previewable === 'static' || r.previewable === 'dynamic');
+
+        const leftRun = previewableRuns.find(r => r.folderName === App.state.compareLeftRun);
+        const rightRun = previewableRuns.find(r => r.folderName === App.state.compareRightRun);
+
+        if (!leftRun && !rightRun) {
+            container.style.display = 'none';
+            return;
+        }
+
+        const leftM = leftRun && leftRun.apiMetrics;
+        const rightM = rightRun && rightRun.apiMetrics;
+        const hasAnyData = (leftM && leftM.avgTtft != null) || (rightM && rightM.avgTtft != null);
+        if (!hasAnyData) {
+            container.style.display = 'none';
+            return;
+        }
+
+        // 判断哪边更优（数值越小越好）
+        function betterTag(leftVal, rightVal) {
+            if (leftVal == null || rightVal == null) return ['', ''];
+            if (leftVal < rightVal) return [' <span style="color:#16a34a;font-weight:700">&#x2713;</span>', ''];
+            if (rightVal < leftVal) return ['', ' <span style="color:#16a34a;font-weight:700">&#x2713;</span>'];
+            return ['', ''];
+        }
+
+        function buildCard(run, metrics) {
+            if (!run) return '';
+            const name = App.utils.getModelDisplayName(run.modelName);
+            if (!metrics || metrics.avgTtft == null) {
+                return `<div class="metrics-card"><strong>${name}</strong><div style="color:#94a3b8;margin-top:0.25rem">暂无数据</div></div>`;
+            }
+            return { name, metrics };
+        }
+
+        const leftCard = buildCard(leftRun, leftM);
+        const rightCard = buildCard(rightRun, rightM);
+
+        // 如果是字符串，说明无数据
+        if (typeof leftCard === 'string' && typeof rightCard === 'string') {
+            container.innerHTML = leftCard + rightCard;
+            container.style.display = 'flex';
+            return;
+        }
+
+        // 比较并标注
+        const ttftBetter = betterTag(leftM?.avgTtft, rightM?.avgTtft);
+        const tpotBetter = betterTag(leftM?.avgTpot, rightM?.avgTpot);
+
+        function renderCard(data, ttftTag, tpotTag) {
+            if (typeof data === 'string') return data;
+            const m = data.metrics;
+            return `<div class="metrics-card">
+                <strong>${data.name}</strong>
+                <div class="metrics-row"><span class="metric-label">TTFT (avg)</span><span class="metric-value">${m.avgTtft}ms${ttftTag}</span></div>
+                <div class="metrics-row"><span class="metric-label">TPOT (avg)</span><span class="metric-value">${m.avgTpot != null ? m.avgTpot + 'ms' : '-'}${tpotTag}</span></div>
+                <div class="metrics-row"><span class="metric-label">API Calls</span><span class="metric-value">${m.mainRequests || '-'}</span></div>
+            </div>`;
+        }
+
+        container.innerHTML = renderCard(leftCard, ttftBetter[0], tpotBetter[0])
+                            + renderCard(rightCard, ttftBetter[1], tpotBetter[1]);
+        container.style.display = 'flex';
     };
 
     // 全局快捷方式
