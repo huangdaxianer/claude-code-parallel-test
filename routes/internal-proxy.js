@@ -280,6 +280,11 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
             const modelPattern = responseModelOverride ? /"model"\s*:\s*"[^"]+"/g : null;
             const modelReplacement = responseModelOverride ? `"model":"${responseModelOverride}"` : null;
 
+            // SSE 跨 chunk 缓冲：TCP 分包可能将一个 SSE data: 行拆到两个 chunk 中，
+            // 导致 JSON 解析失败（尤其影响 message_delta 中的 usage 提取 → TPOT 为 null）。
+            // 保留上一个 chunk 末尾的不完整行，拼接到下一个 chunk 头部再解析。
+            let sseBuffer = '';
+
             proxyRes.on('data', (chunk) => {
                 const now = Date.now();
                 const text = chunk.toString();
@@ -300,8 +305,16 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
                 }
 
                 // 解析 usage 信息（出现在 message_delta 或 message_stop 事件中）
-                if (text.includes('"usage"')) {
-                    const lines = text.split('\n');
+                // 使用 sseBuffer 处理跨 chunk 的行拆分
+                const combined = sseBuffer + text;
+                sseBuffer = '';
+
+                if (combined.includes('"usage"')) {
+                    const lines = combined.split('\n');
+                    // 最后一行可能不完整（没有换行符结尾），缓存到下次
+                    if (!text.endsWith('\n')) {
+                        sseBuffer = lines.pop();
+                    }
                     for (const line of lines) {
                         if (!line.startsWith('data: ')) continue;
                         try {
@@ -313,6 +326,10 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
                             }
                         } catch (_) { /* partial JSON, ignore */ }
                     }
+                } else if (!text.endsWith('\n')) {
+                    // 当前 chunk 没有 usage 但末尾不完整，可能下个 chunk 拼接后有 usage
+                    const lines = combined.split('\n');
+                    sseBuffer = lines[lines.length - 1];
                 }
             });
 
