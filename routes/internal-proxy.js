@@ -109,7 +109,7 @@ function persistApiRequestMetrics(data) {
         );
 
         if (ttft !== null) {
-            console.log(`[Proxy Metrics] ${cacheKey} req#${requestIndex}: TTFT=${ttft.toFixed(0)}ms TPOT=${tpot !== null ? tpot.toFixed(1) + 'ms' : 'N/A'} out=${data.outputTokenCount}`);
+            console.log(`[Proxy Metrics] ${cacheKey} req#${requestIndex}: TTFT=${ttft.toFixed(0)}ms TPOT=${tpot !== null ? tpot.toFixed(1) + 'ms' : 'N/A'} out=${data.outputTokenCount} ft=${!!data.firstTokenTime} lt=${!!data.lastTokenTime}`);
         }
     } catch (e) {
         console.error('[Proxy Metrics] Failed to persist:', e.message);
