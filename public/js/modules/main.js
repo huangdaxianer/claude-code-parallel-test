@@ -1070,6 +1070,7 @@ async function handleModelSubmit(e) {
     const apiKeyVal = document.getElementById('m-api-key').value;
     const activityTimeoutVal = document.getElementById('m-activity-timeout').value;
     const taskTimeoutVal = document.getElementById('m-task-timeout').value;
+    const maxOutputTokensVal = document.getElementById('m-max-output-tokens').value;
     const payload = {
         endpoint_name: document.getElementById('m-name').value,
         model_name: document.getElementById('m-model-name').value,
@@ -1081,6 +1082,7 @@ async function handleModelSubmit(e) {
         auto_retry_limit: parseInt(document.getElementById('m-auto-retry-limit').value) || 0,
         activity_timeout_seconds: activityTimeoutVal !== '' ? parseInt(activityTimeoutVal) : null,
         task_timeout_seconds: taskTimeoutVal !== '' ? parseInt(taskTimeoutVal) : null,
+        max_output_tokens: maxOutputTokensVal !== '' ? parseInt(maxOutputTokensVal) : null,
         provider: document.getElementById('m-provider').value.trim() || null
     };
     // Only send api_key if the user typed a new value

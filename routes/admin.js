@@ -759,7 +759,7 @@ router.get('/feedback-stats', (req, res) => {
 // 获取所有模型配置 (Admin) - 返回所有模型，不按用户组过滤（模型管理页面需要看到全部模型）
 router.get('/models', (req, res) => {
     try {
-        const models = db.prepare('SELECT id as internal_id, model_id as id, endpoint_name as name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, is_preview_model, always_thinking_enabled, provider, created_at FROM model_configs ORDER BY created_at DESC').all();
+        const models = db.prepare('SELECT id as internal_id, model_id as id, endpoint_name as name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, is_preview_model, always_thinking_enabled, provider, max_output_tokens, created_at FROM model_configs ORDER BY created_at DESC').all();
         const groups = db.prepare('SELECT * FROM user_groups ORDER BY is_default DESC, name ASC').all();
 
         // Get all model group settings
@@ -869,7 +869,7 @@ function cleanInvisibleChars(str) {
 // 创建新模型 (Admin)
 router.post('/models', (req, res) => {
     const endpoint_name = req.body.endpoint_name?.trim();
-    const { description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, always_thinking_enabled, provider } = req.body;
+    const { description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, always_thinking_enabled, provider, max_output_tokens } = req.body;
 
     if (!endpoint_name) {
         return res.status(400).json({ error: 'Missing required field: endpoint_name' });
@@ -889,10 +889,11 @@ router.post('/models', (req, res) => {
         const retryLimit = Math.max(0, parseInt(auto_retry_limit) || 0);
         const activityTimeout = activity_timeout_seconds != null ? Math.max(0, parseInt(activity_timeout_seconds)) : null;
         const taskTimeout = task_timeout_seconds != null ? Math.max(0, parseInt(task_timeout_seconds)) : null;
+        const maxOutputTokens = max_output_tokens != null && max_output_tokens !== '' ? Math.max(0, parseInt(max_output_tokens)) : null;
 
         const stmt = db.prepare(`
-            INSERT INTO model_configs (model_id, endpoint_name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, always_thinking_enabled, provider)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO model_configs (model_id, endpoint_name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, always_thinking_enabled, provider, max_output_tokens)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         const result = stmt.run(
             modelId,
@@ -906,7 +907,8 @@ router.post('/models', (req, res) => {
             activityTimeout,
             taskTimeout,
             always_thinking_enabled ? 1 : 0,
-            provider ? provider.trim() : null
+            provider ? provider.trim() : null,
+            maxOutputTokens
         );
 
         res.json({ success: true, id: result.lastInsertRowid, model_id: modelId });
@@ -922,7 +924,7 @@ router.post('/models', (req, res) => {
 // 更新模型 (Admin)
 router.put('/models/:id', (req, res) => {
     const { id } = req.params; // This is the model_id string
-    const { endpoint_name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, is_preview_model, always_thinking_enabled, provider } = req.body;
+    const { endpoint_name, description, is_default_checked, api_base_url, api_key, model_name, auto_retry_limit, activity_timeout_seconds, task_timeout_seconds, is_preview_model, always_thinking_enabled, provider, max_output_tokens } = req.body;
 
     try {
         // If this model is being set as preview model, clear all others first
@@ -966,6 +968,10 @@ router.put('/models/:id', (req, res) => {
         if (provider !== undefined) {
             updates.push('provider = ?');
             params.push(provider ? provider.trim() : null);
+        }
+        if (max_output_tokens !== undefined) {
+            updates.push('max_output_tokens = ?');
+            params.push(max_output_tokens != null && max_output_tokens !== '' ? Math.max(0, parseInt(max_output_tokens)) : null);
         }
 
         if (updates.length === 0) {

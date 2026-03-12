@@ -632,6 +632,7 @@ export const UI = {
             document.getElementById('m-auto-retry-limit').value = model.auto_retry_limit || 0;
             document.getElementById('m-activity-timeout').value = model.activity_timeout_seconds ?? '';
             document.getElementById('m-task-timeout').value = model.task_timeout_seconds ?? '';
+            document.getElementById('m-max-output-tokens').value = model.max_output_tokens ?? '';
             document.getElementById('m-default-checked').checked = !!model.is_default_checked;
             document.getElementById('m-preview-model').checked = !!model.is_preview_model;
             document.getElementById('m-always-thinking').checked = !!model.always_thinking_enabled;
@@ -644,6 +645,7 @@ export const UI = {
             document.getElementById('m-auto-retry-limit').value = 0;
             document.getElementById('m-activity-timeout').value = '';
             document.getElementById('m-task-timeout').value = '';
+            document.getElementById('m-max-output-tokens').value = '';
             document.getElementById('m-provider').value = '';
             document.getElementById('m-api-key').placeholder = '留空使用默认 (.env)';
         }

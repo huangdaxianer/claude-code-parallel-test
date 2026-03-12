@@ -438,6 +438,9 @@ try { db.exec("ALTER TABLE model_configs ADD COLUMN always_thinking_enabled INTE
 // Migration: Add provider field (semicolon-separated provider slugs for routing)
 try { db.exec("ALTER TABLE model_configs ADD COLUMN provider TEXT"); } catch (e) { }
 
+// Migration: Add max_output_tokens to model_configs (NULL = use default 128000)
+try { db.exec("ALTER TABLE model_configs ADD COLUMN max_output_tokens INTEGER"); } catch (e) { }
+
 // Migration: Add retry_count to model_runs (tracks how many times this run has been retried)
 try { db.exec("ALTER TABLE model_runs ADD COLUMN retry_count INTEGER DEFAULT 0"); } catch (e) { }
 
