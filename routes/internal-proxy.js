@@ -276,6 +276,9 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
             let outputTokenCount = 0;
             let inputTokenCount = 0;
             let cacheReadCount = 0;
+            // 统计 content_block_delta 事件数量，作为 outputTokenCount 的 fallback
+            // （百炼 dashscope 等兼容 API 的 SSE 流中 usage.output_tokens 始终为 0）
+            let deltaEventCount = 0;
 
             const modelPattern = responseModelOverride ? /"model"\s*:\s*"[^"]+"/g : null;
             const modelReplacement = responseModelOverride ? `"model":"${responseModelOverride}"` : null;
@@ -284,10 +287,6 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
             // 导致 JSON 解析失败（尤其影响 message_delta 中的 usage 提取 → TPOT 为 null）。
             // 保留上一个 chunk 末尾的不完整行，拼接到下一个 chunk 头部再解析。
             let sseBuffer = '';
-
-            // DEBUG: 记录是否为 dashscope 请求，用于临时诊断
-            const isDashscope = targetUrl.toString().includes('dashscope');
-            let debugChunkCount = 0;
 
             proxyRes.on('data', (chunk) => {
                 const now = Date.now();
@@ -306,12 +305,9 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
                         firstTokenTime = now;
                     }
                     lastTokenTime = now;
-                }
-
-                // DEBUG: 对 dashscope 请求，打印包含 usage 或 message_delta 的 chunk
-                if (isDashscope && debugChunkCount < 3 && (text.includes('usage') || text.includes('message_delta') || text.includes('message_stop'))) {
-                    debugChunkCount++;
-                    console.log(`[Proxy DEBUG dashscope] ${cacheKey} chunk#${debugChunkCount} (len=${text.length}): ${text.substring(0, 500)}`);
+                    // 统计 delta 事件数量（一个 chunk 可能包含多个 delta 事件）
+                    const matches = text.match(/content_block_delta/g);
+                    if (matches) deltaEventCount += matches.length;
                 }
 
                 // 解析 usage 信息（出现在 message_delta 或 message_stop 事件中）
@@ -333,18 +329,8 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
                                 if (evt.usage.output_tokens) outputTokenCount = evt.usage.output_tokens;
                                 if (evt.usage.input_tokens) inputTokenCount = evt.usage.input_tokens;
                                 if (evt.usage.cache_read_input_tokens) cacheReadCount = evt.usage.cache_read_input_tokens;
-                                // DEBUG
-                                if (isDashscope) {
-                                    console.log(`[Proxy DEBUG dashscope] ${cacheKey} PARSED usage: out=${evt.usage.output_tokens} in=${evt.usage.input_tokens} cache=${evt.usage.cache_read_input_tokens}`);
-                                }
                             }
-                        } catch (e) {
-                            // DEBUG: 打印解析失败的行
-                            if (isDashscope && debugChunkCount < 5) {
-                                debugChunkCount++;
-                                console.log(`[Proxy DEBUG dashscope] ${cacheKey} JSON parse FAILED for line (len=${line.length}): ${line.substring(0, 200)}... err=${e.message}`);
-                            }
-                        }
+                        } catch (_) { /* partial JSON, ignore */ }
                     }
                 } else if (!text.endsWith('\n')) {
                     // 当前 chunk 没有 usage 但末尾不完整，可能下个 chunk 拼接后有 usage
@@ -358,6 +344,10 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
 
                 // 持久化指标（仅当有有效 taskId 且请求成功时）
                 if (effectiveTaskId && proxyRes.statusCode >= 200 && proxyRes.statusCode < 300) {
+                    // 如果 usage 解析未获取到 outputTokenCount，使用 deltaEventCount 作为近似值
+                    // （百炼 dashscope 等兼容 API 的 SSE 中 usage.output_tokens 始终为 0，
+                    //  但 content_block_delta 事件数量可以近似代表 output token 数量用于 TPOT 计算）
+                    const effectiveOutputTokenCount = outputTokenCount || deltaEventCount;
                     persistApiRequestMetrics({
                         taskId: effectiveTaskId,
                         modelId,
@@ -367,7 +357,7 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
                         requestStartTime,
                         firstTokenTime,
                         lastTokenTime,
-                        outputTokenCount,
+                        outputTokenCount: effectiveOutputTokenCount,
                         inputTokenCount,
                         cacheReadCount,
                         statusCode: proxyRes.statusCode
