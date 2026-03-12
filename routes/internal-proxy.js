@@ -276,9 +276,6 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
             let outputTokenCount = 0;
             let inputTokenCount = 0;
             let cacheReadCount = 0;
-            // 统计 content_block_delta 事件数量，作为 outputTokenCount 的 fallback
-            // （百炼 dashscope 等兼容 API 的 SSE 流中 usage.output_tokens 始终为 0）
-            let deltaEventCount = 0;
 
             const modelPattern = responseModelOverride ? /"model"\s*:\s*"[^"]+"/g : null;
             const modelReplacement = responseModelOverride ? `"model":"${responseModelOverride}"` : null;
@@ -305,9 +302,6 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
                         firstTokenTime = now;
                     }
                     lastTokenTime = now;
-                    // 统计 delta 事件数量（一个 chunk 可能包含多个 delta 事件）
-                    const matches = text.match(/content_block_delta/g);
-                    if (matches) deltaEventCount += matches.length;
                 }
 
                 // 解析 usage 信息（出现在 message_delta 或 message_stop 事件中）
@@ -351,10 +345,6 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
 
                 // 持久化指标（仅当有有效 taskId 且请求成功时）
                 if (effectiveTaskId && proxyRes.statusCode >= 200 && proxyRes.statusCode < 300) {
-                    // 如果 usage 解析未获取到 outputTokenCount，使用 deltaEventCount 作为近似值
-                    // （百炼 dashscope 等兼容 API 的 SSE 中 usage.output_tokens 始终为 0，
-                    //  但 content_block_delta 事件数量可以近似代表 output token 数量用于 TPOT 计算）
-                    const effectiveOutputTokenCount = outputTokenCount || deltaEventCount;
                     persistApiRequestMetrics({
                         taskId: effectiveTaskId,
                         modelId,
@@ -364,7 +354,7 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
                         requestStartTime,
                         firstTokenTime,
                         lastTokenTime,
-                        outputTokenCount: effectiveOutputTokenCount,
+                        outputTokenCount,
                         inputTokenCount,
                         cacheReadCount,
                         statusCode: proxyRes.statusCode
