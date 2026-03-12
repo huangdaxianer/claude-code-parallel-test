@@ -228,6 +228,32 @@ router.get('/task_events/:runId', (req, res) => {
     }
 });
 
+// 获取单个 model_run 的逐条 API 请求指标（仅 admin）
+router.get('/api_requests/:runId', (req, res) => {
+    const { runId } = req.params;
+    try {
+        const run = db.prepare('SELECT task_id FROM model_runs WHERE id = ?').get(runId);
+        if (!run) return res.status(404).json({ error: 'Run not found' });
+        if (!isTaskOwnerOrAdmin(req, res, run.task_id)) return;
+
+        const isAdmin = req.user && req.user.role === 'admin';
+        if (!isAdmin) return res.status(403).json({ error: 'Admin only' });
+
+        const requests = db.prepare(`
+            SELECT request_index, input_tokens, output_tokens, cache_read_tokens,
+                   ttft_ms, tpot_ms, duration_ms, status_code
+            FROM api_requests
+            WHERE run_id = ? AND is_haiku = 0
+            ORDER BY request_index ASC
+        `).all(runId);
+
+        res.json({ requests });
+    } catch (e) {
+        console.error('Error fetching API requests:', e);
+        res.status(500).json({ error: 'Failed to fetch API requests' });
+    }
+});
+
 // 获取特定日志条目的完整 JSON 内容
 router.get('/log_event_content/:eventId', (req, res) => {
     const { eventId } = req.params;

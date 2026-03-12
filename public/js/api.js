@@ -76,6 +76,14 @@
     };
 
     /**
+     * 获取单个 model_run 的逐条 API 请求指标（仅 admin）
+     */
+    App.api.getApiRequests = async function (runId) {
+        const res = await fetch(`/api/api_requests/${runId}`, { headers: App.api.getAuthHeaders() });
+        return res.json();
+    };
+
+    /**
      * 获取日志事件内容
      */
     App.api.getLogEventContent = async function (eventId) {

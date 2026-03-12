@@ -610,6 +610,61 @@
             background: #f8fafc;
         }
 
+        /* 可点击的行（admin 展开详情） */
+        .stats-table tr.clickable-row {
+            cursor: pointer;
+        }
+
+        .stats-table .expand-chevron {
+            display: inline-block;
+            width: 16px;
+            margin-right: 4px;
+            transition: transform 0.15s ease;
+            font-size: 0.7rem;
+            color: #94a3b8;
+        }
+
+        .stats-table tr.expanded .expand-chevron {
+            transform: rotate(90deg);
+        }
+
+        /* API 请求详情子行 */
+        .stats-table tr.api-detail-row > td {
+            padding: 0;
+            background: #f8fafc;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .stats-table tr.api-detail-row:hover {
+            background: #f8fafc;
+        }
+
+        .api-detail-inner {
+            width: 100%;
+            font-size: 0.85rem;
+            border-collapse: collapse;
+        }
+
+        .api-detail-inner th {
+            background: #f1f5f9;
+            padding: 6px 12px;
+            font-weight: 500;
+            text-align: right;
+            color: #64748b;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .api-detail-inner td {
+            padding: 5px 12px;
+            text-align: right;
+            color: #475569;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .api-detail-inner tr:last-child td {
+            border-bottom: none;
+        }
+
         .stats-result-text {
             max-width: 300px;
             white-space: pre-wrap;

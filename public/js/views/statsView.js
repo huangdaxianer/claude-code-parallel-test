@@ -14,6 +14,11 @@
     // 缓存 enabledModels，避免每次轮询都重新请求导致未启动行闪烁
     let cachedEnabledModels = null;
 
+    // 记住展开状态的 runId 集合（轮询刷新不丢失）
+    const expandedRunIds = new Set();
+    // 缓存已加载的请求数据 { runId: requests[] }
+    const requestsCache = {};
+
     /**
      * 格式化秒数为可读字符串
      * < 60s: 显示秒 (如 "45")
@@ -192,6 +197,100 @@
         return `<span class="stop-reason-icon" data-tooltip="${tooltipText.replace(/"/g, '&quot;')}">&#8505;</span>`;
     }
 
+    /**
+     * 渲染请求详情子行
+     */
+    function renderDetailRows(parentTr, runId, requests, colCount) {
+        const detailTr = document.createElement('tr');
+        detailTr.classList.add('api-detail-row');
+        detailTr.dataset.detailFor = runId;
+        const td = document.createElement('td');
+        td.setAttribute('colspan', colCount);
+
+        let tableHtml = `<table class="api-detail-inner">
+            <thead><tr>
+                <th style="text-align:center">#</th>
+                <th>Input</th>
+                <th>Output</th>
+                <th>Cache Read</th>
+                <th>TTFT</th>
+                <th>TPOT</th>
+                <th>耗时</th>
+            </tr></thead><tbody>`;
+
+        requests.forEach(r => {
+            const ttft = r.ttft_ms != null ? Math.round(r.ttft_ms) + 'ms' : '-';
+            const tpot = r.tpot_ms != null ? (Math.round(r.tpot_ms * 10) / 10) + 'ms' : '-';
+            const dur = r.duration_ms != null ? formatDuration(r.duration_ms / 1000) : '-';
+            tableHtml += `<tr>
+                <td style="text-align:center; color:#94a3b8">${r.request_index}</td>
+                <td>${r.input_tokens || 0}</td>
+                <td>${r.output_tokens || 0}</td>
+                <td>${r.cache_read_tokens || 0}</td>
+                <td>${ttft}</td>
+                <td>${tpot}</td>
+                <td>${dur}</td>
+            </tr>`;
+        });
+
+        tableHtml += '</tbody></table>';
+        td.innerHTML = tableHtml;
+        detailTr.appendChild(td);
+        parentTr.after(detailTr);
+    }
+
+    /**
+     * 移除某个 runId 的详情子行
+     */
+    function removeDetailRows(runId) {
+        document.querySelectorAll(`tr.api-detail-row[data-detail-for="${runId}"]`).forEach(r => r.remove());
+    }
+
+    /**
+     * 切换展开/收起
+     */
+    async function toggleRunDetail(tr) {
+        const runId = tr.dataset.runId;
+        if (!runId) return;
+
+        if (expandedRunIds.has(runId)) {
+            // 收起
+            expandedRunIds.delete(runId);
+            tr.classList.remove('expanded');
+            removeDetailRows(runId);
+        } else {
+            // 展开
+            expandedRunIds.add(runId);
+            tr.classList.add('expanded');
+            const colCount = tr.children.length;
+
+            if (requestsCache[runId]) {
+                renderDetailRows(tr, runId, requestsCache[runId], colCount);
+            } else {
+                // 先显示 loading 行
+                const loadingTr = document.createElement('tr');
+                loadingTr.classList.add('api-detail-row');
+                loadingTr.dataset.detailFor = runId;
+                loadingTr.innerHTML = `<td colspan="${colCount}" style="text-align:center; padding:8px; color:#94a3b8; background:#f8fafc;">加载中...</td>`;
+                tr.after(loadingTr);
+
+                try {
+                    const data = await App.api.getApiRequests(runId);
+                    requestsCache[runId] = data.requests || [];
+                    removeDetailRows(runId);
+                    if (expandedRunIds.has(runId)) {
+                        renderDetailRows(tr, runId, requestsCache[runId], colCount);
+                    }
+                } catch (e) {
+                    console.error('[Stats] Failed to fetch API requests:', e);
+                    removeDetailRows(runId);
+                    expandedRunIds.delete(runId);
+                    tr.classList.remove('expanded');
+                }
+            }
+        }
+    }
+
     App.stats.renderStatisticsView = async function () {
         const tbody = document.getElementById('stats-table-body');
 
@@ -256,6 +355,15 @@
             const tr = document.createElement('tr');
             const isPending = run.status === 'pending';
 
+            // admin 可展开（非 pending 行）
+            if (isAdmin && !isPending && run.runId) {
+                tr.classList.add('clickable-row');
+                tr.dataset.runId = run.runId;
+                if (expandedRunIds.has(String(run.runId))) {
+                    tr.classList.add('expanded');
+                }
+            }
+
             const formatVal = (val, fallback = '-') => {
                 if (isPending) return '';
                 if (val === null || val === undefined) return fallback;
@@ -281,6 +389,11 @@
             // 停止原因 tooltip
             const stopReasonHtml = buildStopReasonTooltip(run);
 
+            // 模型名称前的展开箭头（仅 admin 且非 pending）
+            const chevron = (isAdmin && !isPending && run.runId)
+                ? '<span class="expand-chevron">&#9654;</span>'
+                : '';
+
             // TTFT/TPOT 列（仅 admin 可见）
             let adminCols = '';
             if (isAdmin) {
@@ -298,7 +411,7 @@
             }
 
             tr.innerHTML = `
-                <td style="font-weight:600">${stats.modelName}</td>
+                <td style="font-weight:600">${chevron}${stats.modelName}</td>
                 <td><span class="status-badge status-${stats.status}">${translateStatus(stats.status)}</span>${stopReasonHtml}</td>
                 <td>${actionButtons}</td>
                 ${durationHtml}
@@ -313,6 +426,11 @@
                 ${adminCols}
             `;
             tbody.appendChild(tr);
+
+            // 如果之前展开过，自动恢复展开状态
+            if (run.runId && expandedRunIds.has(String(run.runId)) && requestsCache[run.runId]) {
+                renderDetailRows(tr, run.runId, requestsCache[run.runId], tr.children.length);
+            }
         });
 
         // 如果有运行中的任务，启动计时器
@@ -394,20 +512,28 @@
         const tbody = document.getElementById('stats-table-body');
         if (tbody) {
             tbody.addEventListener('click', (e) => {
+                // 按钮点击优先处理
                 const btn = e.target.closest('.action-btn');
-                if (!btn) return;
+                if (btn) {
+                    e.preventDefault();
+                    e.stopPropagation();
 
-                e.preventDefault();
-                e.stopPropagation();
+                    const action = btn.dataset.action;
+                    const modelId = btn.dataset.modelId;
+                    console.log('[StatsTable] Button clicked, action:', action, 'modelId:', modelId);
 
-                const action = btn.dataset.action;
-                const modelId = btn.dataset.modelId;
-                console.log('[StatsTable] Button clicked, action:', action, 'modelId:', modelId);
+                    if (action === 'preview') {
+                        if (modelId) App.stats.previewFromStats(modelId);
+                    } else if (action === 'start' || action === 'stop') {
+                        App.stats.controlTask(action, modelId);
+                    }
+                    return;
+                }
 
-                if (action === 'preview') {
-                    if (modelId) App.stats.previewFromStats(modelId);
-                } else if (action === 'start' || action === 'stop') {
-                    App.stats.controlTask(action, modelId);
+                // 行点击展开/收起（仅 admin）
+                const tr = e.target.closest('tr.clickable-row');
+                if (tr && tr.dataset.runId) {
+                    toggleRunDetail(tr);
                 }
             });
             console.log('[StatsTable] Event delegation setup complete');
