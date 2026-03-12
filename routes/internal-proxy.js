@@ -285,6 +285,10 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
             // 保留上一个 chunk 末尾的不完整行，拼接到下一个 chunk 头部再解析。
             let sseBuffer = '';
 
+            // DEBUG: 记录是否为 dashscope 请求，用于临时诊断
+            const isDashscope = targetUrl.toString().includes('dashscope');
+            let debugChunkCount = 0;
+
             proxyRes.on('data', (chunk) => {
                 const now = Date.now();
                 const text = chunk.toString();
@@ -302,6 +306,12 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
                         firstTokenTime = now;
                     }
                     lastTokenTime = now;
+                }
+
+                // DEBUG: 对 dashscope 请求，打印包含 usage 或 message_delta 的 chunk
+                if (isDashscope && debugChunkCount < 3 && (text.includes('usage') || text.includes('message_delta') || text.includes('message_stop'))) {
+                    debugChunkCount++;
+                    console.log(`[Proxy DEBUG dashscope] ${cacheKey} chunk#${debugChunkCount} (len=${text.length}): ${text.substring(0, 500)}`);
                 }
 
                 // 解析 usage 信息（出现在 message_delta 或 message_stop 事件中）
@@ -323,8 +333,18 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
                                 if (evt.usage.output_tokens) outputTokenCount = evt.usage.output_tokens;
                                 if (evt.usage.input_tokens) inputTokenCount = evt.usage.input_tokens;
                                 if (evt.usage.cache_read_input_tokens) cacheReadCount = evt.usage.cache_read_input_tokens;
+                                // DEBUG
+                                if (isDashscope) {
+                                    console.log(`[Proxy DEBUG dashscope] ${cacheKey} PARSED usage: out=${evt.usage.output_tokens} in=${evt.usage.input_tokens} cache=${evt.usage.cache_read_input_tokens}`);
+                                }
                             }
-                        } catch (_) { /* partial JSON, ignore */ }
+                        } catch (e) {
+                            // DEBUG: 打印解析失败的行
+                            if (isDashscope && debugChunkCount < 5) {
+                                debugChunkCount++;
+                                console.log(`[Proxy DEBUG dashscope] ${cacheKey} JSON parse FAILED for line (len=${line.length}): ${line.substring(0, 200)}... err=${e.message}`);
+                            }
+                        }
                     }
                 } else if (!text.endsWith('\n')) {
                     // 当前 chunk 没有 usage 但末尾不完整，可能下个 chunk 拼接后有 usage
