@@ -11,6 +11,9 @@
     // 运行中任务的计时器
     let durationTimerId = null;
 
+    // 缓存 enabledModels，避免每次轮询都重新请求导致未启动行闪烁
+    let cachedEnabledModels = null;
+
     /**
      * 格式化秒数为可读字符串
      * < 60s: 显示秒 (如 "45")
@@ -191,10 +194,28 @@
 
     App.stats.renderStatisticsView = async function () {
         const tbody = document.getElementById('stats-table-body');
-        tbody.innerHTML = '';
 
         // 先停止旧的计时器
         stopDurationTimer();
+
+        // 使用缓存的 enabledModels，避免每次轮询都异步请求导致未启动行闪烁。
+        // 首次加载或缓存为空时同步等待，后续在后台静默刷新缓存。
+        if (!cachedEnabledModels) {
+            try {
+                cachedEnabledModels = await App.api.getEnabledModels();
+            } catch (e) {
+                console.error('[Stats] Failed to fetch enabled models:', e);
+                cachedEnabledModels = [];
+            }
+        } else {
+            // 后台静默刷新缓存，不阻塞渲染
+            App.api.getEnabledModels().then(models => {
+                cachedEnabledModels = models;
+            }).catch(() => {});
+        }
+        const enabledModels = cachedEnabledModels;
+
+        tbody.innerHTML = '';
 
         // 管理员列显隐控制
         const isAdmin = App.state.currentUser && App.state.currentUser.role === 'admin';
@@ -299,9 +320,8 @@
             startDurationTimer();
         }
 
-        // 获取启用模型，显示未启动的模型
-        try {
-            const enabledModels = await App.api.getEnabledModels();
+        // 显示未启动的模型（enabledModels 已在清空 DOM 前预先获取）
+        if (enabledModels.length > 0) {
             const existingModelIds = new Set(App.state.currentRuns.map(r => r.modelId));
             const unstartedModels = enabledModels.filter(m => !existingModelIds.has(m.id));
 
@@ -325,8 +345,6 @@
                 `;
                 tbody.appendChild(tr);
             });
-        } catch (e) {
-            console.error('[Stats] Failed to fetch enabled models:', e);
         }
     };
 
