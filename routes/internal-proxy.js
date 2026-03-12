@@ -326,10 +326,13 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
                         if (!jsonStr) continue;
                         try {
                             const evt = JSON.parse(jsonStr);
-                            if (evt.usage) {
-                                if (evt.usage.output_tokens) outputTokenCount = evt.usage.output_tokens;
-                                if (evt.usage.input_tokens) inputTokenCount = evt.usage.input_tokens;
-                                if (evt.usage.cache_read_input_tokens) cacheReadCount = evt.usage.cache_read_input_tokens;
+                            // message_delta 的 usage 在顶层 evt.usage (含 output_tokens)
+                            // message_start 的 usage 在 evt.message.usage (含 input_tokens, cache_read_input_tokens)
+                            const usage = evt.usage || (evt.message && evt.message.usage);
+                            if (usage) {
+                                if (usage.output_tokens) outputTokenCount = usage.output_tokens;
+                                if (usage.input_tokens) inputTokenCount = usage.input_tokens;
+                                if (usage.cache_read_input_tokens) cacheReadCount = usage.cache_read_input_tokens;
                             }
                         } catch (_) { /* partial JSON, ignore */ }
                     }
@@ -343,8 +346,11 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
             proxyRes.on('end', () => {
                 res.end();
 
-                // 持久化指标（仅当有有效 taskId 且请求成功时）
-                if (effectiveTaskId && proxyRes.statusCode >= 200 && proxyRes.statusCode < 300) {
+                // 持久化指标：仅当有有效 taskId、请求成功、且是 POST 且有实际流式内容时
+                // 过滤掉 GET/OPTIONS 等非 POST 请求，以及没有任何流式输出的空请求
+                const isPost = req.method === 'POST';
+                const hasStreamContent = firstTokenTime !== null;
+                if (effectiveTaskId && isPost && hasStreamContent && proxyRes.statusCode >= 200 && proxyRes.statusCode < 300) {
                     persistApiRequestMetrics({
                         taskId: effectiveTaskId,
                         modelId,
