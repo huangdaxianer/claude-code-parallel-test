@@ -322,9 +322,16 @@ router.all('/:taskId/:modelId/{*path}', (req, res) => {
                         sseBuffer = lines.pop();
                     }
                     for (const line of lines) {
-                        if (!line.startsWith('data: ')) continue;
+                        // 兼容 "data: {...}" (Anthropic) 和 "data:{...}" (百炼 dashscope) 两种 SSE 格式
+                        let jsonStr = null;
+                        if (line.startsWith('data: ')) {
+                            jsonStr = line.slice(6);
+                        } else if (line.startsWith('data:')) {
+                            jsonStr = line.slice(5);
+                        }
+                        if (!jsonStr) continue;
                         try {
-                            const evt = JSON.parse(line.slice(6));
+                            const evt = JSON.parse(jsonStr);
                             if (evt.usage) {
                                 if (evt.usage.output_tokens) outputTokenCount = evt.usage.output_tokens;
                                 if (evt.usage.input_tokens) inputTokenCount = evt.usage.input_tokens;
